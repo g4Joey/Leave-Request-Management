@@ -20,10 +20,16 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+from . import views
 
 urlpatterns = [
+    path('', views.health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/leaves/', include('leaves.urls')),
 ]
+
+# Error handlers
+handler404 = 'leave_management.views.not_found'
+handler500 = 'leave_management.views.server_error'
