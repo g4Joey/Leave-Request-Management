@@ -27,5 +27,14 @@ pytest-django==4.8.0
 # Production server
 gunicorn==22.0.0
 
+# Database URL parsing for production
+dj-database-url==2.1.0
+
+# PostgreSQL adapter for production
+psycopg2-binary==2.9.9
+
+# WhiteNoise for static files in production
+whitenoise==6.6.0
+
 # Additional utilities
 pytz==2024.1

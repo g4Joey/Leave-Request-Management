@@ -1,0 +1,56 @@
+name: leave-management-system
+region: nyc1
+
+services:
+  - name: backend
+    source_dir: /
+    github:
+      repo: g4Joey/Leave-Request-Management
+      branch: main
+    run_command: gunicorn leave_management.wsgi:application --bind 0.0.0.0:$PORT
+    environment_slug: python
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 8080
+    health_check:
+      http_path: /api/
+    routes:
+      - path: /api
+    envs:
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SETTINGS_MODULE
+        value: "leave_management.settings_production"
+      - key: SECRET_KEY
+        type: SECRET
+        value: "your-secret-key-here"
+      - key: ALLOWED_HOSTS
+        value: "leave-management-system-backend.ondigitalocean.app,localhost,127.0.0.1"
+      - key: DATABASE_URL
+        type: SECRET
+        value: "${db.DATABASE_URL}"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://leave-management-system-frontend.ondigitalocean.app"
+
+databases:
+  - name: db
+    engine: PG
+    version: "14"
+    size: basic-xs
+    num_nodes: 1
+
+static_sites:
+  - name: frontend
+    source_dir: /frontend
+    github:
+      repo: g4Joey/Leave-Request-Management
+      branch: main
+    build_command: npm run build
+    output_dir: build
+    index_document: index.html
+    error_document: index.html
+    routes:
+      - path: /
+    envs:
+      - key: REACT_APP_API_URL
+        value: "https://leave-management-system-backend.ondigitalocean.app/api"
