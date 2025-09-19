@@ -126,10 +126,39 @@ curl -X POST http://127.0.0.1:8000/api/leaves/requests/ \
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Backend** | Django 5.0.7 | Web framework |
+| **Frontend** | React 18.2.0 + Tailwind CSS | Modern UI/UX |
 | **API** | Django REST Framework 3.15.2 | RESTful API |
-| **Database** | MySQL with PyMySQL | Data storage |
+| **Database** | PostgreSQL (Production) / MySQL (Dev) | Data storage |
 | **Authentication** | JWT (Simple JWT) | Secure authentication |
-| **Environment** | Python 3.13.3 | Runtime environment |
+| **Deployment** | DigitalOcean App Platform | Cloud hosting |
+
+## 🖥️ Frontend Features
+
+- **🎨 Modern React UI** with Tailwind CSS styling
+- **🔐 JWT Authentication** with automatic token refresh
+- **📱 Responsive Design** works on all devices
+- **⚡ Real-time Updates** for leave requests and approvals
+- **👥 Role-based Interface** (Employee, Manager, HR views)
+- **📊 Dashboard Analytics** with leave balance tracking
+
+### Frontend Structure
+```
+frontend/
+├── src/
+│   ├── components/          # React components
+│   │   ├── Login.js        # Authentication page
+│   │   ├── Dashboard.js    # Employee dashboard
+│   │   ├── LeaveRequest.js # Submit leave requests
+│   │   ├── LeaveHistory.js # View request history
+│   │   └── ManagerDashboard.js # Manager approvals
+│   ├── contexts/           # React contexts
+│   │   └── AuthContext.js  # Authentication state
+│   ├── services/           # API services
+│   │   └── api.js          # Axios API client
+│   └── App.js              # Main app component
+├── public/                 # Static files
+└── package.json           # Dependencies
+```
 
 ## 📁 Project Structure
 
@@ -205,18 +234,74 @@ python manage.py check
 
 ## 🚀 Deployment
 
-### Production Settings
+### DigitalOcean App Platform (Recommended)
 
-1. Set `DEBUG=False` in `.env`
-2. Configure proper `SECRET_KEY`
-3. Set up production database
-4. Configure static files serving
-5. Use `gunicorn` for WSGI server
+This project is configured for easy deployment on DigitalOcean App Platform using the included `.do/app.yaml` configuration.
 
-### Docker Deployment (Future)
+#### 🔧 Manual Deployment Steps:
+
+1. **Create DigitalOcean Account**
+   - Sign up at [DigitalOcean](https://digitalocean.com)
+   - Navigate to App Platform
+
+2. **Deploy from GitHub**
+   ```bash
+   # Fork the repository to your GitHub account
+   # In DigitalOcean App Platform:
+   # 1. Click "Create App" 
+   # 2. Choose "GitHub" as source
+   # 3. Select your forked repository
+   # 4. DigitalOcean will auto-detect the .do/app.yaml config
+   ```
+
+3. **Environment Variables**
+   Set these in DigitalOcean App Platform:
+   ```
+   SECRET_KEY=your-secret-key-here
+   DEBUG=False
+   ALLOWED_HOSTS=your-app-domain.ondigitalocean.app
+   CORS_ALLOWED_ORIGINS=https://your-frontend-domain.ondigitalocean.app
+   ```
+
+4. **Database**
+   - DigitalOcean will automatically create a PostgreSQL database
+   - Database credentials are auto-injected via `DATABASE_URL`
+
+#### 🚀 One-Click Deployment:
+
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/g4Joey/Leave-Request-Management/tree/main)
+
+### Alternative Production Deployments
+
+#### Railway
 ```bash
-# Coming soon
-docker-compose up -d
+# Create account at railway.app
+# Connect GitHub repository
+# Configure environment variables
+# Deploy automatically
+```
+
+#### Heroku
+```bash
+# Install Heroku CLI
+heroku create your-app-name
+heroku addons:create heroku-postgresql:hobby-dev
+heroku config:set SECRET_KEY=your-secret-key
+git push heroku main
+```
+
+### Local Production Testing
+```bash
+# Set environment variables
+export DJANGO_SETTINGS_MODULE=leave_management.settings_production
+export DEBUG=False
+export SECRET_KEY=your-secret-key
+
+# Install production dependencies
+pip install -r requirements.txt
+
+# Run with gunicorn
+gunicorn leave_management.wsgi:application
 ```
 
 ## 🤝 Contributing
@@ -245,12 +330,27 @@ If you encounter any issues or have questions:
 
 ## 🎯 Roadmap
 
-- [ ] Frontend UI (React/Vue.js)
-- [ ] Calendar view integration
-- [ ] Email notifications
-- [ ] Advanced reporting
-- [ ] Mobile app
-- [ ] Integration with HR systems
+### ✅ Completed Features
+- [x] **Django Backend API** - Complete REST API with authentication
+- [x] **React Frontend** - Modern UI with Tailwind CSS
+- [x] **JWT Authentication** - Secure token-based auth
+- [x] **Leave Management** - Submit, approve, track requests
+- [x] **Role-based Access** - Employee, Manager, HR permissions
+- [x] **Dashboard Analytics** - Real-time leave balance tracking
+- [x] **Production Deployment** - DigitalOcean ready configuration
+
+### 🔄 In Development
+- [ ] **Live Deployment** - DigitalOcean App Platform hosting
+- [ ] **CI/CD Pipeline** - Automated deployments
+- [ ] **Email Notifications** - Request status updates
+
+### 📅 Future Enhancements
+- [ ] **Calendar View** - Visual leave calendar
+- [ ] **Advanced Reporting** - Analytics and insights
+- [ ] **Mobile App** - React Native application
+- [ ] **HR Integration** - HRIS system connectors
+- [ ] **Approval Workflows** - Multi-level approvals
+- [ ] **Leave Policies** - Complex rule engine
 
 ---
 
