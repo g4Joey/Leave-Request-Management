@@ -34,8 +34,8 @@ services:
 
 databases:
   - name: db
-    engine: PG
-    version: "14"
+    engine: MYSQL
+    version: "8"
     size: basic-xs
     num_nodes: 1
 

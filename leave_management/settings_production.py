@@ -5,6 +5,13 @@ from .settings import *
 import os
 import dj_database_url
 
+# MySQL configuration for production
+try:
+    import pymysql
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
@@ -16,11 +23,37 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Database Configuration for DigitalOcean
 if 'DATABASE_URL' in os.environ:
+    # Parse the DATABASE_URL for MySQL
+    db_config = dj_database_url.parse(os.environ.get('DATABASE_URL'))
+    
+    # Ensure MySQL engine and options for DigitalOcean MySQL
+    db_config['ENGINE'] = 'django.db.backends.mysql'
+    db_config['OPTIONS'] = {
+        'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        'charset': 'utf8mb4',
+    }
+    
     DATABASES = {
-        'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
+        'default': db_config
+    }
+elif all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']):
+    # Alternative: Use individual environment variables
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ.get('DB_NAME'),
+            'USER': os.environ.get('DB_USER'),
+            'PASSWORD': os.environ.get('DB_PASSWORD'),
+            'HOST': os.environ.get('DB_HOST'),
+            'PORT': os.environ.get('DB_PORT', '3306'),
+            'OPTIONS': {
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                'charset': 'utf8mb4',
+            },
+        }
     }
 else:
-    # Fallback to local settings
+    # Fallback to local settings from base settings.py
     pass
 
 # Static files (CSS, JavaScript, Images)
