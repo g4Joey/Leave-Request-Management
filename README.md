@@ -128,7 +128,7 @@ curl -X POST http://127.0.0.1:8000/api/leaves/requests/ \
 | **Backend** | Django 5.0.7 | Web framework |
 | **Frontend** | React 18.2.0 + Tailwind CSS | Modern UI/UX |
 | **API** | Django REST Framework 3.15.2 | RESTful API |
-| **Database** | PostgreSQL (Production) / MySQL (Dev) | Data storage |
+| **Database** | MySQL 8.0 (Production & Dev) | Data storage |
 | **Authentication** | JWT (Simple JWT) | Secure authentication |
 | **Deployment** | DigitalOcean App Platform | Cloud hosting |
 
@@ -264,8 +264,9 @@ This project is configured for easy deployment on DigitalOcean App Platform usin
    ```
 
 4. **Database**
-   - DigitalOcean will automatically create a PostgreSQL database
+   - DigitalOcean will automatically create a MySQL 8.0 database
    - Database credentials are auto-injected via `DATABASE_URL`
+   - PyMySQL driver used for pure Python MySQL connectivity
 
 #### 🚀 One-Click Deployment:
 
