@@ -71,7 +71,8 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # CORS settings for frontend
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'https://takeabreak-app-38abv.ondigitalocean.app')
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
 # Additional CORS settings

@@ -23,9 +23,9 @@ services:
         value: "leave_management.settings_production"
       - key: SECRET_KEY
         type: SECRET
-        value: "prod-secret-key-2025-leave-mgmt-a8f7b2e9c1d4f6h8j3k5m7n9p0q2r4t6"
+        value: "django-prod-2025-leave-mgmt-secure-key-a8f7b2e9c1d4f6h8j3k5m7n9p0q2r4t6u8v1w3x5y7z9"
       - key: ALLOWED_HOSTS
-        value: "*"
+        value: "takeabreak-app-38abv.ondigitalocean.app,localhost,127.0.0.1"
       - key: DATABASE_URL
         type: SECRET
         value: "mysql://doadmin:PLACEHOLDER_PASSWORD@db-mysql-nyc3-43467-do-user-24806705-0.k.db.ondigitalocean.com:25060/defaultdb?ssl-mode=REQUIRED"
