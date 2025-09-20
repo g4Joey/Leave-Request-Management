@@ -32,12 +32,7 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         value: "https://takeabreak-app-38abv.ondigitalocean.app"
 
-databases:
-  - name: db
-    engine: MYSQL
-    version: "8"
-    size: basic-xs
-    num_nodes: 1
+# Using external DigitalOcean database - no managed database needed
 
 static_sites:
   - name: frontend
@@ -47,8 +42,7 @@ static_sites:
       branch: main
     build_command: npm install && npm run build
     output_dir: build
-    index_document: index.html
-    error_document: index.html
+    catchall_document: index.html
     routes:
       - path: /
     envs:
