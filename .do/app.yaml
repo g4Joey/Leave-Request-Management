@@ -23,7 +23,7 @@ services:
         value: "leave_management.settings_production"
       - key: SECRET_KEY
         type: SECRET
-        value: "django-insecure-#change-this-in-production-2025-leave-mgmt-system-secret-key-abc123"
+        value: "prod-secret-key-2025-leave-mgmt-a8f7b2e9c1d4f6h8j3k5m7n9p0q2r4t6"
       - key: ALLOWED_HOSTS
         value: "*"
       - key: DATABASE_URL

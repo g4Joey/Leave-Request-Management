@@ -109,12 +109,36 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Local development files
+local_settings.py
+*.local
+
+# Secrets and keys
+secrets.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Database files
+*.sqlite3
+*.db
+db.sqlite3
+db.sqlite3-journal
+
+# Logs
+logs/
+*.log
+django.log
 
 # Spyder project settings
 .spyderproject
