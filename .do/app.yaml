@@ -30,7 +30,7 @@ services:
         type: SECRET
         value: "${db.DATABASE_URL}"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://leave-management-system-frontend.ondigitalocean.app"
+        value: "https://takeabreak-app-38abv.ondigitalocean.app"
 
 databases:
   - name: db
@@ -45,7 +45,7 @@ static_sites:
     github:
       repo: g4Joey/Leave-Request-Management
       branch: main
-    build_command: npm run build
+    build_command: npm install && npm run build
     output_dir: build
     index_document: index.html
     error_document: index.html
@@ -53,4 +53,4 @@ static_sites:
       - path: /
     envs:
       - key: REACT_APP_API_URL
-        value: "https://leave-management-system-backend.ondigitalocean.app/api"
+        value: "https://takeabreak-app-38abv.ondigitalocean.app/api"

@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# Frontend dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Distribution / packaging
 .Python
 build/
