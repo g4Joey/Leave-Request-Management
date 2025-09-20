@@ -28,7 +28,7 @@ services:
         value: "*"
       - key: DATABASE_URL
         type: SECRET
-        value: "${db.DATABASE_URL}"
+        value: "mysql://doadmin:PLACEHOLDER_PASSWORD@db-mysql-nyc3-43467-do-user-24806705-0.k.db.ondigitalocean.com:25060/defaultdb?ssl-mode=REQUIRED"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://takeabreak-app-38abv.ondigitalocean.app"
 
