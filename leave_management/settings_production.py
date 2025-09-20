@@ -33,7 +33,8 @@ if 'DATABASE_URL' in os.environ:
         db_config['OPTIONS'] = {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
-            'ssl_mode': 'REQUIRED',  # SSL requirement for DigitalOcean
+            'ssl_mode': 'REQUIRED',
+            'ssl_verify_cert': False,  # Disable SSL certificate verification for DigitalOcean
         }
         
         DATABASES = {

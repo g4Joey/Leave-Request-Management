@@ -7,7 +7,7 @@ services:
     github:
       repo: g4Joey/Leave-Request-Management
       branch: main
-    run_command: gunicorn leave_management.wsgi:application --bind 0.0.0.0:$PORT
+    run_command: python manage.py migrate --noinput && gunicorn leave_management.wsgi:application --bind 0.0.0.0:$PORT
     environment_slug: python
     instance_count: 1
     instance_size_slug: basic-xxs
