@@ -24,18 +24,21 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 # Database Configuration for DigitalOcean
 if 'DATABASE_URL' in os.environ:
     # Parse the DATABASE_URL for MySQL
-    db_config = dj_database_url.parse(os.environ.get('DATABASE_URL'))
-    
-    # Ensure MySQL engine and options for DigitalOcean MySQL
-    db_config['ENGINE'] = 'django.db.backends.mysql'
-    db_config['OPTIONS'] = {
-        'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        'charset': 'utf8mb4',
-    }
-    
-    DATABASES = {
-        'default': db_config
-    }
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        db_config = dj_database_url.parse(db_url)
+        
+        # Ensure MySQL engine and options for DigitalOcean MySQL
+        db_config['ENGINE'] = 'django.db.backends.mysql'
+        db_config['OPTIONS'] = {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'charset': 'utf8mb4',
+            'ssl_mode': 'REQUIRED',  # SSL requirement for DigitalOcean
+        }
+        
+        DATABASES = {
+            'default': db_config
+        }
 elif all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']):
     # Alternative: Use individual environment variables
     DATABASES = {
