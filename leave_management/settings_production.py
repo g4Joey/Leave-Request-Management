@@ -77,8 +77,13 @@ elif all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS
         }
     }
 else:
-    # Fallback to local settings from base settings.py
-    pass
+    # Safe fallback for build-time or missing DB config: use SQLite to allow collectstatic to run
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
