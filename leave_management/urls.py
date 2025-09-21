@@ -24,7 +24,6 @@ from . import views
 from django.views.generic import RedirectView  # noqa: F401 (kept for potential future use)
 
 urlpatterns = [
-    path('', views.frontend_index, name='frontend_index'),
     path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.api_health, name='api_health'),
     path('api/health/db', views.api_health_db, name='api_health_db'),

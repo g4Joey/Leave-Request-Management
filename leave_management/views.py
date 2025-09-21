@@ -75,12 +75,4 @@ def not_found(request, exception, template_name='404.html'):
     from django.shortcuts import render
     return render(request, '404.html', status=404)
 
-def frontend_index(request):
-    """Serve the built React index.html if available (fallback for root)."""
-    index_path = os.path.join(settings.BASE_DIR, 'frontend', 'build', 'index.html')
-    try:
-        with open(index_path, 'rb') as f:
-            return HttpResponse(f.read(), content_type='text/html')
-    except FileNotFoundError:
-        logging.getLogger(__name__).error(f"Frontend build not found at {index_path}")
-        return JsonResponse({'error': 'frontend_build_missing'}, status=500)
+    
