@@ -23,7 +23,7 @@ from rest_framework_simplejwt.views import (
 from . import views
 
 urlpatterns = [
-    path('', views.health_check, name='health_check'),
+    path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.api_health, name='api_health'),
     path('api/health/db', views.api_health_db, name='api_health_db'),
     path('admin/', admin.site.urls),

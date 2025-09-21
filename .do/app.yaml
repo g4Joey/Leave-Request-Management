@@ -22,6 +22,8 @@ services:
     routes:
       - path: /api
       - path: /admin
+      - path: /health
+      - path: /static
     
     envs:
       - key: DEBUG
