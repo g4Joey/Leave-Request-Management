@@ -10,6 +10,11 @@ function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  // Show demo/test accounts only in development, or when explicitly enabled
+  const showDemoLogins =
+    process.env.REACT_APP_SHOW_DEMO_LOGINS === 'true' ||
+    process.env.NODE_ENV !== 'production';
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -88,34 +93,36 @@ function Login() {
           </div>
         </form>
 
-        <div className="mt-6">
-          <div className="text-center text-sm text-gray-600 mb-4">
-            Test Accounts (Development):
+        {showDemoLogins && (
+          <div className="mt-6">
+            <div className="text-center text-sm text-gray-600 mb-4">
+              Test Accounts (Development):
+            </div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => quickLogin('john.doe@company.com', 'password123')}
+                className="w-full text-left px-3 py-2 text-sm bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+              >
+                <strong>Employee:</strong> john.doe@company.com / password123
+              </button>
+              <button
+                type="button"
+                onClick={() => quickLogin('manager@company.com', 'password123')}
+                className="w-full text-left px-3 py-2 text-sm bg-green-50 border border-green-200 rounded hover:bg-green-100"
+              >
+                <strong>Manager:</strong> manager@company.com / password123
+              </button>
+              <button
+                type="button"
+                onClick={() => quickLogin('hr@company.com', 'password123')}
+                className="w-full text-left px-3 py-2 text-sm bg-purple-50 border border-purple-200 rounded hover:bg-purple-100"
+              >
+                <strong>HR:</strong> hr@company.com / password123
+              </button>
+            </div>
           </div>
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => quickLogin('john.doe@company.com', 'password123')}
-              className="w-full text-left px-3 py-2 text-sm bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
-            >
-              <strong>Employee:</strong> john.doe@company.com / password123
-            </button>
-            <button
-              type="button"
-              onClick={() => quickLogin('manager@company.com', 'password123')}
-              className="w-full text-left px-3 py-2 text-sm bg-green-50 border border-green-200 rounded hover:bg-green-100"
-            >
-              <strong>Manager:</strong> manager@company.com / password123
-            </button>
-            <button
-              type="button"
-              onClick={() => quickLogin('hr@company.com', 'password123')}
-              className="w-full text-left px-3 py-2 text-sm bg-purple-50 border border-purple-200 rounded hover:bg-purple-100"
-            >
-              <strong>HR:</strong> hr@company.com / password123
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

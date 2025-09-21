@@ -141,6 +141,21 @@ class Command(BaseCommand):
                                     f"Created LeaveBalance for {user.email or user.username} - {lt.name} ({current_year})"
                                 )
                             )
+                        else:
+                            # If existing record has 0 entitlement, bump to defaults
+                            if getattr(lb, "entitled_days", 0) == 0:
+                                lb.entitled_days = entitlement
+                                # Ensure used/pending do not exceed entitlement
+                                if lb.used_days > lb.entitled_days:
+                                    lb.used_days = lb.entitled_days
+                                if lb.pending_days > (lb.entitled_days - lb.used_days):
+                                    lb.pending_days = max(0, lb.entitled_days - lb.used_days)
+                                lb.save(update_fields=["entitled_days", "used_days", "pending_days", "updated_at"])
+                                self.stdout.write(
+                                    self.style.WARNING(
+                                        f"Updated entitlement for {user.email or user.username} - {lt.name} to {entitlement}"
+                                    )
+                                )
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error seeding leave types/balances: {e}"))
 

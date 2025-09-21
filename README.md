@@ -192,10 +192,12 @@ The system includes a management command to create test data:
 python manage.py create_test_data
 ```
 
-**Test Accounts:**
+**Test Accounts (development only):**
 - **Employee**: `john.doe@company.com` / `password123`
 - **Manager**: `manager@company.com` / `password123` 
 - **HR**: `hr@company.com` / `password123`
+
+Note: These are intended for local/dev use. The login UI now hides demo credentials in production builds by default. To show them locally, set `REACT_APP_SHOW_DEMO_LOGINS=true` in your env before `npm start`.
 
 ## 🔧 Development
 

@@ -25,6 +25,8 @@ services:
     envs:
       - key: REACT_APP_API_URL
         value: "https://takeabreak-app-38abv.ondigitalocean.app/api"
+      - key: REACT_APP_SHOW_DEMO_LOGINS
+        value: "false"
       - key: NODE_ENV
         value: "production"
       - key: GENERATE_SOURCEMAP
