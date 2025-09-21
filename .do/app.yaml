@@ -3,7 +3,7 @@ region: nyc1
 
 services:
   - name: frontend
-    source_dir: /frontend
+    source_dir: ./frontend
     github:
       repo: g4Joey/Leave-Request-Management
       branch: main
@@ -32,7 +32,7 @@ services:
         value: "false"
 
   - name: backend
-    source_dir: /
+    source_dir: ./
     github:
       repo: g4Joey/Leave-Request-Management
       branch: main
