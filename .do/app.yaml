@@ -21,7 +21,6 @@ services:
     
     routes:
       - path: /
-        catchall_document: index.html
     
     envs:
       - key: REACT_APP_API_URL
