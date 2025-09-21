@@ -48,7 +48,7 @@ function Dashboard() {
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-            Welcome to Leave Management Dashboard
+            Welcome to  Merban Leave
           </h3>
           <p className="text-sm text-gray-600">
             Track your leave balances, submit new requests, and view your leave history.
@@ -65,17 +65,17 @@ function Dashboard() {
           {balances.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {balances.map((balance, index) => (
-                <div key={index} className="bg-gray-50 rounded-lg p-4">
+                <div key={balance.id || index} className="bg-gray-50 rounded-lg p-4">
                   <div className="flex items-center">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">
-                        {balance.leave_type?.name || 'Leave Type'}
+                        {balance.leave_type_name || balance.leave_type?.name || 'Leave Type'}
                       </p>
                       <p className="text-2xl font-bold text-primary-600">
                         {balance.remaining_days || 0}
                       </p>
                       <p className="text-xs text-gray-500">
-                        of {balance.allocated_days || 0} days remaining
+                        of {balance.entitled_days ?? balance.allocated_days ?? 0} days remaining
                       </p>
                     </div>
                   </div>
@@ -102,7 +102,7 @@ function Dashboard() {
                     <div className="flex items-center space-x-4">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
-                          {request.leave_type?.name || 'Leave Request'}
+                          {request.leave_type_name || 'Leave Request'}
                         </p>
                         <p className="text-sm text-gray-500">
                           {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}

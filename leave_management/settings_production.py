@@ -26,15 +26,14 @@ if 'DATABASE_URL' in os.environ:
     # Parse the DATABASE_URL for MySQL
     db_url = os.environ.get('DATABASE_URL')
     if db_url:
-        db_config = dj_database_url.parse(db_url)
+        db_config = dj_database_url.parse(db_url, conn_max_age=600, conn_health_checks=True)
         
         # Ensure MySQL engine and options for DigitalOcean MySQL
         db_config['ENGINE'] = 'django.db.backends.mysql'
         db_config['OPTIONS'] = {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
-            'ssl_mode': 'REQUIRED',
-            'ssl_verify_cert': False,  # Disable SSL certificate verification for DigitalOcean
+            'ssl': {'ssl-mode': 'REQUIRED'},
         }
         
         DATABASES = {

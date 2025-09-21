@@ -28,6 +28,9 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-mfl(&yr6+qvda8o51u$b_
 DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])
+if DEBUG:
+    # Allow all hosts in development to support LAN testing (e.g., 172.x.x.x)
+    ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -81,22 +84,50 @@ TEMPLATES = [
 WSGI_APPLICATION = 'leave_management.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.0/ref/settings/#databases
+"""
+Database configuration
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': config('DB_NAME', default='leave_management'),
-        'USER': config('DB_USER', default='root'),
-        'PASSWORD': config('DB_PASSWORD', default=''),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='3306'),
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
+Supports MySQL (default) and SQLite for local development.
+To force SQLite locally, set USE_SQLITE=1 in a .env file or environment.
+
+Env vars (via python-decouple):
+- DB_ENGINE: 'mysql' or 'sqlite' (optional; if USE_SQLITE=1, sqlite wins)
+- USE_SQLITE: boolean, default True in DEBUG to ease local setup
+- DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT for MySQL
+"""
+
+def env_bool(name: str, default: bool = False) -> bool:
+    """Parse a boolean from environment variables robustly."""
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+DB_ENGINE = os.getenv('DB_ENGINE', 'mysql').strip().lower()
+USE_SQLITE = env_bool('USE_SQLITE', default=DEBUG)
+
+if USE_SQLITE or DB_ENGINE == 'sqlite':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-}
+else:
+    # MySQL configuration (production-like)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': config('DB_NAME', default='leave_management'),
+            'USER': config('DB_USER', default='root'),
+            'PASSWORD': config('DB_PASSWORD', default=''),
+            'HOST': config('DB_HOST', default='localhost'),
+            'PORT': config('DB_PORT', default='3306'),
+            'OPTIONS': {
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
+        }
+    }
 
 
 # Password validation
@@ -162,6 +193,10 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# In development, allow all origins to simplify local/network testing
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 # JWT Settings
 from datetime import timedelta

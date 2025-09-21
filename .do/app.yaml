@@ -1,4 +1,4 @@
-name: leave-management-system
+name: takeabreak-app
 region: nyc1
 
 services:
@@ -7,44 +7,66 @@ services:
     github:
       repo: g4Joey/Leave-Request-Management
       branch: main
-    run_command: python manage.py migrate --noinput && gunicorn leave_management.wsgi:application --bind 0.0.0.0:$PORT
+      deploy_on_push: true
+    
+    run_command: |
+      python manage.py collectstatic --noinput
+      python manage.py migrate --noinput
+      python manage.py setup_production_data
+      gunicorn --worker-tmp-dir /dev/shm --bind 0.0.0.0:$PORT leave_management.wsgi:application
+    
     environment_slug: python
     instance_count: 1
     instance_size_slug: basic-xxs
-    http_port: 8080
-    health_check:
-      http_path: /
+    
     routes:
       - path: /api
+      - path: /admin
+    
     envs:
       - key: DEBUG
         value: "False"
+        type: SECRET
       - key: DJANGO_SETTINGS_MODULE
         value: "leave_management.settings_production"
       - key: SECRET_KEY
-        type: SECRET
         value: "django-prod-2025-leave-mgmt-secure-key-a8f7b2e9c1d4f6h8j3k5m7n9p0q2r4t6u8v1w3x5y7z9"
-      - key: ALLOWED_HOSTS
-        value: "takeabreak-app-38abv.ondigitalocean.app,localhost,127.0.0.1"
-      - key: DATABASE_URL
         type: SECRET
-        value: "mysql://doadmin:PLACEHOLDER_PASSWORD@db-mysql-nyc3-43467-do-user-24806705-0.k.db.ondigitalocean.com:25060/defaultdb?ssl-mode=REQUIRED"
+      - key: ALLOWED_HOSTS
+        value: "takeabreak-app-38abv.ondigitalocean.app,127.0.0.1,localhost"
+      - key: DATABASE_URL
+        value: "${db.DATABASE_URL}"
+        type: SECRET
       - key: CORS_ALLOWED_ORIGINS
         value: "https://takeabreak-app-38abv.ondigitalocean.app"
+      - key: USE_SQLITE
+        value: "False"
 
-# Using external DigitalOcean database - no managed database needed
-
-static_sites:
   - name: frontend
     source_dir: /frontend
     github:
       repo: g4Joey/Leave-Request-Management
       branch: main
-    build_command: npm install && npm run build
-    output_dir: build
-    catchall_document: index.html
+      deploy_on_push: true
+    
+    build_command: |
+      npm ci
+      npm run build
+    
+    run_command: npx serve -s build -p $PORT
+    
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    
     routes:
       - path: /
+        catchall_document: index.html
+    
     envs:
       - key: REACT_APP_API_URL
         value: "https://takeabreak-app-38abv.ondigitalocean.app/api"
+      - key: NODE_ENV
+        value: "production"
+      - key: GENERATE_SOURCEMAP
+        value: "false"

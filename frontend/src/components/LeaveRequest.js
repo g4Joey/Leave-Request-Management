@@ -87,11 +87,15 @@ function LeaveRequest() {
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
             >
               <option value="">Select leave type</option>
-              {leaveTypes.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
+              {Array.isArray(leaveTypes) && leaveTypes.length > 0 ? (
+                leaveTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name}
+                  </option>
+                ))
+              ) : (
+                <option disabled>(No leave types found)</option>
+              )}
             </select>
           </div>
 

@@ -24,6 +24,8 @@ from . import views
 
 urlpatterns = [
     path('', views.health_check, name='health_check'),
+    path('api/health', views.api_health, name='api_health'),
+    path('api/health/db', views.api_health_db, name='api_health_db'),
     path('admin/', admin.site.urls),
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

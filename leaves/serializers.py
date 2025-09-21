@@ -10,7 +10,8 @@ User = get_user_model()
 class LeaveTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveType
-        fields = ['id', 'name', 'description', 'max_days_per_year', 'is_active']
+        # Use correct model fields
+        fields = ['id', 'name', 'description', 'max_days_per_request', 'requires_medical_certificate', 'is_active']
 
 
 class LeaveBalanceSerializer(serializers.ModelSerializer):

@@ -7,6 +7,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def api_health(request):
+    """Lightweight API health endpoint that does not touch the database."""
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'API is responding'
+    })
+
+def api_health_db(request):
+    """API health endpoint that verifies database connectivity explicitly."""
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            row = cursor.fetchone()
+        return JsonResponse({'status': 'ok', 'database': 'connected', 'result': row[0] if row else None})
+    except Exception as e:
+        logger.error(f"/api/health/db failed: {e}")
+        return JsonResponse({'status': 'error', 'database': 'disconnected', 'error': str(e)}, status=500)
+
 def health_check(request):
     """Simple health check endpoint for deployment monitoring."""
     try:

@@ -74,7 +74,7 @@ function ManagerDashboard() {
                           {getEmployeeName(request.employee)}
                         </p>
                         <p className="text-sm text-gray-900">
-                          {request.leave_type?.name || 'Leave Request'}
+                          {request.leave_type_name || 'Leave Request'}
                         </p>
                         <p className="text-sm text-gray-500">
                           {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}

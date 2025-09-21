@@ -1,6 +1,21 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+function resolveApiBaseUrl() {
+  // Prefer explicit env var when provided (build-time)
+  const fromEnv = process.env.REACT_APP_API_URL;
+  if (fromEnv) return fromEnv;
+
+  // Fallback: use current host (so it works over LAN/IP) but port 8000 for Django
+  try {
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:8000/api`;
+  } catch (e) {
+    // SSR or unexpected context: default to localhost
+    return 'http://localhost:8000/api';
+  }
+}
+
+const API_URL = resolveApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_URL,
