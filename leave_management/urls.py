@@ -30,6 +30,16 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/leaves/', include('leaves.urls')),
     path('api/users/', include('users.urls')),
+    # Fallback routes without the '/api' prefix. Some platforms may strip the path prefix
+    # when forwarding to the backend service. These mirror the API endpoints so requests
+    # will still resolve correctly.
+    path('health/', views.health_check, name='health_check_root'),
+    path('health', views.api_health, name='api_health_root'),
+    path('health/db', views.api_health_db, name='api_health_db_root'),
+    path('auth/token/', EmailOrUsernameTokenObtainPairView.as_view(), name='token_obtain_pair_root'),
+    path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh_root'),
+    path('leaves/', include('leaves.urls')),
+    path('users/', include('users.urls')),
 ]
 
 # Error handlers
