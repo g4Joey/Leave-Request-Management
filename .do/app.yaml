@@ -51,8 +51,7 @@ services:
     routes:
       - path: /api
       - path: /admin
-      - path: /health
-      - path: /static
+      # Backend should not claim / or /static; frontend serves those
     
     envs:
       - key: DEBUG
