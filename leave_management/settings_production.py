@@ -36,25 +36,30 @@ for h in ALLOWED_HOSTS:
 
 # Database Configuration for DigitalOcean
 if 'DATABASE_URL' in os.environ:
-    # Parse the DATABASE_URL for MySQL
-    db_url = os.environ.get('DATABASE_URL')
-    if db_url:
-        db_config = dj_database_url.parse(db_url, conn_max_age=600, conn_health_checks=True)
-        
-        # Ensure MySQL engine and options for DigitalOcean MySQL
-        db_config['ENGINE'] = 'django.db.backends.mysql'
-        db_config['OPTIONS'] = {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-            'charset': 'utf8mb4',
-            'ssl': {'ssl-mode': 'PREFERRED'},  # Changed from REQUIRED to PREFERRED for better compatibility
-            'connect_timeout': 60,
-            'read_timeout': 60,
-            'write_timeout': 60,
-        }
-        
-        DATABASES = {
-            'default': db_config
-        }
+    # Parse the DATABASE_URL for MySQL, but be robust to blanks/invalid values during build
+    raw = os.environ.get('DATABASE_URL', '')
+    db_url = (raw or '').strip()
+    if db_url and '://' in db_url:
+        try:
+            db_config = dj_database_url.parse(db_url, conn_max_age=600, conn_health_checks=True)
+
+            # Ensure MySQL engine and options for DigitalOcean MySQL
+            db_config['ENGINE'] = 'django.db.backends.mysql'
+            db_config['OPTIONS'] = {
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+                'charset': 'utf8mb4',
+                'ssl': {'ssl-mode': 'PREFERRED'},  # Changed from REQUIRED to PREFERRED for better compatibility
+                'connect_timeout': 60,
+                'read_timeout': 60,
+                'write_timeout': 60,
+            }
+
+            DATABASES = {
+                'default': db_config
+            }
+        except Exception:
+            # Fall through to alternative configs without breaking build
+            pass
 elif all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']):
     # Alternative: Use individual environment variables
     DATABASES = {
