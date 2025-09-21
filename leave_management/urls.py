@@ -16,10 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from rest_framework_simplejwt.views import TokenRefreshView
+from users.auth import EmailOrUsernameTokenObtainPairView
 from . import views
 from django.views.generic import RedirectView  # noqa: F401 (kept for potential future use)
 
@@ -28,7 +26,7 @@ urlpatterns = [
     path('api/health', views.api_health, name='api_health'),
     path('api/health/db', views.api_health_db, name='api_health_db'),
     path('admin/', admin.site.urls),
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/token/', EmailOrUsernameTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/leaves/', include('leaves.urls')),
     path('api/users/', include('users.urls')),
