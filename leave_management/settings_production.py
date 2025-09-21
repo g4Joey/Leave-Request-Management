@@ -34,7 +34,16 @@ for h in ALLOWED_HOSTS:
     host = h.lstrip('.')
     CSRF_TRUSTED_ORIGINS.append(f"https://{host}")
 
-# Database Configuration for DigitalOcean
+"""Database Configuration for DigitalOcean
+
+We try, in order:
+1) DATABASE_URL (if present and valid)
+2) Individual DB_* env vars
+3) Safe fallback to SQLite (to let collectstatic run during build)
+"""
+
+_db_configured = False
+
 if 'DATABASE_URL' in os.environ:
     # Parse the DATABASE_URL for MySQL, but be robust to blanks/invalid values during build
     raw = os.environ.get('DATABASE_URL', '')
@@ -57,10 +66,12 @@ if 'DATABASE_URL' in os.environ:
             DATABASES = {
                 'default': db_config
             }
+            _db_configured = True
         except Exception:
             # Fall through to alternative configs without breaking build
             pass
-elif all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']):
+
+if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']):
     # Alternative: Use individual environment variables
     DATABASES = {
         'default': {
@@ -76,7 +87,9 @@ elif all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS
             },
         }
     }
-else:
+    _db_configured = True
+
+if not _db_configured:
     # Safe fallback for build-time or missing DB config: use SQLite to allow collectstatic to run
     DATABASES = {
         'default': {
