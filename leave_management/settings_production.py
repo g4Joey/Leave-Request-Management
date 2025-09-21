@@ -33,7 +33,10 @@ if 'DATABASE_URL' in os.environ:
         db_config['OPTIONS'] = {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
-            'ssl': {'ssl-mode': 'REQUIRED'},
+            'ssl': {'ssl-mode': 'PREFERRED'},  # Changed from REQUIRED to PREFERRED for better compatibility
+            'connect_timeout': 60,
+            'read_timeout': 60,
+            'write_timeout': 60,
         }
         
         DATABASES = {
