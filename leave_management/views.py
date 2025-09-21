@@ -1,9 +1,11 @@
 """
 Views for the main leave_management project.
 """
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import logging
+import os
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -72,3 +74,13 @@ def not_found(request, exception, template_name='404.html'):
     # For non-API requests, you could render an HTML template
     from django.shortcuts import render
     return render(request, '404.html', status=404)
+
+def frontend_index(request):
+    """Serve the built React index.html if available (fallback for root)."""
+    index_path = os.path.join(settings.BASE_DIR, 'frontend', 'build', 'index.html')
+    try:
+        with open(index_path, 'rb') as f:
+            return HttpResponse(f.read(), content_type='text/html')
+    except FileNotFoundError:
+        logging.getLogger(__name__).error(f"Frontend build not found at {index_path}")
+        return JsonResponse({'error': 'frontend_build_missing'}, status=500)
