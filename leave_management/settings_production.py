@@ -79,6 +79,10 @@ else:
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# In production, serve Django static under a distinct prefix to avoid
+# clashing with the React app's '/static' assets served by the frontend service.
+STATIC_URL = '/django-static/'
+
 # WhiteNoise configuration
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 

@@ -21,11 +21,9 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from . import views
-from django.views.generic import RedirectView
+from django.views.generic import RedirectView  # noqa: F401 (kept for potential future use)
 
 urlpatterns = [
-    # If root hits Django by mistake, redirect to frontend's index.html
-    path('', RedirectView.as_view(url='/index.html', permanent=False)),
     path('api/health/', views.health_check, name='health_check'),
     path('api/health', views.api_health, name='api_health'),
     path('api/health/db', views.api_health_db, name='api_health_db'),

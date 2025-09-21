@@ -169,6 +169,11 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# If the React app is prebuilt and committed, include its static assets for collectstatic/WhiteNoise
+FRONTEND_STATIC_DIR = BASE_DIR / 'frontend' / 'build' / 'static'
+if FRONTEND_STATIC_DIR.exists():
+    STATICFILES_DIRS = [FRONTEND_STATIC_DIR]
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
