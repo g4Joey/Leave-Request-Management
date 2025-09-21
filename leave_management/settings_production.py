@@ -19,7 +19,20 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-default-secret-key-change-this')
 
 # ALLOWED HOSTS
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# - Accept from env, but be robust (strip spaces) and ensure DigitalOcean app host pattern is included
+raw_hosts = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,.ondigitalocean.app')
+ALLOWED_HOSTS = [h.strip() for h in raw_hosts.split(',') if h.strip()]
+if '.ondigitalocean.app' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('.ondigitalocean.app')  # allow any DO app subdomain
+
+# CSRF trusted origins derived from allowed hosts (scheme required)
+CSRF_TRUSTED_ORIGINS = []
+for h in ALLOWED_HOSTS:
+    if h in ('*', 'localhost', '127.0.0.1') or h.startswith('localhost') or h.startswith('127.0.0.1'):
+        continue
+    # For leading dot, add wildcard-compatible origin by stripping leading dot
+    host = h.lstrip('.')
+    CSRF_TRUSTED_ORIGINS.append(f"https://{host}")
 
 # Database Configuration for DigitalOcean
 if 'DATABASE_URL' in os.environ:
