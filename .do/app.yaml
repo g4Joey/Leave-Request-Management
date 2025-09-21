@@ -63,9 +63,6 @@ services:
         type: SECRET
       - key: ALLOWED_HOSTS
         value: "takeabreak-app-38abv.ondigitalocean.app,127.0.0.1,localhost"
-      - key: DATABASE_URL
-        value: "${db.DATABASE_URL}"
-        type: SECRET
       - key: CORS_ALLOWED_ORIGINS
         value: "https://takeabreak-app-38abv.ondigitalocean.app"
       - key: USE_SQLITE
