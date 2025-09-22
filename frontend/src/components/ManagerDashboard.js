@@ -4,7 +4,8 @@ import api from '../services/api';
 function ManagerDashboard() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState({});
+  // Track which action is loading per request id: 'approve' | 'reject' | undefined
+  const [loadingActionById, setLoadingActionById] = useState({});
 
   useEffect(() => {
     const fetchPendingRequests = async () => {
@@ -22,7 +23,7 @@ function ManagerDashboard() {
   }, []);
 
   const handleAction = async (requestId, action, comments = '') => {
-    setActionLoading({ ...actionLoading, [requestId]: true });
+    setLoadingActionById((prev) => ({ ...prev, [requestId]: action }));
 
     try {
       await api.put(`/leaves/manager/${requestId}/${action}/`, {
@@ -35,7 +36,7 @@ function ManagerDashboard() {
       console.error(`Error ${action}ing request:`, error);
       alert(`Failed to ${action} request`);
     } finally {
-      setActionLoading({ ...actionLoading, [requestId]: false });
+      setLoadingActionById((prev) => ({ ...prev, [requestId]: undefined }));
     }
   };
 
@@ -84,10 +85,10 @@ function ManagerDashboard() {
                       <div className="flex space-x-2">
                         <button
                           onClick={() => handleAction(request.id, 'approve')}
-                          disabled={actionLoading[request.id]}
+                          disabled={Boolean(loadingActionById[request.id])}
                           className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                         >
-                          {actionLoading[request.id] ? 'Processing...' : 'Approve'}
+                          {loadingActionById[request.id] === 'approve' ? 'Processing...' : 'Approve'}
                         </button>
                         <button
                           onClick={() => {
@@ -96,10 +97,10 @@ function ManagerDashboard() {
                               handleAction(request.id, 'reject', comments);
                             }
                           }}
-                          disabled={actionLoading[request.id]}
+                          disabled={Boolean(loadingActionById[request.id])}
                           className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
                         >
-                          {actionLoading[request.id] ? 'Processing...' : 'Reject'}
+                          {loadingActionById[request.id] === 'reject' ? 'Processing...' : 'Reject'}
                         </button>
                       </div>
                     </div>
