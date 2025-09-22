@@ -12,13 +12,31 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      // You could verify token validity here
-      setUser({ token }); // Simplified for now
-    }
-    setLoading(false);
+    const init = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        try {
+          const profileRes = await api.get('/users/profile/');
+          const profile = profileRes.data || {};
+          setUser({
+            token,
+            email: profile.email,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            role: profile.role,
+          });
+        } catch (e) {
+          // token might be invalid; clear it
+          localStorage.removeItem('token');
+          localStorage.removeItem('refresh_token');
+          delete api.defaults.headers.common['Authorization'];
+          setUser(null);
+        }
+      }
+      setLoading(false);
+    };
+    init();
   }, []);
 
   const login = async (email, password) => {
@@ -32,8 +50,20 @@ export function AuthProvider({ children }) {
       localStorage.setItem('token', access);
       localStorage.setItem('refresh_token', refresh);
       api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
-      
-      setUser({ token: access, email });
+      // Fetch profile after login to greet by name
+      try {
+        const profileRes = await api.get('/users/profile/');
+        const profile = profileRes.data || {};
+        setUser({
+          token: access,
+          email: profile.email || email,
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          role: profile.role,
+        });
+      } catch (e) {
+        setUser({ token: access, email });
+      }
       return { success: true };
     } catch (error) {
       return { 

@@ -121,6 +121,7 @@ venv.bak/
 # Local development files
 local_settings.py
 *.local
+local/
 
 # Secrets and keys
 secrets.*

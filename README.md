@@ -199,7 +199,58 @@ python manage.py create_test_data
 
 Note: These are intended for local/dev use. The login UI now hides demo credentials in production builds by default. To show them locally, set `REACT_APP_SHOW_DEMO_LOGINS=true` in your env before `npm start`.
 
-## 🔧 Development
+## � Seeding real users safely (no passwords in Git)
+
+Use the management command `setup_production_data` to create/update real users from environment variables or a local, gitignored file. Credentials are never committed.
+
+Options:
+- Set `SEED_USERS` env var to a JSON array during deploy/runtime
+- Or set `SEED_USERS_FILE` to a path of a JSON file on disk (e.g., mounted secret)
+- Local dev: put a JSON file at `local/seed_users.json` (this path is ignored by Git) and run the command
+
+Example JSON (do NOT commit real credentials):
+
+```json
+[
+   {
+      "username": "manager1",
+      "first_name": "Ato",
+      "last_name": "Lastname",
+      "email": "manager1@example.com",
+      "role": "manager",
+      "department": "IT",
+      "password": "<set-at-deploy>"
+   },
+   {
+      "username": "staff1",
+      "first_name": "Augustine",
+      "last_name": "Lastname",
+      "email": "staff1@example.com",
+      "role": "staff",
+      "department": "IT",
+      "password": "<set-at-deploy>"
+   },
+   {
+      "username": "staff2",
+      "first_name": "George",
+      "last_name": "Lastname",
+      "email": "staff2@example.com",
+      "role": "staff",
+      "department": "IT",
+      "password": "<set-at-deploy>"
+   }
+]
+```
+
+Run:
+
+```bash
+python manage.py setup_production_data
+```
+
+This command is idempotent and also ensures default leave types and balances for all active users.
+
+## �🔧 Development
 
 ### Running Tests
 ```bash

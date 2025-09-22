@@ -3,9 +3,11 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
 import os
+import json
 
 # Seed models
 from leaves.models import LeaveType, LeaveBalance
+from users.models import Department
 
 
 class Command(BaseCommand):
@@ -70,6 +72,121 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"Superuser '{su_username}' already exists; ensured permissions."))
         else:
             self.stdout.write("No DJANGO_SUPERUSER_* env vars set; skipping superuser creation.")
+
+        # Optionally seed departments and users from environment (idempotent and safe)
+        try:
+            self.stdout.write("Ensuring base Department records…")
+            # Ensure IT department exists for requests
+            it_dept, _ = Department.objects.get_or_create(name="IT", defaults={"description": "Information Technology"})
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"Error ensuring departments: {e}"))
+
+        # Load seed users from env var JSON, file path, or optional local file
+        seed_users_env = os.getenv("SEED_USERS")
+        seed_users_file = os.getenv("SEED_USERS_FILE")
+        local_seed_file = os.path.join(os.getcwd(), "local", "seed_users.json")
+
+        users_payload = None
+        if seed_users_env:
+            users_payload = seed_users_env
+        elif seed_users_file and os.path.exists(seed_users_file):
+            with open(seed_users_file, "r", encoding="utf-8") as f:
+                users_payload = f.read()
+        elif os.path.exists(local_seed_file):
+            with open(local_seed_file, "r", encoding="utf-8") as f:
+                users_payload = f.read()
+
+        if users_payload:
+            try:
+                users_to_seed = json.loads(users_payload)
+                if not isinstance(users_to_seed, list):
+                    raise ValueError("SEED_USERS must be a JSON array of user objects")
+
+                self.stdout.write(f"Seeding {len(users_to_seed)} user(s) from SEED_USERS…")
+                for idx, u in enumerate(users_to_seed, start=1):
+                    # Expected fields with fallbacks
+                    email = (u.get("email") or "").strip().lower()
+                    username = u.get("username") or email or f"user{idx:03d}"
+                    first_name = u.get("first_name") or ""
+                    last_name = u.get("last_name") or ""
+                    role = (u.get("role") or "staff").lower()
+                    dept_name = u.get("department") or "IT"
+                    password = u.get("password")
+                    employee_id = u.get("employee_id")
+
+                    # Ensure department
+                    department = None
+                    if dept_name:
+                        department, _ = Department.objects.get_or_create(name=dept_name)
+
+                    # Prepare defaults (ensure unique employee_id at creation to avoid duplicates)
+                    emp_id_default = employee_id or f"EMP{idx:03d}{(username or 'USER')[:8].upper()}"
+                    user_defaults = {
+                        "email": email,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "is_active": True,
+                        # CustomUser fields
+                        "employee_id": emp_id_default,
+                        "role": role,
+                        "department": department if department else None,
+                        # Permissions
+                        "is_staff": True if role in ["manager", "hr", "admin"] else False,
+                        "is_superuser": True if role == "admin" else False,
+                    }
+                    # Remove None values to avoid passing invalid defaults
+                    user_defaults = {k: v for k, v in user_defaults.items() if v is not None}
+                    user, created = User.objects.get_or_create(username=username, defaults=user_defaults)
+
+                    changed = False
+                    # Update simple fields
+                    for attr, val in user_defaults.items():
+                        if getattr(user, attr) != val and val is not None:
+                            setattr(user, attr, val)
+                            changed = True
+
+                    # Custom fields
+                    if getattr(user, "role", None) != role:
+                        try:
+                            setattr(user, "role", role)
+                        except Exception:
+                            pass
+                        changed = True
+                    if department and hasattr(user, "department"):
+                        try:
+                            setattr(user, "department", department)
+                        except Exception:
+                            pass
+                        changed = True
+                    if hasattr(user, "employee_id") and not getattr(user, "employee_id", None):
+                        # Generate a simple employee_id if not provided
+                        try:
+                            setattr(user, "employee_id", employee_id or f"EMP{idx:03d}")
+                        except Exception:
+                            pass
+                        changed = True
+
+                    # Staff flag for manager/admin
+                    if role in ["manager", "hr", "admin"] and not user.is_staff:
+                        user.is_staff = True
+                        changed = True
+                    if role == "admin" and not user.is_superuser:
+                        user.is_superuser = True
+                        changed = True
+
+                    if changed:
+                        user.save()
+
+                    # Set/Update password if provided
+                    if password:
+                        user.set_password(password)
+                        user.save(update_fields=["password"])
+
+                    self.stdout.write(self.style.SUCCESS(f"{'Created' if created else 'Updated'} user: {username} ({role}) in {dept_name}"))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"Error seeding users from SEED_USERS: {e}"))
+        else:
+            self.stdout.write("No SEED_USERS provided; skipping user seeding.")
 
         # Seed default Leave Types (idempotent)
         try:

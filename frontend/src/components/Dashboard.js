@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
 function Dashboard() {
+  const { user } = useAuth();
   const [balances, setBalances] = useState([]);
   const [recentRequests, setRecentRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ function Dashboard() {
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-            Welcome to  Merban Leave
+            {user?.first_name ? `Welcome ${user.first_name}` : 'Welcome to  Merban Leave'}
           </h3>
           <p className="text-sm text-gray-600">
             Track your leave balances, submit new requests, and view your leave history.
