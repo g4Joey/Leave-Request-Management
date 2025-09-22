@@ -68,8 +68,9 @@ class LeaveRequest(models.Model):
             if self.start_date > self.end_date:
                 raise ValidationError("Start date cannot be after end date")
             
-            if self.start_date < timezone.now().date():
-                raise ValidationError("Cannot request leave for past dates")
+            # Only enforce future-dated constraint while request is pending
+            if self.status == 'pending' and self.start_date < timezone.now().date():
+                raise ValidationError("Cannot request leave for past dates while pending")
     
     def save(self, *args, **kwargs):
         # Calculate total days if not provided
