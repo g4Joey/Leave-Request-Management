@@ -25,6 +25,7 @@ export function AuthProvider({ children }) {
             first_name: profile.first_name,
             last_name: profile.last_name,
             role: profile.role,
+            is_superuser: profile.is_superuser,
           });
         } catch (e) {
           // token might be invalid; clear it
@@ -60,6 +61,7 @@ export function AuthProvider({ children }) {
           first_name: profile.first_name,
           last_name: profile.last_name,
           role: profile.role,
+          is_superuser: profile.is_superuser,
         });
       } catch (e) {
         setUser({ token: access, email });

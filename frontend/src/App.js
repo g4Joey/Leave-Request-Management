@@ -13,6 +13,12 @@ function ProtectedRoute({ children }) {
   return user ? children : <Navigate to="/login" />;
 }
 
+function ManagerRoute({ children }) {
+  const { user } = useAuth();
+  const allowed = user && (user.role === 'manager' || user.is_superuser);
+  return allowed ? children : <Navigate to="/dashboard" />;
+}
+
 function App() {
   return (
     <AuthProvider>
@@ -32,7 +38,14 @@ function App() {
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/request" element={<LeaveRequest />} />
                         <Route path="/history" element={<LeaveHistory />} />
-                        <Route path="/manager" element={<ManagerDashboard />} />
+                        <Route
+                          path="/manager"
+                          element={
+                            <ManagerRoute>
+                              <ManagerDashboard />
+                            </ManagerRoute>
+                          }
+                        />
                       </Routes>
                     </main>
                   </div>
