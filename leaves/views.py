@@ -100,7 +100,18 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Set the employee to current user when creating - supports R1"""
-        serializer.save(employee=self.request.user)
+        leave_request = serializer.save(employee=self.request.user)
+        # Recalculate balance for authoritative state
+        try:
+            balance = LeaveBalance.objects.get(
+                employee=leave_request.employee,
+                leave_type=leave_request.leave_type,
+                year=leave_request.start_date.year
+            )
+            balance.update_balance()
+        except LeaveBalance.DoesNotExist:
+            # Safety net: if no balance exists, skip
+            pass
     
     @action(detail=False, methods=['get'])
     def pending(self, request):
@@ -268,15 +279,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 year=leave_request.start_date.year
             )
             
-            if action == 'approve':
-                # Move from pending to used
-                balance.pending_days -= leave_request.total_days
-                balance.used_days += leave_request.total_days
-            elif action == 'reject':
-                # Remove from pending
-                balance.pending_days -= leave_request.total_days
-            
-            balance.save()
+            # Recompute from source of truth to avoid negative values
+            balance.update_balance()
             
         except LeaveBalance.DoesNotExist:
             # Handle case where balance doesn't exist
