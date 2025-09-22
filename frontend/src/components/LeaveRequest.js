@@ -12,6 +12,9 @@ function LeaveRequest() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  // Helper: today's date in YYYY-MM-DD to avoid past-date submissions
+  const today = new Date().toISOString().split('T')[0];
+
   useEffect(() => {
     const fetchLeaveTypes = async () => {
       try {
@@ -40,10 +43,25 @@ function LeaveRequest() {
         reason: ''
       });
     } catch (error) {
-      setMessage({ 
-        type: 'error', 
-        text: error.response?.data?.detail || 'Failed to submit leave request'
-      });
+      // Surface useful validation messages from API
+      let text = 'Failed to submit leave request';
+      const data = error.response?.data;
+      if (data) {
+        if (typeof data.detail === 'string') {
+          text = data.detail;
+        } else if (typeof data === 'object') {
+          // Collect field errors (non_field_errors, start_date, end_date, leave_type, reason)
+          const parts = [];
+          Object.entries(data).forEach(([key, val]) => {
+            const messages = Array.isArray(val) ? val.join(' ') : String(val);
+            parts.push(`${key.replace(/_/g, ' ')}: ${messages}`);
+          });
+          if (parts.length) {
+            text = parts.join(' | ');
+          }
+        }
+      }
+      setMessage({ type: 'error', text });
     } finally {
       setLoading(false);
     }
@@ -110,6 +128,7 @@ function LeaveRequest() {
               value={formData.start_date}
               onChange={handleChange}
               required
+              min={today}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
             />
           </div>
@@ -125,6 +144,7 @@ function LeaveRequest() {
               value={formData.end_date}
               onChange={handleChange}
               required
+              min={formData.start_date || today}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
             />
           </div>
@@ -139,6 +159,7 @@ function LeaveRequest() {
               rows={3}
               value={formData.reason}
               onChange={handleChange}
+              required
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
               placeholder="Brief reason for leave request"
             />
