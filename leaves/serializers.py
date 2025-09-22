@@ -155,4 +155,9 @@ class LeaveApprovalSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # Set the approved_by to the current user
         validated_data['approved_by'] = self.context['request'].user
-        return super().update(instance, validated_data)
+        # Stamp the approval date/time when status changes
+        instance = super().update(instance, validated_data)
+        from django.utils import timezone
+        instance.approval_date = timezone.now()
+        instance.save(update_fields=['approval_date'])
+        return instance

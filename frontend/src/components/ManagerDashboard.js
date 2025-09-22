@@ -26,7 +26,7 @@ function ManagerDashboard() {
 
     try {
       await api.put(`/leaves/manager/${requestId}/${action}/`, {
-        manager_comments: comments
+        approval_comments: comments || ''
       });
       
       // Remove the request from the list
@@ -39,8 +39,8 @@ function ManagerDashboard() {
     }
   };
 
-  const getEmployeeName = (employee) => {
-    return employee?.email || 'Unknown Employee';
+  const getEmployeeName = (request) => {
+    return request?.employee_name || request?.employee_email || 'Unknown Employee';
   };
 
   if (loading) {
@@ -71,14 +71,14 @@ function ManagerDashboard() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-primary-600">
-                          {getEmployeeName(request.employee)}
+                          {getEmployeeName(request)}
                         </p>
                         <p className="text-sm text-gray-900">
                           {request.leave_type_name || 'Leave Request'}
                         </p>
                         <p className="text-sm text-gray-500">
                           {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
-                          <span className="ml-2">({request.working_days} working days)</span>
+                          <span className="ml-2">({request.total_days} working days)</span>
                         </p>
                       </div>
                       <div className="flex space-x-2">

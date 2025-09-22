@@ -183,7 +183,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         
         # For now, managers can see all requests
         # This can be enhanced with proper hierarchy later
-        if user.role in ['manager', 'hr']:
+        if getattr(user, 'is_superuser', False) or (hasattr(user, 'role') and user.role in ['manager', 'hr', 'admin']):
             return LeaveRequest.objects.all()
         else:
             # Regular employees can't access this endpoint
@@ -288,4 +288,5 @@ class IsManagerPermission(permissions.BasePermission):
     Custom permission to only allow managers to approve/reject leaves
     """
     def has_permission(self, request, view):
-        return hasattr(request.user, 'role') and request.user.role in ['manager', 'hr']
+        user = request.user
+        return getattr(user, 'is_superuser', False) or (hasattr(user, 'role') and user.role in ['manager', 'hr', 'admin'])
