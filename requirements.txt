@@ -34,6 +34,9 @@ gunicorn==22.0.0
 dj-database-url==2.1.0
 
 # PostgreSQL adapter for production
+# Note: On Windows dev machines without PostgreSQL client tools (pg_config), installing psycopg2-binary may fail.
+# Keep this pinned for production environments where a prebuilt wheel or pg_config is available.
+# If local installs fail on Windows, consider commenting this line out locally or using WSL.
 psycopg2-binary==2.9.9
 
 # WhiteNoise for static files in production

@@ -19,7 +19,8 @@ class Command(BaseCommand):
                 ('Client Service', 'Customer service and support'),
                 ('Pensions', 'Pension fund management'),
                 ('Government Securities', 'Government securities trading'),
-                ('Marketing and IT', 'Marketing, communications and Information Technology services'),
+                ('Marketing', 'Marketing and communications'),
+                ('IT', 'Information Technology services'),
             ]
             
             created_departments = {}
@@ -34,8 +35,23 @@ class Command(BaseCommand):
                 else:
                     self.stdout.write(f'Department already exists: {dept_name}')
             
-            # Get Marketing and IT department for George and Augustine
-            mit_dept = created_departments.get('Marketing and IT')
+            # If an old combined department exists, migrate/rename to IT
+            mit_dept = Department.objects.filter(name='Marketing and IT').first()
+            it_dept = created_departments.get('IT')
+            marketing_dept = created_departments.get('Marketing')
+
+            if mit_dept:
+                if not it_dept:
+                    # Rename the old combined department to IT
+                    mit_dept.name = 'IT'
+                    mit_dept.description = mit_dept.description or 'Information Technology services'
+                    mit_dept.save(update_fields=['name', 'description'])
+                    it_dept = mit_dept
+                    self.stdout.write('Renamed department "Marketing and IT" to "IT"')
+                else:
+                    # Move any users from the old combined department to IT
+                    moved = CustomUser.objects.filter(department=mit_dept).update(department=it_dept)
+                    self.stdout.write(f'Migrated {moved} user(s) from "Marketing and IT" to "IT"')
             
             # Check if Ato exists (approver for IT)
             ato = (
@@ -43,12 +59,12 @@ class Command(BaseCommand):
                 or CustomUser.objects.filter(first_name__icontains='Ato', role='manager').first()
             )
             if ato:
-                # Ensure department is set
-                if mit_dept and getattr(ato, 'department', None) != mit_dept:
-                    CustomUser.objects.filter(pk=ato.pk).update(department=mit_dept)
+                # Ensure department is set to IT
+                if it_dept and getattr(ato, 'department', None) != it_dept:
+                    CustomUser.objects.filter(pk=ato.pk).update(department=it_dept)
                 self.stdout.write(f'Found approver: {ato.get_full_name()}')
             else:
-                # Create Ato as a manager in Marketing and IT
+                # Create Ato as a manager in IT
                 ato = CustomUser.objects.create_user(
                     username='ato_manager',
                     email='ato@company.com',
@@ -56,7 +72,7 @@ class Command(BaseCommand):
                     last_name='Manager',
                     employee_id='EMP001',
                     role='manager',
-                    department=mit_dept
+                    department=it_dept
                 )
                 ato.set_password('password123')
                 ato.save()
@@ -69,15 +85,15 @@ class Command(BaseCommand):
             )
             if george:
                 updates = {}
-                if mit_dept:
-                    updates['department'] = mit_dept
+                if it_dept:
+                    updates['department'] = it_dept
                 if ato:
                     updates['manager'] = ato
                 if not getattr(george, 'role', None):
                     updates['role'] = 'staff'
                 if updates:
                     CustomUser.objects.filter(pk=george.pk).update(**updates)
-                self.stdout.write('Updated George: assigned to Marketing and IT with Ato as approver')
+                self.stdout.write('Updated George: assigned to IT with Ato as approver')
             else:
                 # Create George
                 george = CustomUser.objects.create_user(
@@ -87,12 +103,12 @@ class Command(BaseCommand):
                     last_name='Staff',
                     employee_id='EMP002',
                     role='staff',
-                    department=mit_dept,
+                    department=it_dept,
                     manager=ato
                 )
                 george.set_password('password123')
                 george.save()
-                self.stdout.write('Created George: assigned to Marketing and IT with Ato as approver')
+                self.stdout.write('Created George: assigned to IT with Ato as approver')
             
             # Check if Augustine exists and assign to IT with Ato as manager
             augustine = (
@@ -101,15 +117,15 @@ class Command(BaseCommand):
             )
             if augustine:
                 updates = {}
-                if mit_dept:
-                    updates['department'] = mit_dept
+                if it_dept:
+                    updates['department'] = it_dept
                 if ato:
                     updates['manager'] = ato
                 if not getattr(augustine, 'role', None):
                     updates['role'] = 'staff'
                 if updates:
                     CustomUser.objects.filter(pk=augustine.pk).update(**updates)
-                self.stdout.write('Updated Augustine: assigned to Marketing and IT with Ato as approver')
+                self.stdout.write('Updated Augustine: assigned to IT with Ato as approver')
             else:
                 # Create Augustine
                 augustine = CustomUser.objects.create_user(
@@ -119,12 +135,12 @@ class Command(BaseCommand):
                     last_name='Staff',
                     employee_id='EMP003',
                     role='staff',
-                    department=mit_dept,
+                    department=it_dept,
                     manager=ato
                 )
                 augustine.set_password('password123')
                 augustine.save()
-                self.stdout.write('Created Augustine: assigned to Marketing and IT with Ato as approver')
+                self.stdout.write('Created Augustine: assigned to IT with Ato as approver')
             
             # Create HR user if not exists
             hr_user = (
