@@ -7,6 +7,7 @@ import LeaveRequest from './components/LeaveRequest';
 import LeaveHistory from './components/LeaveHistory';
 import ManagerDashboard from './components/ManagerDashboard';
 import Navbar from './components/Navbar';
+import { ToastProvider } from './contexts/ToastContext';
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -22,8 +23,9 @@ function ManagerRoute({ children }) {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div className="min-h-screen bg-gray-50">
+      <ToastProvider>
+        <Router>
+          <div className="min-h-screen bg-gray-50">
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route
@@ -53,8 +55,9 @@ function App() {
               }
             />
           </Routes>
-        </div>
-      </Router>
+          </div>
+        </Router>
+      </ToastProvider>
     </AuthProvider>
   );
 }
