@@ -6,8 +6,16 @@ from users.models import Department, CustomUser
 class Command(BaseCommand):
     help = 'Create departments and assign staff with approvers'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--skip-hr',
+            action='store_true',
+            help='Skip creating HR user (useful for production environments)'
+        )
+
     def handle(self, *args, **options):
         self.stdout.write('Creating departments and staff assignments...')
+        skip_hr = options.get('skip_hr')
         
         with transaction.atomic():
             # Create departments
@@ -52,6 +60,13 @@ class Command(BaseCommand):
                     # Move any users from the old combined department to IT
                     moved = CustomUser.objects.filter(department=mit_dept).update(department=it_dept)
                     self.stdout.write(f'Migrated {moved} user(s) from "Marketing and IT" to "IT"')
+                    # Now delete the legacy combined department
+                    try:
+                        name = mit_dept.name
+                        mit_dept.delete()
+                        self.stdout.write(f'Deleted legacy department: {name}')
+                    except Exception as e:
+                        self.stdout.write(self.style.WARNING(f'Could not delete legacy department: {e}'))
             
             # Check if Ato exists (approver for IT)
             ato = (
@@ -142,26 +157,29 @@ class Command(BaseCommand):
                 augustine.save()
                 self.stdout.write('Created Augustine: assigned to IT with Ato as approver')
             
-            # Create HR user if not exists
-            hr_user = (
-                CustomUser.objects.filter(username='hr_admin').first()
-                or CustomUser.objects.filter(role='hr').first()
-            )
-            if hr_user:
-                self.stdout.write(f'HR user already exists: {hr_user.get_full_name()}')
+            # Create HR user if not exists (unless skipped)
+            if skip_hr:
+                self.stdout.write('Skipping HR user creation due to --skip-hr flag.')
             else:
-                hr_user = CustomUser.objects.create_user(
-                    username='hr_admin',
-                    email='hr@company.com',
-                    first_name='HR',
-                    last_name='Administrator',
-                    employee_id='HR001',
-                    role='hr',
-                    department=created_departments.get('Client Service')  # Assign HR to Client Service
+                hr_user = (
+                    CustomUser.objects.filter(username='hr_admin').first()
+                    or CustomUser.objects.filter(role='hr').first()
                 )
-                hr_user.set_password('password123')
-                hr_user.save()
-                self.stdout.write(f'Created HR user: {hr_user.get_full_name()}')
+                if hr_user:
+                    self.stdout.write(f'HR user already exists: {hr_user.get_full_name()}')
+                else:
+                    hr_user = CustomUser.objects.create_user(
+                        username='hr_admin',
+                        email='hr@company.com',
+                        first_name='HR',
+                        last_name='Administrator',
+                        employee_id='HR001',
+                        role='hr',
+                        department=created_departments.get('Client Service')  # Assign HR to Client Service
+                    )
+                    hr_user.set_password('password123')
+                    hr_user.save()
+                    self.stdout.write(f'Created HR user: {hr_user.get_full_name()}')
         
         self.stdout.write(
             self.style.SUCCESS('Successfully created departments and staff assignments!')
