@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import LeaveRequest from './components/LeaveRequest';
 import LeaveHistory from './components/LeaveHistory';
 import ManagerDashboard from './components/ManagerDashboard';
+import StaffManagement from './components/StaffManagement';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './contexts/ToastContext';
 
@@ -17,6 +18,12 @@ function ProtectedRoute({ children }) {
 function ManagerRoute({ children }) {
   const { user } = useAuth();
   const allowed = user && (user.role === 'manager' || user.is_superuser);
+  return allowed ? children : <Navigate to="/dashboard" />;
+}
+
+function HRRoute({ children }) {
+  const { user } = useAuth();
+  const allowed = user && (user.role === 'hr' || user.is_superuser);
   return allowed ? children : <Navigate to="/dashboard" />;
 }
 
@@ -46,6 +53,14 @@ function App() {
                             <ManagerRoute>
                               <ManagerDashboard />
                             </ManagerRoute>
+                          }
+                        />
+                        <Route
+                          path="/staff"
+                          element={
+                            <HRRoute>
+                              <StaffManagement />
+                            </HRRoute>
                           }
                         />
                       </Routes>
