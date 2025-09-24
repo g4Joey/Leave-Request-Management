@@ -44,3 +44,7 @@ whitenoise==6.6.0
 
 # Additional utilities
 pytz==2024.1
+
+# Image processing for Django ImageField (required)
+# Pin to a version compatible with Python 3.13
+Pillow==10.4.0
