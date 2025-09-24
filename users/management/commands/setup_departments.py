@@ -92,7 +92,9 @@ class Command(BaseCommand):
                     last_name='Manager',
                     employee_id='EMP001',
                     role='manager',
-                    department=it_dept
+                    department=it_dept,
+                    is_active=True,
+                    is_active_employee=True
                 )
                 ato.set_password('password123')
                 ato.save()
@@ -133,7 +135,9 @@ class Command(BaseCommand):
                     employee_id='EMP002',
                     role='staff',
                     department=it_dept,
-                    manager=ato
+                    manager=ato,
+                    is_active=True,
+                    is_active_employee=True
                 )
                 george.set_password('password123')
                 george.save()
@@ -168,7 +172,9 @@ class Command(BaseCommand):
                     employee_id='EMP003',
                     role='staff',
                     department=it_dept,
-                    manager=ato
+                    manager=ato,
+                    is_active=True,
+                    is_active_employee=True
                 )
                 augustine.set_password('password123')
                 augustine.save()
@@ -192,7 +198,9 @@ class Command(BaseCommand):
                         last_name='Administrator',
                         employee_id='HR001',
                         role='hr',
-                        department=created_departments.get('Client Service')  # Assign HR to Client Service
+                        department=created_departments.get('Client Service'),  # Assign HR to Client Service
+                        is_active=True,
+                        is_active_employee=True
                     )
                     hr_user.set_password('password123')
                     hr_user.save()

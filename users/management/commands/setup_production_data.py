@@ -16,6 +16,8 @@ class Command(BaseCommand):
             call_command('setup_leave_types')
             # Ensure default leave types are present (idempotent)
             call_command('setup_leave_types')
+            # Fix any user activation issues that might prevent login
+            call_command('fix_user_activation')
 
             # Do not override any existing user passwords in production
             # Only create an HR user if none exists AND explicit credentials are provided via env vars
