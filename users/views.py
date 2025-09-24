@@ -93,9 +93,13 @@ class StaffManagementView(APIView):
         departments = Department.objects.all()
         data = []
         
-        demo_usernames = {'ato_manager','george_staff','augustine_staff'}
+        import os
+        show_demo = os.environ.get('SHOW_DEMO_USERS') == '1'
         for dept in departments:
-            staff_members = CustomUser.objects.filter(department=dept, is_active_employee=True).exclude(username__in=demo_usernames)
+            staff_qs = CustomUser.objects.filter(department=dept, is_active_employee=True)
+            if not show_demo:
+                staff_qs = staff_qs.exclude(is_demo=True)
+            staff_members = staff_qs
             staff_data = []
             
             for staff in staff_members:

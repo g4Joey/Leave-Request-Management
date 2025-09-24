@@ -44,6 +44,9 @@ class CustomUser(AbstractUser):
     annual_leave_entitlement = models.PositiveIntegerField(default=25)  # days per year
     is_active_employee = models.BooleanField(default=True)
 
+    # Demo/test user marker to allow filtering without relying on username conventions
+    is_demo = models.BooleanField(default=False, help_text="Designates a seeded demo account that can be hidden in production views.")
+
     # Profile image
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     

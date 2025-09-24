@@ -103,7 +103,8 @@ class Command(BaseCommand):
                         last_name='Manager',
                         employee_id='EMP001',
                         role='manager',
-                        department=it_dept
+                        department=it_dept,
+                        is_demo=True
                     )
                     ato.set_password('password123')
                     ato.save()
@@ -145,7 +146,8 @@ class Command(BaseCommand):
                         employee_id='EMP002',
                         role='staff',
                         department=it_dept,
-                        manager=ato
+                        manager=ato,
+                        is_demo=True
                     )
                     george.set_password('password123')
                     george.save()
@@ -181,7 +183,8 @@ class Command(BaseCommand):
                         employee_id='EMP003',
                         role='staff',
                         department=it_dept,
-                        manager=ato
+                        manager=ato,
+                        is_demo=True
                     )
                     augustine.set_password('password123')
                     augustine.save()
