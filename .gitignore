@@ -141,6 +141,9 @@ logs/
 *.log
 django.log
 
+# Project documentation (ignore committed docs directory if not needed in repo)
+DOCUMENTATION/
+
 # Spyder project settings
 .spyderproject
 .spyproject
