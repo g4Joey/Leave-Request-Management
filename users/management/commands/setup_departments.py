@@ -12,16 +12,10 @@ class Command(BaseCommand):
             action='store_true',
             help='Skip creating HR user (useful for production environments)'
         )
-        parser.add_argument(
-            '--no-demo-users',
-            action='store_true',
-            help='Do not create demo users (manager/staff) and suppress demo credential output'
-        )
 
     def handle(self, *args, **options):
         self.stdout.write('Creating departments and staff assignments...')
         skip_hr = options.get('skip_hr')
-        no_demo_users = options.get('no_demo_users')
         
         with transaction.atomic():
             # Create departments
@@ -79,111 +73,106 @@ class Command(BaseCommand):
                     except Exception as e:
                         self.stdout.write(self.style.WARNING(f'Could not delete legacy department: {e}'))
             
-            # Optionally create demo users (manager and staff) unless disabled
-            ato = george = augustine = None
-            if no_demo_users:
-                self.stdout.write('Skipping demo user creation due to --no-demo-users flag.')
+            # Check if Ato exists (approver for IT)
+            ato = (
+                CustomUser.objects.filter(username='ato_manager').first()
+                or CustomUser.objects.filter(first_name__icontains='Ato', role='manager').first()
+            )
+            if ato:
+                # Ensure department is set to IT
+                if it_dept and getattr(ato, 'department', None) != it_dept:
+                    CustomUser.objects.filter(pk=ato.pk).update(department=it_dept)
+                self.stdout.write(f'Found approver: {ato.get_full_name()}')
             else:
-                # Check if Ato exists (approver for IT)
-                ato = (
-                    CustomUser.objects.filter(username='ato_manager').first()
-                    or CustomUser.objects.filter(first_name__icontains='Ato', role='manager').first()
+                # Create Ato as a manager in IT
+                ato = CustomUser.objects.create_user(
+                    username='ato_manager',
+                    email='ato@company.com',
+                    first_name='Ato',
+                    last_name='Manager',
+                    employee_id='EMP001',
+                    role='manager',
+                    department=it_dept
                 )
+                ato.set_password('password123')
+                ato.save()
+                self.stdout.write(f'Created approver: {ato.get_full_name()}')
+
+            # Normalize seeded last names so role labels aren't part of the name
+            for user in [u for u in [ato] if u]:
+                if user.last_name in ['Manager', 'Staff']:
+                    CustomUser.objects.filter(pk=user.pk).update(last_name='')
+                    self.stdout.write(f"Normalized name for {user.username}: removed role word from last_name")
+            
+            # Check if George exists and assign to IT with Ato as manager
+            george = (
+                CustomUser.objects.filter(username='george_staff').first()
+                or CustomUser.objects.filter(first_name__icontains='George').first()
+            )
+            if george:
+                updates = {}
+                if it_dept:
+                    updates['department'] = it_dept
                 if ato:
-                    # Ensure department is set to IT
-                    if it_dept and getattr(ato, 'department', None) != it_dept:
-                        CustomUser.objects.filter(pk=ato.pk).update(department=it_dept)
-                    self.stdout.write(f'Found approver: {ato.get_full_name()}')
-                else:
-                    # Create Ato as a manager in IT
-                    ato = CustomUser.objects.create_user(
-                        username='ato_manager',
-                        email='ato@company.com',
-                        first_name='Ato',
-                        last_name='Manager',
-                        employee_id='EMP001',
-                        role='manager',
-                        department=it_dept
-                    )
-                    ato.set_password('password123')
-                    ato.save()
-                    self.stdout.write(f'Created approver: {ato.get_full_name()}')
-
-                # Normalize seeded last names so role labels aren't part of the name
-                for user in [u for u in [ato] if u]:
-                    if user.last_name in ['Manager', 'Staff']:
-                        CustomUser.objects.filter(pk=user.pk).update(last_name='')
-                        self.stdout.write(f"Normalized name for {user.username}: removed role word from last_name")
-
-                # Check if George exists and assign to IT with Ato as manager
-                george = (
-                    CustomUser.objects.filter(username='george_staff').first()
-                    or CustomUser.objects.filter(first_name__icontains='George').first()
+                    updates['manager'] = ato
+                if not getattr(george, 'role', None):
+                    updates['role'] = 'staff'
+                if updates:
+                    CustomUser.objects.filter(pk=george.pk).update(**updates)
+                self.stdout.write('Updated George: assigned to IT with Ato as approver')
+                if george.last_name in ['Manager', 'Staff']:
+                    CustomUser.objects.filter(pk=george.pk).update(last_name='')
+                    self.stdout.write('Normalized name for George: removed role word from last_name')
+            else:
+                # Create George
+                george = CustomUser.objects.create_user(
+                    username='george_staff',
+                    email='george@company.com',
+                    first_name='George',
+                    last_name='',
+                    employee_id='EMP002',
+                    role='staff',
+                    department=it_dept,
+                    manager=ato
                 )
-                if george:
-                    updates = {}
-                    if it_dept:
-                        updates['department'] = it_dept
-                    if ato:
-                        updates['manager'] = ato
-                    if not getattr(george, 'role', None):
-                        updates['role'] = 'staff'
-                    if updates:
-                        CustomUser.objects.filter(pk=george.pk).update(**updates)
-                    self.stdout.write('Updated George: assigned to IT with Ato as approver')
-                    if george.last_name in ['Manager', 'Staff']:
-                        CustomUser.objects.filter(pk=george.pk).update(last_name='')
-                        self.stdout.write('Normalized name for George: removed role word from last_name')
-                else:
-                    # Create George
-                    george = CustomUser.objects.create_user(
-                        username='george_staff',
-                        email='george@company.com',
-                        first_name='George',
-                        last_name='',
-                        employee_id='EMP002',
-                        role='staff',
-                        department=it_dept,
-                        manager=ato
-                    )
-                    george.set_password('password123')
-                    george.save()
-                    self.stdout.write('Created George: assigned to IT with Ato as approver')
-
-                # Check if Augustine exists and assign to IT with Ato as manager
-                augustine = (
-                    CustomUser.objects.filter(username='augustine_staff').first()
-                    or CustomUser.objects.filter(first_name__icontains='Augustine').first()
+                george.set_password('password123')
+                george.save()
+                self.stdout.write('Created George: assigned to IT with Ato as approver')
+            
+            # Check if Augustine exists and assign to IT with Ato as manager
+            augustine = (
+                CustomUser.objects.filter(username='augustine_staff').first()
+                or CustomUser.objects.filter(first_name__icontains='Augustine').first()
+            )
+            if augustine:
+                updates = {}
+                if it_dept:
+                    updates['department'] = it_dept
+                if ato:
+                    updates['manager'] = ato
+                if not getattr(augustine, 'role', None):
+                    updates['role'] = 'staff'
+                if updates:
+                    CustomUser.objects.filter(pk=augustine.pk).update(**updates)
+                self.stdout.write('Updated Augustine: assigned to IT with Ato as approver')
+                if augustine.last_name in ['Manager', 'Staff']:
+                    CustomUser.objects.filter(pk=augustine.pk).update(last_name='')
+                    self.stdout.write('Normalized name for Augustine: removed role word from last_name')
+            else:
+                # Create Augustine
+                augustine = CustomUser.objects.create_user(
+                    username='augustine_staff',
+                    email='augustine@company.com',
+                    first_name='Augustine',
+                    last_name='',
+                    employee_id='EMP003',
+                    role='staff',
+                    department=it_dept,
+                    manager=ato
                 )
-                if augustine:
-                    updates = {}
-                    if it_dept:
-                        updates['department'] = it_dept
-                    if ato:
-                        updates['manager'] = ato
-                    if not getattr(augustine, 'role', None):
-                        updates['role'] = 'staff'
-                    if updates:
-                        CustomUser.objects.filter(pk=augustine.pk).update(**updates)
-                    self.stdout.write('Updated Augustine: assigned to IT with Ato as approver')
-                    if augustine.last_name in ['Manager', 'Staff']:
-                        CustomUser.objects.filter(pk=augustine.pk).update(last_name='')
-                        self.stdout.write('Normalized name for Augustine: removed role word from last_name')
-                else:
-                    # Create Augustine
-                    augustine = CustomUser.objects.create_user(
-                        username='augustine_staff',
-                        email='augustine@company.com',
-                        first_name='Augustine',
-                        last_name='',
-                        employee_id='EMP003',
-                        role='staff',
-                        department=it_dept,
-                        manager=ato
-                    )
-                    augustine.set_password('password123')
-                    augustine.save()
-                    self.stdout.write('Created Augustine: assigned to IT with Ato as approver')
+                augustine.set_password('password123')
+                augustine.save()
+                self.stdout.write('Created Augustine: assigned to IT with Ato as approver')
             
             # Create HR user if not exists (unless skipped)
             if skip_hr:
@@ -212,10 +201,8 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS('Successfully created departments and staff assignments!')
         )
-        # Only print demo credentials when demo users are created (never in production runs)
-        if not no_demo_users:
-            self.stdout.write('\nLogin credentials created:')
-            self.stdout.write('HR Admin: username="hr_admin", password="password123"')
-            self.stdout.write('Ato (Manager): username="ato_manager", password="password123"')
-            self.stdout.write('George (Staff): username="george_staff", password="password123"')
-            self.stdout.write('Augustine (Staff): username="augustine_staff", password="password123"')
+        self.stdout.write('\nLogin credentials created:')
+        self.stdout.write('HR Admin: username="hr_admin", password="password123"')
+        self.stdout.write('Ato (Manager): username="ato_manager", password="password123"')
+        self.stdout.write('George (Staff): username="george_staff", password="password123"')
+        self.stdout.write('Augustine (Staff): username="augustine_staff", password="password123"')
