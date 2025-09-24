@@ -107,7 +107,7 @@ function Dashboard() {
                           {request.leave_type_name || 'Leave Request'}
                         </p>
                         <p className="text-sm text-gray-500">
-                          {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
+                          {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} • {request.total_days} day{request.total_days === 1 ? '' : 's'}
                         </p>
                         {request.reason && (
                           <p className="text-xs text-gray-400 mt-1">

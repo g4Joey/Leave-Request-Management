@@ -33,7 +33,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     employee_email = serializers.CharField(source='employee.email', read_only=True)
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.get_full_name', read_only=True)
-    total_days = serializers.SerializerMethodField()
+    total_days = serializers.IntegerField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
@@ -48,10 +48,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         read_only_fields = ['employee', 'status', 'approved_by', 'approval_comments', 
                            'created_at', 'updated_at']
     
-    def get_total_days(self, obj):
-        if obj.start_date and obj.end_date:
-            return (obj.end_date - obj.start_date).days + 1
-        return 0
+    # total_days is computed in model.save() (working days). Expose as read-only.
     
     def validate(self, attrs):
         """
@@ -124,7 +121,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list views"""
     employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
-    total_days = serializers.SerializerMethodField()
+    total_days = serializers.IntegerField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
@@ -134,10 +131,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
             'end_date', 'total_days', 'status', 'status_display', 'created_at'
         ]
     
-    def get_total_days(self, obj):
-        if obj.start_date and obj.end_date:
-            return (obj.end_date - obj.start_date).days + 1
-        return 0
+    # total_days is computed in model.save() (working days). Expose as read-only.
 
 
 class LeaveApprovalSerializer(serializers.ModelSerializer):
