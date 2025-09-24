@@ -8,6 +8,12 @@ function StaffManagement() {
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
 
+  // Remove trailing role words accidentally saved in last names (e.g., "Ato Manager")
+  const cleanName = (name) => {
+    if (!name || typeof name !== 'string') return name;
+    return name.replace(/\s+(Manager|Staff|HR|Admin)$/i, '').trim();
+  };
+
   const fetchStaffData = useCallback(async () => {
     try {
       const response = await api.get('/users/staff/');
@@ -117,7 +123,7 @@ function StaffManagement() {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
-                                <h5 className="text-sm font-semibold text-gray-900">{staff.name}</h5>
+                                <h5 className="text-sm font-semibold text-gray-900">{cleanName(staff.name)}</h5>
                                 {getRoleBadge(staff.role)}
                               </div>
                               <div className="mt-2 space-y-1">
@@ -136,7 +142,7 @@ function StaffManagement() {
                                 {staff.manager && (
                                   <p className="text-sm text-gray-600">
                                     <span className="font-medium">Approver:</span>{' '}
-                                    {staff.manager.name} ({staff.manager.employee_id})
+                                    {cleanName(staff.manager.name)} ({staff.manager.employee_id})
                                   </p>
                                 )}
                               </div>
