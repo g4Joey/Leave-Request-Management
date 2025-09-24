@@ -43,6 +43,9 @@ class CustomUser(AbstractUser):
     hire_date = models.DateField(null=True, blank=True)
     annual_leave_entitlement = models.PositiveIntegerField(default=25)  # days per year
     is_active_employee = models.BooleanField(default=True)
+
+    # Profile image
+    profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

@@ -12,6 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     # Expose superuser flag for frontend role-based UI (read-only)
     is_superuser = serializers.BooleanField(read_only=True)
+    profile_image = serializers.ImageField(required=False, allow_null=True)
     
     class Meta:
         model = User
@@ -19,7 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'first_name', 'last_name',
             'employee_id', 'role', 'department', 'department_id',
             'phone', 'hire_date', 'annual_leave_entitlement',
-            'is_active_employee', 'date_joined', 'password',
+            'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser'
         ]
         extra_kwargs = {
