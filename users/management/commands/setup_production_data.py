@@ -139,6 +139,68 @@ class Command(BaseCommand):
             else:
                 self.stdout.write('No SEED_USERS env var detected; skipping bulk user seeding.')
 
+            # Superuser provisioning (idempotent)
+            # Support canonical env var names and legacy/mistyped variants for resilience.
+            def _env_any(*keys):
+                for k in keys:
+                    v = os.environ.get(k)
+                    if v:
+                        return v
+                return None
+
+            su_username = _env_any('DJANGO_SUPERUSER_USERNAME', 'DJANGO_SUPER_USER_USERNAME', 'DJANGO_SUPER_USER')
+            su_email = _env_any('DJANGO_SUPERUSER_EMAIL', 'DJANGO_SUPER_USER_EMAIL') or su_username
+            su_password = _env_any('DJANGO_SUPERUSER_PASSWORD', 'DJANGO_SUPER_USER_PASSWORD')
+            su_emp_id = _env_any('DJANGO_SUPERUSER_EMPLOYEE_ID', 'DJANGO_SUPER_USER_EMPLOYEE_ID') or 'ADMIN001'
+
+            if os.environ.get('LOG_SUPERUSER_ENV') == '1':
+                redacted = (lambda s: (s[:4] + '***' + s[-2:]) if s and len(s) > 8 else '***')
+                self.stdout.write('[diagnostic] Superuser env resolution:')
+                self.stdout.write(f"  username keys => {su_username}")
+                self.stdout.write(f"  email => {su_email}")
+                self.stdout.write(f"  employee_id => {su_emp_id}")
+                self.stdout.write(f"  password present => {'yes' if su_password else 'no'}")
+            if su_username:
+                su = CustomUser.objects.filter(username=su_username).first()
+                if su:
+                    # Only set password if explicitly provided and user has unusable password
+                    if su_password:
+                        # Detect hashed password (very naive): django hashes contain at least 3 '$'
+                        if su_password.count('$') >= 3 or su_password.startswith('pbkdf2_'):
+                            self.stdout.write(f"Superuser '{su_username}' exists; supplied password appears hashed; not altering (to avoid double-hash).")
+                        else:
+                            self.stdout.write(f"Superuser '{su_username}' exists; not resetting password (safety). Use set_user_password command if needed.")
+                    else:
+                        self.stdout.write(f"Superuser '{su_username}' already present.")
+                else:
+                    # Create new superuser (handle hashed vs plain password)
+                    from django.utils.crypto import get_random_string
+                    is_hashed = bool(su_password and (su_password.count('$') >= 3 or su_password.startswith('pbkdf2_')))
+                    # Create base superuser with placeholder password if hashed provided
+                    placeholder = get_random_string(32)
+                    user = CustomUser(
+                        username=su_username,
+                        email=su_email,
+                        employee_id=su_emp_id,
+                        role='admin',
+                        is_staff=True,
+                        is_superuser=True,
+                    )
+                    if su_password and not is_hashed:
+                        user.set_password(su_password)
+                    else:
+                        user.set_password(placeholder)
+                    user.save()
+                    if is_hashed and su_password:
+                        # Directly assign hashed password (already validated as hashed format)
+                        user.password = su_password  # type: ignore[assignment]
+                        user.save(update_fields=['password'])
+                        self.stdout.write(self.style.SUCCESS(f"Created superuser '{su_username}' with provided hashed password."))
+                    else:
+                        self.stdout.write(self.style.SUCCESS(f"Created superuser '{su_username}'."))
+            else:
+                self.stdout.write('No DJANGO_SUPERUSER_USERNAME provided; skipping superuser provisioning.')
+
             self.stdout.write(self.style.SUCCESS('Production data setup completed.'))
         except Exception as e:
             self.stderr.write(self.style.ERROR(f'Production data setup failed: {e}'))
