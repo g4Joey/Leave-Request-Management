@@ -12,10 +12,9 @@ function Dashboard() {
     const fetchData = async () => {
       try {
         const [balancesRes, requestsRes] = await Promise.all([
-          api.get('/leaves/balances/'),
+          api.get('/leaves/balances/current_year_full/'),
           api.get('/leaves/requests/?limit=5')
         ]);
-        
         setBalances(balancesRes.data.results || balancesRes.data);
         setRecentRequests(requestsRes.data.results || requestsRes.data);
       } catch (error) {

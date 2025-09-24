@@ -160,6 +160,37 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(balances, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def current_year_full(self, request):
+        """
+        Get current user's leave benefits for the current year, including all active leave types.
+        Returns zeros for types without an existing balance. Useful for dashboard display.
+        """
+        user = request.user
+        current_year = timezone.now().year
+        types = list(LeaveType.objects.filter(is_active=True))
+        balances = LeaveBalance.objects.filter(employee=user, year=current_year)
+        by_lt = {getattr(b, 'leave_type_id'): b for b in balances}
+        items = []
+        for lt in types:
+            b = by_lt.get(getattr(lt, 'id'))
+            entitled = b.entitled_days if b else 0
+            used = b.used_days if b else 0
+            pending = b.pending_days if b else 0
+            remaining = max(0, entitled - used - pending)
+            items.append({
+                'leave_type': {
+                    'id': getattr(lt, 'id'),
+                    'name': lt.name,
+                },
+                'entitled_days': entitled,
+                'used_days': used,
+                'pending_days': pending,
+                'remaining_days': remaining,
+                'year': current_year,
+            })
+        return Response(items)
+
     @action(detail=False, methods=['get'], url_path=r'employee/(?P<employee_id>[^/.]+)/current_year')
     def employee_current_year(self, request, employee_id: str):
         """
