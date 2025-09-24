@@ -12,6 +12,10 @@ class Command(BaseCommand):
         try:
             # Ensure base departments and relationships, but never create default HR with local password
             call_command('setup_departments', skip_hr=True)
+            # Ensure default leave types exist for HR configuration
+            call_command('setup_leave_types')
+            # Ensure default leave types are present (idempotent)
+            call_command('setup_leave_types')
 
             # Do not override any existing user passwords in production
             # Only create an HR user if none exists AND explicit credentials are provided via env vars

@@ -20,6 +20,7 @@ function StaffManagement() {
   const [employees, setEmployees] = useState([]);
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
+  const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
 
   // Remove trailing role words accidentally saved in last names (e.g., "Ato Manager")
   const cleanName = (name) => {
@@ -181,6 +182,37 @@ function StaffManagement() {
     }
   };
 
+  const openLeaveTypeModal = async (lt) => {
+    try {
+      setLeaveTypeModal({ open: true, name: lt.name, id: lt.id, value: '', loading: false });
+      // Prefill using backend summary
+      const res = await api.get(`/leaves/types/${lt.id}/entitlement_summary/`);
+      const v = res.data?.common_entitled_days ?? '';
+      setLeaveTypeModal((prev) => ({ ...prev, value: String(v) }));
+    } catch (e) {
+      // If summary fails, just leave blank
+    }
+  };
+
+  const saveLeaveTypeEntitlement = async () => {
+    const { id, value } = leaveTypeModal;
+    const days = parseInt(value, 10);
+    if (isNaN(days) || days < 0) {
+      showToast({ type: 'warning', message: 'Please enter a valid non-negative number of days.' });
+      return;
+    }
+    try {
+      setLeaveTypeModal((prev) => ({ ...prev, loading: true }));
+      const res = await api.post(`/leaves/types/${id}/set_entitlement/`, { entitled_days: days });
+      showToast({ type: 'success', message: `Saved: ${res.data.entitled_days} days for ${res.data.leave_type}` });
+      setLeaveTypeModal({ open: false, name: '', id: null, value: '', loading: false });
+    } catch (error) {
+      const msg = error.response?.data?.detail || error.response?.data?.error || 'Failed to save entitlement';
+      showToast({ type: 'error', message: msg });
+      setLeaveTypeModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -224,18 +256,22 @@ function StaffManagement() {
           <div className="mb-4 flex items-center justify-between">
             <h1 className="text-2xl font-semibold">Staff</h1>
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setActive('departments')}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
-              >
-                New department
-              </button>
-              <button
-                onClick={() => setActive('employees')}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
-              >
-                New employee
-              </button>
+              {active === 'departments' && (
+                <button
+                  onClick={() => {/* open create-department flow (future) */}}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                >
+                  New department
+                </button>
+              )}
+              {active === 'employees' && (
+                <button
+                  onClick={() => {/* open create-employee flow (future) */}}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                >
+                  New employee
+                </button>
+              )}
             </div>
           </div>
 
@@ -393,14 +429,7 @@ function StaffManagement() {
             {active === 'leave-types' && (
               <section>
                 <h2 className="text-lg font-medium mb-4">Leave Types</h2>
-                <ul className="space-y-2">
-                  {['Annual', 'Sick', 'Maternity', 'Paternity', 'Compassionate', 'Casual'].map((t) => (
-                    <li key={t} className="px-3 py-2 bg-gray-50 rounded-md flex justify-between items-center">
-                      <span>{t}</span>
-                      <div className="text-sm text-gray-500">configure</div>
-                    </li>
-                  ))}
-                </ul>
+                <LeaveTypesList onConfigure={openLeaveTypeModal} />
               </section>
             )}
 
@@ -462,8 +491,84 @@ function StaffManagement() {
           ))}
         </div>
       </div>
+      {leaveTypeModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-2">Configure {leaveTypeModal.name}</h3>
+            <p className="text-sm text-gray-600 mb-4">Set default annual entitlement for this leave type. This will apply to all active employees.</p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Entitled days</label>
+            <input
+              type="number"
+              min="0"
+              value={leaveTypeModal.value}
+              onChange={(e) => setLeaveTypeModal((prev) => ({ ...prev, value: e.target.value }))}
+              className="w-full border rounded-md px-3 py-2 mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setLeaveTypeModal({ open: false, name: '', id: null, value: '', loading: false })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={leaveTypeModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveLeaveTypeEntitlement}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700"
+                disabled={leaveTypeModal.loading}
+              >
+                {leaveTypeModal.loading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default StaffManagement;
+
+function LeaveTypesList({ onConfigure }) {
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [types, setTypes] = useState([]);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get('/leaves/types/');
+      setTypes(res.data.results || res.data || []);
+    } catch (e) {
+      showToast({ type: 'error', message: 'Failed to load leave types' });
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) return <div className="text-sm text-gray-500">Loading leave types...</div>;
+
+  if (!types.length) return <div className="text-sm text-gray-500">No leave types found.</div>;
+
+  return (
+    <ul className="space-y-2">
+      {types.map((t) => (
+        <li key={t.id} className="px-3 py-2 bg-gray-50 rounded-md flex justify-between items-center">
+          <div>
+            <div className="font-medium">{t.name}</div>
+            {t.description && <div className="text-xs text-gray-500">{t.description}</div>}
+          </div>
+          <button
+            onClick={() => onConfigure(t)}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+          >
+            Configure
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}

@@ -1,12 +1,14 @@
 from django.shortcuts import render
+from typing import Any
 
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, Count
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 from .models import LeaveRequest, LeaveType, LeaveBalance
 from .serializers import (
@@ -20,11 +22,109 @@ from .serializers import (
 
 class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for leave types - read only for employees
+    ViewSet for leave types - read only for employees.
+    HR-only actions provided for configuring global entitlements per leave type.
     """
     queryset = LeaveType.objects.filter(is_active=True)
     serializer_class = LeaveTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def _is_hr(self, request) -> bool:
+        user = request.user
+        # Narrow user type to CustomUser when possible to satisfy static analysis
+        try:
+            from users.models import CustomUser  # local import to avoid circulars at import time
+            if isinstance(user, CustomUser):
+                return user.is_superuser or user.role in ['hr', 'admin']
+        except Exception:
+            pass
+        # Fallback to permissive attribute checks
+        return getattr(user, 'is_superuser', False) or (
+            hasattr(user, 'role') and getattr(user, 'role') in ['hr', 'admin']
+        )
+
+    @action(detail=True, methods=['get'])
+    def entitlement_summary(self, request, pk=None):
+        """
+        HR-only: Get a quick summary of current-year entitlements for this leave type.
+        Returns the most common entitlement_days (mode) to prefill UI.
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can access this resource'}, status=status.HTTP_403_FORBIDDEN)
+
+        leave_type = self.get_object()
+        current_year = timezone.now().year
+        qs = LeaveBalance.objects.filter(leave_type=leave_type, year=current_year)
+        total = qs.count()
+        mode_row = qs.values('entitled_days').annotate(cnt=Count('id')).order_by('-cnt').first()
+        common_entitled_days = mode_row['entitled_days'] if mode_row else 0
+        return Response({
+            'leave_type': leave_type.name,
+            'year': current_year,
+            'total_balances': total,
+            'common_entitled_days': common_entitled_days,
+        })
+
+    @action(detail=True, methods=['post'])
+    def set_entitlement(self, request, pk=None):
+        """
+        HR-only: Set the entitled_days for all active employees for this leave type and current year.
+        Creates missing LeaveBalance rows when necessary. Does not modify used/pending; remaining updates derive automatically.
+        Body: { "entitled_days": <int> }
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            entitled_days = int(request.data.get('entitled_days'))
+        except (TypeError, ValueError):
+            return Response({'error': 'entitled_days must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if entitled_days < 0:
+            return Response({'error': 'entitled_days must be non-negative'}, status=status.HTTP_400_BAD_REQUEST)
+
+        leave_type = self.get_object()
+        current_year = timezone.now().year
+        User = get_user_model()
+        # Update active employees only (both Django active and domain-specific active)
+        employees = User.objects.filter(is_active=True, is_active_employee=True)
+
+        updated = 0
+        created = 0
+        balances = LeaveBalance.objects.filter(leave_type=leave_type, year=current_year)
+
+        # Update existing balances
+        for b in balances:
+            if b.entitled_days != entitled_days:
+                b.entitled_days = entitled_days
+                b.save(update_fields=['entitled_days', 'updated_at'])
+                updated += 1
+
+        # Create missing balances for active employees
+        existing_user_ids = set(b.employee_id for b in balances)
+        to_create = []
+        for emp in employees:
+            if emp.id not in existing_user_ids:
+                to_create.append(LeaveBalance(
+                    employee=emp,
+                    leave_type=leave_type,
+                    year=current_year,
+                    entitled_days=entitled_days,
+                    used_days=0,
+                    pending_days=0,
+                ))
+        if to_create:
+            LeaveBalance.objects.bulk_create(to_create)
+            created = len(to_create)
+
+        return Response({
+            'message': 'Entitlements updated',
+            'leave_type': leave_type.name,
+            'year': current_year,
+            'updated': updated,
+            'created': created,
+            'entitled_days': entitled_days,
+        })
 
 
 class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -36,7 +136,7 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['year', 'leave_type']
     
-    def get_queryset(self):
+    def get_queryset(self):  # type: ignore[override]
         """Return balances for the current user only"""
         return LeaveBalance.objects.filter(employee=self.request.user)
     
@@ -86,11 +186,11 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'start_date', 'end_date']
     ordering = ['-created_at']
     
-    def get_queryset(self):
+    def get_queryset(self):  # type: ignore[override]
         """Return leave requests for the current user"""
         return LeaveRequest.objects.filter(employee=self.request.user)
     
-    def get_serializer_class(self):
+    def get_serializer_class(self):  # type: ignore[override]
         """Return appropriate serializer based on action"""
         if self.action == 'list':
             return LeaveRequestListSerializer
@@ -188,13 +288,25 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ['created_at', 'start_date', 'end_date']
     ordering = ['-created_at']
     
-    def get_queryset(self):
+    def get_queryset(self):  # type: ignore[override]
         """Return leave requests that this manager can approve"""
         user = self.request.user
         
         # For now, managers can see all requests
         # This can be enhanced with proper hierarchy later
-        if getattr(user, 'is_superuser', False) or (hasattr(user, 'role') and user.role in ['manager', 'hr', 'admin']):
+        try:
+            from users.models import CustomUser
+            if isinstance(user, CustomUser):
+                if user.is_superuser or user.role in ['manager', 'hr', 'admin']:
+                    return LeaveRequest.objects.all()
+                else:
+                    return LeaveRequest.objects.none()
+        except Exception:
+            pass
+
+        if getattr(user, 'is_superuser', False) or (
+            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'admin']
+        ):
             return LeaveRequest.objects.all()
         else:
             # Regular employees can't access this endpoint
@@ -291,6 +403,14 @@ class IsManagerPermission(permissions.BasePermission):
     """
     Custom permission to only allow managers to approve/reject leaves
     """
-    def has_permission(self, request, view):
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
         user = request.user
-        return getattr(user, 'is_superuser', False) or (hasattr(user, 'role') and user.role in ['manager', 'hr', 'admin'])
+        try:
+            from users.models import CustomUser
+            if isinstance(user, CustomUser):
+                return user.is_superuser or user.role in ['manager', 'hr', 'admin']
+        except Exception:
+            pass
+        return getattr(user, 'is_superuser', False) or (
+            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'admin']
+        )
