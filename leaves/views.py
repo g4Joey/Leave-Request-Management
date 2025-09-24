@@ -139,6 +139,18 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):  # type: ignore[override]
         """Return balances for the current user only"""
         return LeaveBalance.objects.filter(employee=self.request.user)
+
+    def _is_hr(self, request) -> bool:
+        user = request.user
+        try:
+            from users.models import CustomUser
+            if isinstance(user, CustomUser):
+                return user.is_superuser or user.role in ['hr', 'admin']
+        except Exception:
+            pass
+        return getattr(user, 'is_superuser', False) or (
+            hasattr(user, 'role') and getattr(user, 'role') in ['hr', 'admin']
+        )
     
     @action(detail=False, methods=['get'])
     def current_year(self, request):
@@ -147,6 +159,104 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         balances = self.get_queryset().filter(year=current_year)
         serializer = self.get_serializer(balances, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path=r'employee/(?P<employee_id>[^/.]+)/current_year')
+    def employee_current_year(self, request, employee_id: str):
+        """
+        HR-only: Get leave benefits for a specific employee for the current year,
+        covering all active leave types (returns 0 for types without an existing balance).
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can access this resource'}, status=status.HTTP_403_FORBIDDEN)
+
+        User = get_user_model()
+        try:
+            employee = User.objects.get(pk=employee_id, is_active=True)
+        except User.DoesNotExist:
+            return Response({'detail': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        current_year = timezone.now().year
+        types = list(LeaveType.objects.filter(is_active=True))
+        balances = LeaveBalance.objects.filter(employee=employee, year=current_year)
+        # Use getattr to appease static analyzers about dynamic ORM fields
+        by_lt = {getattr(b, 'leave_type_id'): b for b in balances}
+        items = []
+        for lt in types:
+            b = by_lt.get(getattr(lt, 'id'))
+            items.append({
+                'leave_type': {
+                    'id': getattr(lt, 'id'),
+                    'name': lt.name,
+                    'description': lt.description,
+                },
+                'entitled_days': b.entitled_days if b else 0,
+            })
+        return Response({'employee_id': getattr(employee, 'id'), 'year': current_year, 'items': items})
+
+    @action(detail=False, methods=['post'], url_path=r'employee/(?P<employee_id>[^/.]+)/set_entitlements')
+    def set_employee_entitlements(self, request, employee_id: str):
+        """
+        HR-only: Set per-employee entitlements for the current year.
+        Body: { "items": [ { "leave_type": <id>, "entitled_days": <int> }, ... ] }
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
+
+        payload = request.data or {}
+        items = payload.get('items')
+        if not isinstance(items, list):
+            return Response({'error': 'items must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        User = get_user_model()
+        try:
+            employee = User.objects.get(pk=employee_id, is_active=True)
+        except User.DoesNotExist:
+            return Response({'detail': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        current_year = timezone.now().year
+        updated = 0
+        created = 0
+        errors = []
+
+        for idx, it in enumerate(items):
+            try:
+                lt_id = int(it.get('leave_type'))
+                days = int(it.get('entitled_days'))
+            except Exception:
+                errors.append({'index': idx, 'error': 'leave_type and entitled_days must be integers'})
+                continue
+            if days < 0:
+                errors.append({'index': idx, 'error': 'entitled_days must be non-negative'})
+                continue
+
+            try:
+                lt = LeaveType.objects.get(pk=lt_id, is_active=True)
+            except LeaveType.DoesNotExist:
+                errors.append({'index': idx, 'error': f'LeaveType {lt_id} not found or inactive'})
+                continue
+
+            b, was_created = LeaveBalance.objects.get_or_create(
+                employee=employee,
+                leave_type=lt,
+                year=current_year,
+                defaults={'entitled_days': days}
+            )
+            if was_created:
+                created += 1
+            else:
+                if b.entitled_days != days:
+                    b.entitled_days = days
+                    b.save(update_fields=['entitled_days', 'updated_at'])
+                    updated += 1
+
+        return Response({
+            'message': 'Entitlements updated',
+            'employee_id': getattr(employee, 'id'),
+            'year': current_year,
+            'updated': updated,
+            'created': created,
+            'errors': errors,
+        })
     
     @action(detail=False, methods=['get'])
     def summary(self, request):

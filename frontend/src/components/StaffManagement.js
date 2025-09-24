@@ -21,6 +21,8 @@ function StaffManagement() {
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
+  const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null });
+  const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
 
   // Remove trailing role words accidentally saved in last names (e.g., "Ato Manager")
   const cleanName = (name) => {
@@ -99,6 +101,64 @@ function StaffManagement() {
         e.employee_id?.toLowerCase().includes(q)
     );
   }, [employeeQuery, employees]);
+
+  const openProfile = async (emp) => {
+    try {
+      setProfileModal({ open: true, loading: true, employee: emp, data: null });
+      // Get full user profile (HR is allowed to read arbitrary users via existing list/retrieve guards)
+      const res = await api.get(`/users/${emp.id}/`);
+      setProfileModal({ open: true, loading: false, employee: emp, data: res.data });
+    } catch (e) {
+      setProfileModal({ open: false, loading: false, employee: null, data: null });
+      const msg = e.response?.data?.detail || 'Failed to load profile';
+      showToast({ type: 'error', message: msg });
+    }
+  };
+
+  const openBenefits = async (emp) => {
+    try {
+      setBenefitsModal({ open: true, loading: true, employee: emp, rows: [] });
+      const res = await api.get(`/leaves/balances/employee/${emp.id}/current_year/`);
+      const items = res.data?.items || [];
+      const rows = items.map((it) => ({
+        leave_type: it.leave_type.id,
+        leave_type_name: it.leave_type.name,
+        entitled_days: String(it.entitled_days ?? 0),
+      }));
+      setBenefitsModal({ open: true, loading: false, employee: emp, rows });
+    } catch (e) {
+      setBenefitsModal({ open: false, loading: false, employee: null, rows: [] });
+      const msg = e.response?.data?.detail || 'Failed to load benefits';
+      showToast({ type: 'error', message: msg });
+    }
+  };
+
+  const saveBenefits = async () => {
+    const { employee, rows } = benefitsModal;
+    // Validate
+    const payload = {
+      items: rows.map((r) => ({ leave_type: r.leave_type, entitled_days: parseInt(r.entitled_days, 10) || 0 })),
+    };
+    if (payload.items.some((i) => i.entitled_days < 0)) {
+      showToast({ type: 'warning', message: 'Entitled days must be non-negative' });
+      return;
+    }
+    try {
+      setBenefitsModal((prev) => ({ ...prev, loading: true }));
+      const res = await api.post(`/leaves/balances/employee/${employee.id}/set_entitlements/`, payload);
+      const errs = res.data?.errors || [];
+      if (errs.length) {
+        showToast({ type: 'warning', message: `Saved with ${errs.length} warnings` });
+      } else {
+        showToast({ type: 'success', message: 'Benefits saved' });
+      }
+      setBenefitsModal({ open: false, loading: false, employee: null, rows: [] });
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to save benefits';
+      showToast({ type: 'error', message: msg });
+      setBenefitsModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
 
   const handleImportFile = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -405,13 +465,13 @@ function StaffManagement() {
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap gap-2">
                               <button
-                                onClick={() => showToast({ type: 'info', message: `Open profile for ${emp.name}` })}
+                                onClick={() => openProfile(emp)}
                                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
                               >
                                 Profile
                               </button>
                               <button
-                                onClick={() => showToast({ type: 'info', message: `Set leave benefits for ${emp.name}` })}
+                                onClick={() => openBenefits(emp)}
                                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
                               >
                                 Set benefits
@@ -519,6 +579,67 @@ function StaffManagement() {
               >
                 {leaveTypeModal.loading ? 'Saving...' : 'Save'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {profileModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold mb-2">Profile: {profileModal.employee?.name}</h3>
+            {profileModal.loading ? (
+              <div className="text-sm text-gray-500">Loading...</div>
+            ) : (
+              <div className="space-y-2 text-sm">
+                <div><span className="font-medium">Employee ID:</span> {profileModal.data?.employee_id}</div>
+                <div><span className="font-medium">Email:</span> {profileModal.data?.email}</div>
+                <div><span className="font-medium">Role:</span> {profileModal.data?.role}</div>
+                <div><span className="font-medium">Department:</span> {profileModal.data?.department_name || profileModal.data?.department}</div>
+                {profileModal.data?.hire_date && (
+                  <div><span className="font-medium">Hire Date:</span> {new Date(profileModal.data.hire_date).toLocaleDateString()}</div>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setProfileModal({ open: false, loading: false, employee: null, data: null })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {benefitsModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold mb-2">Set benefits: {benefitsModal.employee?.name}</h3>
+            {benefitsModal.loading ? (
+              <div className="text-sm text-gray-500">Loading...</div>
+            ) : (
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {benefitsModal.rows.map((r, idx) => (
+                  <div key={r.leave_type} className="flex items-center gap-3">
+                    <div className="w-40 text-sm">{r.leave_type_name}</div>
+                    <input
+                      type="number"
+                      min="0"
+                      className="border rounded-md px-2 py-1 w-28"
+                      value={r.entitled_days}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setBenefitsModal((prev) => {
+                          const next = prev.rows.slice();
+                          next[idx] = { ...next[idx], entitled_days: v };
+                          return { ...prev, rows: next };
+                        });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200" disabled={benefitsModal.loading}>Cancel</button>
+              <button onClick={saveBenefits} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700" disabled={benefitsModal.loading}>{benefitsModal.loading ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
         </div>
