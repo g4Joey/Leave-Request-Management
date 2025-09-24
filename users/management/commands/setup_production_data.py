@@ -11,7 +11,7 @@ class Command(BaseCommand):
         self.stdout.write('Running production data setup...')
         try:
             # Ensure base departments and relationships, but never create default HR with local password
-            call_command('setup_departments', skip_hr=True)
+            call_command('setup_departments', skip_hr=True, no_demo_users=True)
             # Ensure default leave types exist for HR configuration
             call_command('setup_leave_types')
             # Ensure default leave types are present (idempotent)
