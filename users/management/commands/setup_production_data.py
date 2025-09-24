@@ -1,6 +1,5 @@
 import os
 import json
-from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.core.management import call_command
 from users.models import CustomUser, Department
@@ -55,76 +54,90 @@ class Command(BaseCommand):
                         )
                     )
 
-            # Seed additional users from SEED_USERS or SEED_USERS_FILE (idempotent, no password overwrite)
-            raw_seed = os.environ.get('SEED_USERS')
-            seed_file_path = os.environ.get('SEED_USERS_FILE')
-            users_payload = []
-            if seed_file_path and Path(seed_file_path).is_file():
+            # Optional bulk user seeding via SEED_USERS environment variable (JSON array)
+            seed_users_raw = os.environ.get('SEED_USERS')
+            if seed_users_raw:
                 try:
-                    users_payload = json.loads(Path(seed_file_path).read_text(encoding='utf-8'))
-                    self.stdout.write(f"Loaded SEED_USERS from file: {seed_file_path}")
+                    users_data = json.loads(seed_users_raw)
+                    if not isinstance(users_data, list):
+                        raise ValueError('SEED_USERS must be a JSON array')
                 except Exception as e:
-                    self.stdout.write(self.style.WARNING(f"Failed to load SEED_USERS_FILE '{seed_file_path}': {e}"))
-            elif raw_seed:
-                try:
-                    users_payload = json.loads(raw_seed)
-                    self.stdout.write("Loaded SEED_USERS from environment variable.")
-                except Exception as e:
-                    self.stdout.write(self.style.WARNING(f"Invalid SEED_USERS JSON in env: {e}"))
+                    self.stdout.write(self.style.ERROR(f'Invalid SEED_USERS JSON: {e}'))
+                    users_data = []
 
-            if users_payload and not isinstance(users_payload, list):
-                self.stdout.write(self.style.WARNING('SEED_USERS payload is not a list; skipping user seeding.'))
-                users_payload = []
+                # Preload departments map
+                dept_map = {d.name: d for d in Department.objects.all()}
+                created_count = 0
+                updated_count = 0
+                for u in users_data:
+                    if not isinstance(u, dict):
+                        continue
+                    username = u.get('username')
+                    if not username:
+                        continue
+                    role = u.get('role', 'staff')
+                    first_name = u.get('first_name', '')
+                    last_name = u.get('last_name', '')
+                    employee_id = u.get('employee_id') or f'AUTO_{username}'.upper()
+                    email = u.get('email') or f'{username}@example.com'
+                    dept_name = u.get('department')
+                    manager_username = u.get('manager')
+                    password = u.get('password')  # only set on create; never override existing
 
-            created_count = 0
-            updated_count = 0
-            for entry in users_payload:
-                if not isinstance(entry, dict):
-                    continue
-                username = entry.get('username')
-                password = entry.get('password')  # Only used on create
-                if not username:
-                    continue
-                defaults = {
-                    'email': entry.get('email') or f"{username}@example.com",
-                    'first_name': entry.get('first_name') or '',
-                    'last_name': entry.get('last_name') or '',
-                    'employee_id': entry.get('employee_id') or '',
-                    'role': entry.get('role') or 'staff',
-                }
-                # Map department by name if provided
-                dept_name = entry.get('department')
-                if dept_name:
-                    dept = Department.objects.filter(name=dept_name).first()
-                    if dept:
-                        defaults['department'] = dept
-                # Manager assignment by username (if provided)
-                manager_username = entry.get('manager')
-                if manager_username:
-                    manager = CustomUser.objects.filter(username=manager_username).first()
-                    if manager:
-                        defaults['manager'] = manager
-                user, created = CustomUser.objects.get_or_create(username=username, defaults=defaults)
-                if created:
-                    if password:
-                        user.set_password(password)
-                    user.save()
-                    created_count += 1
-                    self.stdout.write(self.style.SUCCESS(f"Seeded user: {username}"))
-                else:
-                    # Update mutable profile fields but never override password
-                    update_fields = {}
-                    for k, v in defaults.items():
-                        if v and getattr(user, k, None) != v:
-                            setattr(user, k, v)
-                            update_fields[k] = v
-                    if update_fields:
-                        user.save(update_fields=list(update_fields.keys()))
-                        updated_count += 1
-            if users_payload:
-                self.stdout.write(self.style.SUCCESS(f"User seeding complete: created={created_count}, updated={updated_count}"))
+                    dept_obj = None
+                    if dept_name:
+                        dept_obj = dept_map.get(dept_name)
+                        if not dept_obj:
+                            dept_obj, _c = Department.objects.get_or_create(name=dept_name, defaults={'description': ''})
+                            dept_map[dept_name] = dept_obj
+
+                    manager_obj = None
+                    if manager_username:
+                        manager_obj = CustomUser.objects.filter(username=manager_username).first()
+
+                    user, created = CustomUser.objects.get_or_create(
+                        username=username,
+                        defaults={
+                            'role': role,
+                            'first_name': first_name,
+                            'last_name': last_name,
+                            'employee_id': employee_id,
+                            'email': email,
+                            'department': dept_obj,
+                            'manager': manager_obj,
+                        }
+                    )
+                    if created:
+                        if password:
+                            user.set_password(password)
+                        else:
+                            # Generate a non-guessable unusable password if not provided
+                            user.set_unusable_password()
+                        user.save()
+                        created_count += 1
+                        self.stdout.write(self.style.SUCCESS(f"Seeded new user '{username}' (role={role})."))
+                    else:
+                        # Update non-sensitive fields only
+                        updates = {}
+                        fields = [
+                            ('role', role),
+                            ('first_name', first_name),
+                            ('last_name', last_name),
+                            ('department', dept_obj),
+                            ('manager', manager_obj),
+                            ('email', email),
+                        ]
+                        for field_name, val in fields:
+                            if getattr(user, field_name) != val and val is not None:
+                                updates[field_name] = val
+                        if updates:
+                            CustomUser.objects.filter(pk=user.pk).update(**updates)
+                            updated_count += 1
+                            self.stdout.write(f"Updated user '{username}' fields: {', '.join(updates.keys())}")
+                if users_data:
+                    self.stdout.write(self.style.SUCCESS(f'SEED_USERS processing complete: {created_count} created, {updated_count} updated.'))
             else:
-                self.stdout.write('No SEED_USERS payload provided or valid; skipping additional user seeding.')
+                self.stdout.write('No SEED_USERS env var detected; skipping bulk user seeding.')
 
             self.stdout.write(self.style.SUCCESS('Production data setup completed.'))
         except Exception as e:
