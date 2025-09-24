@@ -70,11 +70,12 @@ function StaffManagement() {
 
       <div className="border-t border-gray-200">
         {departments.length > 0 ? (
-          departments.map((dept) => (
-            <div key={dept.id} className="border-b border-gray-200 last:border-b-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 px-4 pb-6">
+          {departments.map((dept) => (
+            <div key={dept.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
               <button
                 onClick={() => toggleDepartment(dept.id)}
-                className="w-full px-4 py-4 sm:px-6 text-left hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors"
+                className="w-full px-4 py-4 text-left hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center justify-between">
                   <div>
@@ -105,7 +106,7 @@ function StaffManagement() {
               </button>
 
               {expandedDepts[dept.id] && (
-                <div className="px-4 pb-4 sm:px-6">
+                <div className="px-4 pb-4">
                   {dept.staff.length > 0 ? (
                     <div className="space-y-3">
                       {dept.staff.map((staff) => (
@@ -116,9 +117,7 @@ function StaffManagement() {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
-                                <h5 className="text-sm font-semibold text-gray-900">
-                                  {staff.name}
-                                </h5>
+                                <h5 className="text-sm font-semibold text-gray-900">{staff.name}</h5>
                                 {getRoleBadge(staff.role)}
                               </div>
                               <div className="mt-2 space-y-1">
@@ -154,7 +153,8 @@ function StaffManagement() {
                 </div>
               )}
             </div>
-          ))
+          ))}
+          </div>
         ) : (
           <div className="px-4 py-8 text-center text-gray-500">
             No departments found.

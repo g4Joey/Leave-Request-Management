@@ -23,7 +23,8 @@ class Command(BaseCommand):
                 ('Accounts & Compliance', 'Financial accounts and regulatory compliance'),
                 ('IHL', 'Investment and Holdings Limited'),
                 ('Stockbrokers', 'Stock brokerage services'),
-                ('SDSL', 'Securities Dealing Services Limited'),
+                # SDSL is Strategic Debts Solution Limited
+                ('SDSL', 'Strategic Debts Solution Limited'),
                 ('Client Service', 'Customer service and support'),
                 ('Pensions', 'Pension fund management'),
                 ('Government Securities', 'Government securities trading'),
@@ -42,6 +43,10 @@ class Command(BaseCommand):
                     self.stdout.write(f'Created department: {dept_name}')
                 else:
                     self.stdout.write(f'Department already exists: {dept_name}')
+                # Keep department description up-to-date (idempotent)
+                if dept.description != dept_desc:
+                    Department.objects.filter(pk=dept.pk).update(description=dept_desc)
+                    self.stdout.write(f'Updated description for department: {dept_name}')
             
             # If an old combined department exists, migrate/rename to IT
             mit_dept = Department.objects.filter(name='Marketing and IT').first()
@@ -92,6 +97,12 @@ class Command(BaseCommand):
                 ato.set_password('password123')
                 ato.save()
                 self.stdout.write(f'Created approver: {ato.get_full_name()}')
+
+            # Normalize seeded last names so role labels aren't part of the name
+            for user in [u for u in [ato] if u]:
+                if user.last_name in ['Manager', 'Staff']:
+                    CustomUser.objects.filter(pk=user.pk).update(last_name='')
+                    self.stdout.write(f"Normalized name for {user.username}: removed role word from last_name")
             
             # Check if George exists and assign to IT with Ato as manager
             george = (
@@ -109,13 +120,16 @@ class Command(BaseCommand):
                 if updates:
                     CustomUser.objects.filter(pk=george.pk).update(**updates)
                 self.stdout.write('Updated George: assigned to IT with Ato as approver')
+                if george.last_name in ['Manager', 'Staff']:
+                    CustomUser.objects.filter(pk=george.pk).update(last_name='')
+                    self.stdout.write('Normalized name for George: removed role word from last_name')
             else:
                 # Create George
                 george = CustomUser.objects.create_user(
                     username='george_staff',
                     email='george@company.com',
                     first_name='George',
-                    last_name='Staff',
+                    last_name='',
                     employee_id='EMP002',
                     role='staff',
                     department=it_dept,
@@ -141,13 +155,16 @@ class Command(BaseCommand):
                 if updates:
                     CustomUser.objects.filter(pk=augustine.pk).update(**updates)
                 self.stdout.write('Updated Augustine: assigned to IT with Ato as approver')
+                if augustine.last_name in ['Manager', 'Staff']:
+                    CustomUser.objects.filter(pk=augustine.pk).update(last_name='')
+                    self.stdout.write('Normalized name for Augustine: removed role word from last_name')
             else:
                 # Create Augustine
                 augustine = CustomUser.objects.create_user(
                     username='augustine_staff',
                     email='augustine@company.com',
                     first_name='Augustine',
-                    last_name='Staff',
+                    last_name='',
                     employee_id='EMP003',
                     role='staff',
                     department=it_dept,
