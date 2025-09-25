@@ -44,8 +44,8 @@ class LeaveRequest(models.Model):
     end_date = models.DateField()
     total_days = models.PositiveIntegerField()
     
-    # Request information
-    reason = models.TextField()
+    # Request information (reason now optional for staff)
+    reason = models.TextField(blank=True, null=True, help_text="Optional reason provided by employee")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     
     # Approval workflow

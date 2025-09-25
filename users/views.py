@@ -130,3 +130,46 @@ class StaffManagementView(APIView):
             })
         
         return Response(data)
+    
+    def post(self, request):
+        """Create a new employee (HR only)"""
+        user = request.user
+        role = getattr(user, 'role', None)
+        if not (getattr(user, 'is_superuser', False) or (role in ['hr', 'admin'])):
+            return Response(
+                {"error": "Only HR can create employees"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DepartmentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing departments (HR only)
+    """
+    queryset = Department.objects.all()
+    serializer_class = DepartmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_permissions(self):
+        """Only HR can create, update, or delete departments"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated, IsHRPermission]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+
+class IsHRPermission(permissions.BasePermission):
+    """
+    Custom permission to only allow HR users to perform certain actions
+    """
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
+        user = request.user
+        role = getattr(user, 'role', None)
+        return bool(getattr(user, 'is_superuser', False) or (role in ['hr', 'admin']))

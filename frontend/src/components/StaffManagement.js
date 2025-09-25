@@ -23,6 +23,20 @@ function StaffManagement() {
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null });
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
+  const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
+  const [newEmployeeModal, setNewEmployeeModal] = useState({ 
+    open: false, 
+    loading: false, 
+    username: '', 
+    email: '', 
+    first_name: '', 
+    last_name: '', 
+    employee_id: '', 
+    role: 'staff', 
+    department_id: '', 
+    password: '',
+    hire_date: ''
+  });
 
   // Remove trailing role words accidentally saved in last names (e.g., "Ato Manager")
   const cleanName = (name) => {
@@ -157,6 +171,105 @@ function StaffManagement() {
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to save benefits';
       showToast({ type: 'error', message: msg });
       setBenefitsModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const openNewDepartmentModal = () => {
+    setNewDepartmentModal({ open: true, loading: false, name: '', description: '' });
+  };
+
+  const createDepartment = async () => {
+    const { name, description } = newDepartmentModal;
+    if (!name.trim()) {
+      showToast({ type: 'warning', message: 'Department name is required' });
+      return;
+    }
+    
+    try {
+      setNewDepartmentModal((prev) => ({ ...prev, loading: true }));
+      await api.post('/users/departments/', { name: name.trim(), description: description.trim() });
+      showToast({ type: 'success', message: `Department "${name}" created successfully` });
+      setNewDepartmentModal({ open: false, loading: false, name: '', description: '' });
+      fetchStaffData(); // Refresh the data
+    } catch (error) {
+      const msg = error.response?.data?.name?.[0] || error.response?.data?.detail || 'Failed to create department';
+      showToast({ type: 'error', message: msg });
+      setNewDepartmentModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const openNewEmployeeModal = () => {
+    setNewEmployeeModal({
+      open: true, 
+      loading: false, 
+      username: '', 
+      email: '', 
+      first_name: '', 
+      last_name: '', 
+      employee_id: '', 
+      role: 'staff', 
+      department_id: '', 
+      password: '',
+      hire_date: ''
+    });
+  };
+
+  const createEmployee = async () => {
+    const { username, email, first_name, last_name, employee_id, role, department_id, password, hire_date } = newEmployeeModal;
+    
+    if (!username.trim() || !email.trim() || !first_name.trim() || !employee_id.trim()) {
+      showToast({ type: 'warning', message: 'Username, email, first name, and employee ID are required' });
+      return;
+    }
+    
+    try {
+      setNewEmployeeModal((prev) => ({ ...prev, loading: true }));
+      const data = {
+        username: username.trim(),
+        email: email.trim(),
+        first_name: first_name.trim(),
+        last_name: last_name.trim(),
+        employee_id: employee_id.trim(),
+        role,
+        is_active_employee: true
+      };
+      
+      if (department_id) {
+        data.department_id = parseInt(department_id, 10);
+      }
+      
+      if (password.trim()) {
+        data.password = password.trim();
+      }
+      
+      if (hire_date) {
+        data.hire_date = hire_date;
+      }
+      
+      await api.post('/users/staff/', data);
+      showToast({ type: 'success', message: `Employee "${first_name} ${last_name}" created successfully` });
+      setNewEmployeeModal({
+        open: false, 
+        loading: false, 
+        username: '', 
+        email: '', 
+        first_name: '', 
+        last_name: '', 
+        employee_id: '', 
+        role: 'staff', 
+        department_id: '', 
+        password: '',
+        hire_date: ''
+      });
+      fetchStaffData(); // Refresh the data
+    } catch (error) {
+      const msg = error.response?.data?.username?.[0] || 
+                  error.response?.data?.email?.[0] || 
+                  error.response?.data?.employee_id?.[0] ||
+                  error.response?.data?.detail || 
+                  'Failed to create employee';
+      showToast({ type: 'error', message: msg });
+      setNewEmployeeModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -318,7 +431,7 @@ function StaffManagement() {
             <div className="flex items-center gap-3">
               {active === 'departments' && (
                 <button
-                  onClick={() => {/* open create-department flow (future) */}}
+                  onClick={openNewDepartmentModal}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
                 >
                   New department
@@ -326,7 +439,7 @@ function StaffManagement() {
               )}
               {active === 'employees' && (
                 <button
-                  onClick={() => {/* open create-employee flow (future) */}}
+                  onClick={openNewEmployeeModal}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
                 >
                   New employee
@@ -640,6 +753,206 @@ function StaffManagement() {
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200" disabled={benefitsModal.loading}>Cancel</button>
               <button onClick={saveBenefits} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700" disabled={benefitsModal.loading}>{benefitsModal.loading ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Department Modal */}
+      {newDepartmentModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-4">Create New Department</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
+                <input
+                  type="text"
+                  value={newDepartmentModal.name}
+                  onChange={(e) => setNewDepartmentModal((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  placeholder="e.g. Engineering"
+                  disabled={newDepartmentModal.loading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newDepartmentModal.description}
+                  onChange={(e) => setNewDepartmentModal((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  rows="3"
+                  placeholder="Optional description"
+                  disabled={newDepartmentModal.loading}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setNewDepartmentModal({ open: false, loading: false, name: '', description: '' })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={newDepartmentModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createDepartment}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700"
+                disabled={newDepartmentModal.loading}
+              >
+                {newDepartmentModal.loading ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Employee Modal */}
+      {newEmployeeModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold mb-4">Create New Employee</h3>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                  <input
+                    type="text"
+                    value={newEmployeeModal.username}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, username: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="john.doe"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
+                  <input
+                    type="text"
+                    value={newEmployeeModal.employee_id}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, employee_id: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="EMP001"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={newEmployeeModal.email}
+                  onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, email: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  placeholder="john.doe@company.com"
+                  disabled={newEmployeeModal.loading}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                  <input
+                    type="text"
+                    value={newEmployeeModal.first_name}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, first_name: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="John"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    value={newEmployeeModal.last_name}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, last_name: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="Doe"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <select
+                    value={newEmployeeModal.role}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, role: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    disabled={newEmployeeModal.loading}
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="manager">Manager</option>
+                    <option value="hr">HR</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <select
+                    value={newEmployeeModal.department_id}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, department_id: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    disabled={newEmployeeModal.loading}
+                  >
+                    <option value="">Select Department</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>{dept.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={newEmployeeModal.password}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, password: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="Leave empty for auto-generated"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+                  <input
+                    type="date"
+                    value={newEmployeeModal.hire_date}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, hire_date: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setNewEmployeeModal({
+                  open: false, 
+                  loading: false, 
+                  username: '', 
+                  email: '', 
+                  first_name: '', 
+                  last_name: '', 
+                  employee_id: '', 
+                  role: 'staff', 
+                  department_id: '', 
+                  password: '',
+                  hire_date: ''
+                })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={newEmployeeModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createEmployee}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700"
+                disabled={newEmployeeModal.loading}
+              >
+                {newEmployeeModal.loading ? 'Creating...' : 'Create'}
+              </button>
             </div>
           </div>
         </div>

@@ -47,6 +47,9 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['employee', 'status', 'approved_by', 'approval_comments', 
                            'created_at', 'updated_at']
+        extra_kwargs = {
+            'reason': {'required': False, 'allow_blank': True}
+        }
     
     # total_days is computed in model.save() (working days). Expose as read-only.
     
