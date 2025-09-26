@@ -39,10 +39,13 @@ services:
       branch: main
       deploy_on_push: true
     
+    # Hardened run sequence: no automatic seeding; explicit DB verification.
+    # If you need initial seeding, deploy first then run manually:
+    #   python manage.py setup_production_data
     run_command: |
       python manage.py collectstatic --noinput
       python manage.py migrate --noinput
-      python manage.py setup_production_data
+      python manage.py verify_db
       gunicorn --worker-tmp-dir /dev/shm --bind 0.0.0.0:$PORT leave_management.wsgi:application
     
     environment_slug: python
@@ -55,17 +58,59 @@ services:
       # Backend should not claim / or /static; frontend serves those
     
     envs:
+      # Core Django settings
       - key: DEBUG
         value: "False"
-        type: SECRET
       - key: DJANGO_SETTINGS_MODULE
         value: "leave_management.settings_production"
       - key: SECRET_KEY
-        value: "django-prod-2025-leave-mgmt-secure-key-a8f7b2e9c1d4f6h8j3k5m7n9p0q2r4t6u8v1w3x5y7z9"
+        value: "REPLACE_ME_IN_DASHBOARD"  # Set as SECRET in dashboard before deploy
         type: SECRET
+      
+      # Hosts / CORS (ensure domain consistency)
       - key: ALLOWED_HOSTS
         value: "takeabreak-app-38abv.ondigitalocean.app,127.0.0.1,localhost"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://takeabreak-app-38abv.ondigitalocean.app"
-      - key: USE_SQLITE
-        value: "False"
+      
+      # Database configuration (prefer DATABASE_URL; keep placeholders out of repo)
+      - key: DATABASE_URL
+        value: "mysql://USER:PASSWORD@HOST:25060/leave_management?ssl-mode=REQUIRED"  # Set real secret value in dashboard
+        type: SECRET
+      # (Optional) Uncomment individual vars instead of DATABASE_URL
+      # - key: DB_HOST
+      #   value: "private-db-mysql-..."
+      # - key: DB_PORT
+      #   value: "25060"
+      # - key: DB_NAME
+      #   value: "leave_management"
+      # - key: DB_USER
+      #   value: "g4joey"
+      # - key: DB_PASSWORD
+      #   value: "REPLACE_DB_PASSWORD"
+      #   type: SECRET
+
+      # (Optional) Seeding / superuser vars only if doing one-time provisioning
+      # - key: DJANGO_SUPERUSER_USERNAME
+      #   value: "admin@company.com"
+      # - key: DJANGO_SUPERUSER_EMAIL
+      #   value: "admin@company.com"
+      # - key: DJANGO_SUPERUSER_PASSWORD
+      #   value: "REPLACE_SUPERUSER_PASSWORD"
+      #   type: SECRET
+      # - key: DJANGO_SUPERUSER_EMPLOYEE_ID
+      #   value: "ADMIN001"
+      # - key: SEED_USERS
+      #   value: "<JSON array>"
+      #   type: SECRET
+      # - key: HR_ADMIN_USERNAME
+      #   value: "hradmin@example.com"
+      # - key: HR_ADMIN_PASSWORD
+      #   value: "REPLACE_HR_PASSWORD"
+      #   type: SECRET
+      # - key: HR_ADMIN_FIRST_NAME
+      #   value: "HR"
+      # - key: HR_ADMIN_LAST_NAME
+      #   value: "Administrator"
+      # - key: HR_ADMIN_EMPLOYEE_ID
+      #   value: "HR001"
