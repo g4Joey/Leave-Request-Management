@@ -95,10 +95,25 @@ if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME'
     _db_configured = True
 
 if not _db_configured:
-    raise RuntimeError(
-        "Production database not configured. Set DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD env vars. "
-        "(SQLite fallback removed intentionally to prevent accidental ephemeral data usage.)"
-    )
+    # Permit certain build / management commands to run without a real DB so that
+    # assets can still be collected (e.g. DigitalOcean's build phase calling collectstatic)
+    # but keep a hard failure for actual runtime (gunicorn / runserver) starts.
+    import sys
+    _argv = sys.argv[1:] if len(sys.argv) > 1 else []
+    _db_less_ok = {"collectstatic", "makemigrations"}
+    if any(cmd in _db_less_ok for cmd in _argv):
+        # Use an in-memory SQLite DB strictly for Django to initialise; no data persisted.
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': ':memory:',
+            }
+        }
+    else:
+        raise RuntimeError(
+            "Production database not configured. Set DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD env vars. "
+            "(Runtime blocked; this is intentional fail-fast protection.)"
+        )
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
