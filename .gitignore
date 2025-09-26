@@ -152,6 +152,7 @@ DOCUMENTATION/
 .ropeproject
 
 # mkdocs documentation
+
 /site
 
 # mypy
