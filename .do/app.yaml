@@ -70,9 +70,7 @@ services:
       - key: ALLOWED_HOSTS
         value: "takeabreak-app-38abv.ondigitalocean.app,127.0.0.1,localhost"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://takeabreak-app-438abv.ondigitalocean.app"  # NOTE: domain differs (438abv vs 38abv)
-      - key: USE_SQLITE
-        value: "False"  # legacy; not used since fallback removed
+        value: "https://takeabreak-app-38abv.ondigitalocean.app"
       - key: DJANGO_SUPERUSER_USERNAME
         value: "admin@company.com"
       - key: DJANGO_SUPERUSER_EMAIL
@@ -96,17 +94,4 @@ services:
         value: "Azu"
       - key: HR_ADMIN_EMPLOYEE_ID
         value: "HR001"
-      - key: DATABASE_URL
-        value: "EV[1:PI24t+iyukcEabE+iO9EVS2F5KImGeh4:MXCye2fV/9PH09JSDKYAc6IKCzLuYC0HntaawQjvis1R29nQ7SK7Y9I05J+xMAhT9XYw6ElP7hjwD7XenAPXPwzb+jlsKqs1kQzFCE0gNFHq3ku2gpk+RS/EQx9p7YA5lLKu0j810wq+8N5SVXlffTjBy60azjVKlDZRbnL6t6ebNHo751VndSwQANEcM3p8GGYVsDa5EZPr22xV]"
-        type: SECRET
-      - key: DB_HOST
-        value: "private-db-mysql-nyc3-43467-do-user-24806705-0.k.db.ondigitalocean.com"
-      - key: DB_NAME
-        value: "leave_management"
-      - key: DB_USER
-        value: "g4joey"
-      - key: DB_PASSWORD
-        value: "EV[1:WrhHz0QV5ENnxoffmsli04tkHMC8Rc1y:n8ybaELF3bUFiR8MvEMHP++uo+MA5n9/60yQwgj7Ezmf5d6NGZoNjA==]"
-        type: SECRET
-      - key: DB_PORT
-        value: "25060"
+      # Database credentials removed from spec per request (new ones configured externally).
