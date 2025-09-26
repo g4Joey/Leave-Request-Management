@@ -45,6 +45,13 @@ services:
     run_command: |
       python manage.py collectstatic --noinput
       python manage.py migrate --noinput
+      # Optionally run idempotent production/data seeding if explicitly enabled.
+      if [ "$RUN_SEED_ON_DEPLOY" = "1" ]; then
+        echo "RUN_SEED_ON_DEPLOY=1 -> executing setup_production_data (idempotent)";
+        python manage.py setup_production_data || { echo "setup_production_data failed"; exit 1; };
+      else
+        echo "Skipping setup_production_data (RUN_SEED_ON_DEPLOY not set to 1)";
+      fi
       python manage.py verify_db
       gunicorn --worker-tmp-dir /dev/shm --bind 0.0.0.0:$PORT leave_management.wsgi:application
     
@@ -95,3 +102,7 @@ services:
       - key: HR_ADMIN_EMPLOYEE_ID
         value: "HR001"
       # Database credentials removed from spec per request (new ones configured externally).
+      - key: RUN_SEED_ON_DEPLOY
+        value: "0"
+        # Set to "1" for a single deploy to (re)create / sync seeded users (superuser, HR, Ato, George, Augustine, etc.)
+        # Safe & idempotent: will not overwrite existing user passwords.
