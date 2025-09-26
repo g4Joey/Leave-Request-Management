@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       if (token) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         try {
-          const profileRes = await api.get('/users/profile/');
+          const profileRes = await api.get('/users/me/');
           const profile = profileRes.data || {};
           setUser({
             token,
@@ -26,6 +26,11 @@ export function AuthProvider({ children }) {
             last_name: profile.last_name,
             role: profile.role,
             is_superuser: profile.is_superuser,
+            employee_id: profile.employee_id,
+            department: profile.department,
+            annual_leave_entitlement: profile.annual_leave_entitlement,
+            phone: profile.phone,
+            profile_image: profile.profile_image
           });
         } catch (e) {
           // token might be invalid; clear it
@@ -53,25 +58,27 @@ export function AuthProvider({ children }) {
       api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
       // Fetch profile after login to greet by name
       try {
-        const profileRes = await api.get('/users/profile/');
+        const profileRes = await api.get('/users/me/');
         const profile = profileRes.data || {};
         setUser({
           token: access,
-          email: profile.email || email,
-          first_name: profile.first_name,
-          last_name: profile.last_name,
-          role: profile.role,
-          is_superuser: profile.is_superuser,
+            email: profile.email || email,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            role: profile.role,
+            is_superuser: profile.is_superuser,
+            employee_id: profile.employee_id,
+            department: profile.department,
+            annual_leave_entitlement: profile.annual_leave_entitlement,
+            phone: profile.phone,
+            profile_image: profile.profile_image
         });
       } catch (e) {
         setUser({ token: access, email });
       }
       return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.detail || 'Login failed' 
-      };
+      return { success: false, error: error.response?.data?.detail || 'Login failed' };
     }
   };
 
@@ -82,12 +89,7 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const value = {
-    user,
-    login,
-    logout,
-    loading
-  };
+  const value = { user, setUser, login, logout, loading };
 
   return (
     <AuthContext.Provider value={value}>

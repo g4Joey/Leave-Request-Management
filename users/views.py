@@ -73,6 +73,39 @@ class MyProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class ChangePasswordView(APIView):
+    """Change password for the current user"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current_password = request.data.get('current_password')
+        new_password = request.data.get('new_password')
+        
+        if not current_password or not new_password:
+            return Response(
+                {'error': 'Both current_password and new_password are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = request.user
+        if not user.check_password(current_password):
+            return Response(
+                {'error': 'Current password is incorrect'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(new_password) < 8:
+            return Response(
+                {'error': 'New password must be at least 8 characters long'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user.set_password(new_password)
+        user.save()
+        
+        return Response({'message': 'Password changed successfully'})
+
+
 class StaffManagementView(APIView):
     """
     View for HR staff management - view departments and staff

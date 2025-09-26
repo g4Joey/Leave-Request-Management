@@ -7,6 +7,7 @@ import LeaveRequest from './components/LeaveRequest';
 import LeaveHistory from './components/LeaveHistory';
 import ManagerDashboard from './components/ManagerDashboard';
 import StaffManagement from './components/StaffManagement';
+import MyProfile from './components/MyProfile';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './contexts/ToastContext';
 
@@ -47,6 +48,7 @@ function App() {
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/request" element={<LeaveRequest />} />
                         <Route path="/history" element={<LeaveHistory />} />
+                        <Route path="/profile" element={<MyProfile />} />
                         <Route
                           path="/manager"
                           element={

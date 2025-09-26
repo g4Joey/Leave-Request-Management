@@ -49,6 +49,12 @@ class UserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         department_id = validated_data.pop('department_id', None)
         
+        # Special handling: allow clearing profile image by sending empty value
+        if 'profile_image' in validated_data:
+            img_val = validated_data.get('profile_image')
+            if not img_val:  # '', None, False => clear
+                validated_data['profile_image'] = None
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
             
