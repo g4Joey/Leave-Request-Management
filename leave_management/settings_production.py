@@ -59,13 +59,17 @@ if 'DATABASE_URL' in os.environ:
 
             # Ensure MySQL engine and options for DigitalOcean MySQL
             db_config['ENGINE'] = 'django.db.backends.mysql'
+            # Fail faster on unreachable DB to avoid long health check hangs.
+            fast_fail = os.getenv('FAST_DB_FAIL', '0').lower() in {'1', 'true', 'yes'}
+            base_timeout = 12 if not fast_fail else 6
             db_config['OPTIONS'] = {
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
                 'charset': 'utf8mb4',
-                'ssl': {'ssl-mode': 'PREFERRED'},  # Changed from REQUIRED to PREFERRED for better compatibility
-                'connect_timeout': 60,
-                'read_timeout': 60,
-                'write_timeout': 60,
+                # Enforce SSL; DigitalOcean managed MySQL supports REQUIRED.
+                'ssl': {'ssl-mode': 'REQUIRED'},
+                'connect_timeout': base_timeout,
+                'read_timeout': base_timeout,
+                'write_timeout': base_timeout,
             }
 
             DATABASES = {
@@ -89,6 +93,10 @@ if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME'
             'OPTIONS': {
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
                 'charset': 'utf8mb4',
+                'ssl': {'ssl-mode': 'REQUIRED'},
+                'connect_timeout': 12,
+                'read_timeout': 12,
+                'write_timeout': 12,
             },
         }
     }
