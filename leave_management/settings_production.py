@@ -36,10 +36,15 @@ for h in ALLOWED_HOSTS:
 
 """Database Configuration for DigitalOcean
 
-We try, in order:
+Order attempted:
 1) DATABASE_URL (if present and valid)
-2) Individual DB_* env vars
-3) Safe fallback to SQLite (to let collectstatic run during build)
+2) Individual DB_* env vars (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)
+
+Previously this file contained a silent fallback to SQLite when neither was
+configured, which masked production misconfiguration and caused data loss
+between deploys. Per hardening request, that fallback has been REMOVED.
+If no production database settings are found we now raise a RuntimeError
+to fail fast during build / startup.
 """
 
 _db_configured = False
@@ -90,13 +95,10 @@ if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME'
     _db_configured = True
 
 if not _db_configured:
-    # Safe fallback for build-time or missing DB config: use SQLite to allow collectstatic to run
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+    raise RuntimeError(
+        "Production database not configured. Set DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD env vars. "
+        "(SQLite fallback removed intentionally to prevent accidental ephemeral data usage.)"
+    )
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
