@@ -6,65 +6,84 @@ import { useToast } from '../contexts/ToastContext';
 function ManagerDashboard() {
   const { showToast } = useToast();
   const [pendingRequests, setPendingRequests] = useState([]);
-  const [approvedRequests, setApprovedRequests] = useState([]);
-  const [rejectedRequests, setRejectedRequests] = useState([]);
+  const [leaveRecords, setLeaveRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   // Track which action is loading per request id: 'approve' | 'reject' | undefined
   const [loadingActionById, setLoadingActionById] = useState({});
   const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
-  const PAGE_SIZE = 10;
-  // Pagination & filters for Approved
-  const [approvedPage, setApprovedPage] = useState(0);
-  const [approvedHasMore, setApprovedHasMore] = useState(false);
-  const [approvedSearch, setApprovedSearch] = useState('');
-  // Pagination & filters for Rejected
-  const [rejectedPage, setRejectedPage] = useState(0);
-  const [rejectedHasMore, setRejectedHasMore] = useState(false);
-  const [rejectedSearch, setRejectedSearch] = useState('');
+  const PAGE_SIZE = 15;
+  // Pagination & filters for Leave Records (approved + rejected)
+  const [recordsPage, setRecordsPage] = useState(0);
+  const [recordsHasMore, setRecordsHasMore] = useState(false);
+  const [recordsSearch, setRecordsSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState(''); // 'approved', 'rejected', or '' for all
   
 
-  const fetchApproved = useCallback(async (page = approvedPage, search = approvedSearch) => {
+  const fetchLeaveRecords = useCallback(async (page = recordsPage, search = recordsSearch, status = statusFilter) => {
     try {
-      const res = await api.get('/leaves/manager/', {
-        params: { status: 'approved', ordering: '-created_at', limit: PAGE_SIZE, offset: page * PAGE_SIZE, search: search || undefined },
-      });
-      const data = res.data;
-      const items = data.results || data;
-      setApprovedRequests(items);
-      if (Array.isArray(items)) {
-        // If DRF pagination present, prefer next
-        if (data && typeof data === 'object' && 'next' in data) {
-          setApprovedHasMore(Boolean(data.next));
-        } else {
-          setApprovedHasMore(items.length === PAGE_SIZE);
-        }
+      let allItems = [];
+      
+      if (status) {
+        // Fetch specific status
+        const params = { 
+          ordering: '-created_at', 
+          limit: PAGE_SIZE, 
+          offset: page * PAGE_SIZE,
+          search: search || undefined,
+          status: status
+        };
+        
+        const res = await api.get('/leaves/manager/', { params });
+        const data = res.data;
+        allItems = data.results || data;
+        
+        setRecordsHasMore(data && typeof data === 'object' && 'next' in data ? Boolean(data.next) : allItems.length === PAGE_SIZE);
+      } else {
+        // Fetch both approved and rejected in parallel, then combine and sort
+        const [approvedRes, rejectedRes] = await Promise.all([
+          api.get('/leaves/manager/', { 
+            params: { 
+              ordering: '-created_at', 
+              limit: Math.ceil(PAGE_SIZE / 2), 
+              offset: Math.floor(page * PAGE_SIZE / 2),
+              search: search || undefined,
+              status: 'approved'
+            }
+          }),
+          api.get('/leaves/manager/', { 
+            params: { 
+              ordering: '-created_at', 
+              limit: Math.ceil(PAGE_SIZE / 2), 
+              offset: Math.floor(page * PAGE_SIZE / 2),
+              search: search || undefined,
+              status: 'rejected'
+            }
+          })
+        ]);
+        
+        const approvedItems = approvedRes.data.results || approvedRes.data;
+        const rejectedItems = rejectedRes.data.results || rejectedRes.data;
+        
+        // Combine and sort by created_at descending
+        allItems = [...approvedItems, ...rejectedItems].sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        ).slice(0, PAGE_SIZE);
+        
+        // Check if there are more records
+        const hasMoreApproved = approvedRes.data && typeof approvedRes.data === 'object' && 'next' in approvedRes.data ? Boolean(approvedRes.data.next) : false;
+        const hasMoreRejected = rejectedRes.data && typeof rejectedRes.data === 'object' && 'next' in rejectedRes.data ? Boolean(rejectedRes.data.next) : false;
+        setRecordsHasMore(hasMoreApproved || hasMoreRejected || allItems.length === PAGE_SIZE);
       }
-      setApprovedPage(page);
+      
+      setLeaveRecords(allItems);
+      setRecordsPage(page);
     } catch (e) {
-      // non-blocking
+      console.error('Error fetching leave records:', e);
+      // non-blocking - set empty array on error
+      setLeaveRecords([]);
+      setRecordsHasMore(false);
     }
-  }, [PAGE_SIZE, approvedPage, approvedSearch]);
-
-  const fetchRejected = useCallback(async (page = rejectedPage, search = rejectedSearch) => {
-    try {
-      const res = await api.get('/leaves/manager/', {
-        params: { status: 'rejected', ordering: '-created_at', limit: PAGE_SIZE, offset: page * PAGE_SIZE, search: search || undefined },
-      });
-      const data = res.data;
-      const items = data.results || data;
-      setRejectedRequests(items);
-      if (Array.isArray(items)) {
-        if (data && typeof data === 'object' && 'next' in data) {
-          setRejectedHasMore(Boolean(data.next));
-        } else {
-          setRejectedHasMore(items.length === PAGE_SIZE);
-        }
-      }
-      setRejectedPage(page);
-    } catch (e) {
-      // non-blocking
-    }
-  }, [PAGE_SIZE, rejectedPage, rejectedSearch]);
+  }, [PAGE_SIZE, recordsPage, recordsSearch, statusFilter]);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -73,8 +92,8 @@ function ManagerDashboard() {
           api.get('/leaves/manager/pending_approvals/'),
         ]);
         setPendingRequests(pendingRes.data.results || pendingRes.data);
-        // initial loads for approved/rejected
-        await Promise.all([fetchApproved(0, approvedSearch), fetchRejected(0, rejectedSearch)]);
+        // initial load for leave records (approved + rejected)
+        await fetchLeaveRecords(0, recordsSearch, statusFilter);
       } catch (error) {
         console.error('Error fetching pending requests:', error);
       } finally {
@@ -83,7 +102,7 @@ function ManagerDashboard() {
     };
 
     fetchAll();
-  }, [fetchApproved, fetchRejected, approvedSearch, rejectedSearch]);
+  }, [fetchLeaveRecords, recordsSearch, statusFilter]);
 
   const handleAction = async (requestId, action, comments = '') => {
     setLoadingActionById((prev) => ({ ...prev, [requestId]: action }));
@@ -93,10 +112,10 @@ function ManagerDashboard() {
         approval_comments: comments || ''
       });
       
-      // Remove the request from the list
+      // Remove the request from the pending list
       setPendingRequests(prev => prev.filter(req => req.id !== requestId));
-  // Refresh approved/rejected sections to reflect the change with current filters
-  await Promise.all([fetchApproved(approvedPage, approvedSearch), fetchRejected(rejectedPage, rejectedSearch)]);
+      // Refresh leave records to reflect the change with current filters
+      await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
       // Global toast and optional haptics
       showToast({ type: 'success', message: `Request ${action}ed successfully.` });
       if (navigator && 'vibrate' in navigator) {
@@ -198,120 +217,105 @@ function ManagerDashboard() {
         )}
       </ul>
 
-  {/* Approved & Rejected sections */}
+      {/* Leave Records Section (Approved & Rejected consolidated) */}
       <div className="px-4 py-5 sm:px-6">
-        <h4 className="text-md leading-6 font-semibold text-gray-900">Recently Approved</h4>
-        <div className="mt-2 flex items-center gap-2">
+        <h4 className="text-md leading-6 font-semibold text-gray-900">Leave Records</h4>
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
           <input
             type="text"
-            placeholder="Search employee or type"
-            value={approvedSearch}
-            onChange={(e) => setApprovedSearch(e.target.value)}
-            className="w-full max-w-xs rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
+            placeholder="Search by employee name, leave type, or date"
+            value={recordsSearch}
+            onChange={(e) => setRecordsSearch(e.target.value)}
+            className="flex-1 min-w-64 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
           />
-          <button
-            onClick={() => fetchApproved(0, approvedSearch)}
-            className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
           >
-            Apply
+            <option value="">All Status</option>
+            <option value="approved">Approved Only</option>
+            <option value="rejected">Rejected Only</option>
+          </select>
+          <button
+            onClick={() => fetchLeaveRecords(0, recordsSearch, statusFilter)}
+            className="px-3 py-2 rounded-md bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"
+          >
+            Search
           </button>
         </div>
       </div>
       <ul className="divide-y divide-gray-200">
-        {approvedRequests.length > 0 ? (
-          approvedRequests.map((request) => (
-            <li key={`approved-${request.id}`}>
-              <div className="px-4 py-3 sm:px-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {getEmployeeName(request)} — {request.leave_type_name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} ({request.total_days} days)
-                  </p>
+        {leaveRecords.length > 0 ? (
+          leaveRecords.map((request) => {
+            const isApproved = request.status === 'approved';
+            const statusColor = isApproved 
+              ? 'bg-green-100 text-green-800 ring-green-200' 
+              : 'bg-red-100 text-red-800 ring-red-200';
+            
+            return (
+              <li key={`record-${request.id}`}>
+                <div className="px-4 py-3 sm:px-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {getEmployeeName(request)} — {request.leave_type_name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} 
+                            <span className="ml-1">({request.total_days} working days)</span>
+                          </p>
+                          {request.reason && (
+                            <p className="text-xs text-gray-600 mt-1">
+                              <strong>Reason:</strong> {request.reason}
+                            </p>
+                          )}
+                          {request.approval_comments && (
+                            <p className="text-xs text-gray-600 mt-1">
+                              <strong>Comments:</strong> {request.approval_comments}
+                            </p>
+                          )}
+                          <div className="text-xs text-gray-400 mt-1">
+                            Submitted: {new Date(request.created_at).toLocaleDateString()} | 
+                            {request.approved_by_name && (
+                              <span> Processed by: {request.approved_by_name}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor}`}>
+                          {isApproved ? 'Approved' : 'Rejected'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <span className="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-800 ring-1 ring-inset ring-green-200">
-                  Approved
-                </span>
-              </div>
-            </li>
-          ))
+              </li>
+            );
+          })
         ) : (
-          <li><div className="px-4 py-3 text-sm text-gray-500">No approved requests yet.</div></li>
+          <li><div className="px-4 py-3 text-sm text-gray-500 text-center">
+            {recordsSearch || statusFilter ? 'No records found matching your search criteria.' : 'No processed leave records yet.'}
+          </div></li>
         )}
       </ul>
       <div className="px-4 py-3 flex items-center justify-between">
         <button
-          onClick={() => fetchApproved(Math.max(approvedPage - 1, 0), approvedSearch)}
-          disabled={approvedPage === 0}
-          className="px-3 py-1 rounded border text-sm disabled:opacity-50"
+          onClick={() => fetchLeaveRecords(Math.max(recordsPage - 1, 0), recordsSearch, statusFilter)}
+          disabled={recordsPage === 0}
+          className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
         >
           Previous
         </button>
-        <div className="text-xs text-gray-500">Page {approvedPage + 1}</div>
-        <button
-          onClick={() => fetchApproved(approvedPage + 1, approvedSearch)}
-          disabled={!approvedHasMore}
-          className="px-3 py-1 rounded border text-sm disabled:opacity-50"
-        >
-          Next
-        </button>
-      </div>
-
-      <div className="px-4 py-5 sm:px-6">
-        <h4 className="text-md leading-6 font-semibold text-gray-900">Recently Rejected</h4>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search employee or type"
-            value={rejectedSearch}
-            onChange={(e) => setRejectedSearch(e.target.value)}
-            className="w-full max-w-xs rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
-          />
-          <button
-            onClick={() => fetchRejected(0, rejectedSearch)}
-            className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
-          >
-            Apply
-          </button>
+        <div className="text-xs text-gray-500">
+          Page {recordsPage + 1} 
+          {statusFilter && <span className="ml-1">({statusFilter})</span>}
         </div>
-      </div>
-      <ul className="divide-y divide-gray-200">
-        {rejectedRequests.length > 0 ? (
-          rejectedRequests.map((request) => (
-            <li key={`rejected-${request.id}`}>
-              <div className="px-4 py-3 sm:px-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {getEmployeeName(request)} — {request.leave_type_name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} ({request.total_days} days)
-                  </p>
-                </div>
-                <span className="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-800 ring-1 ring-inset ring-red-200">
-                  Rejected
-                </span>
-              </div>
-            </li>
-          ))
-        ) : (
-          <li><div className="px-4 py-3 text-sm text-gray-500">No rejected requests yet.</div></li>
-        )}
-      </ul>
-      <div className="px-4 py-3 flex items-center justify-between">
         <button
-          onClick={() => fetchRejected(Math.max(rejectedPage - 1, 0), rejectedSearch)}
-          disabled={rejectedPage === 0}
-          className="px-3 py-1 rounded border text-sm disabled:opacity-50"
-        >
-          Previous
-        </button>
-        <div className="text-xs text-gray-500">Page {rejectedPage + 1}</div>
-        <button
-          onClick={() => fetchRejected(rejectedPage + 1, rejectedSearch)}
-          disabled={!rejectedHasMore}
-          className="px-3 py-1 rounded border text-sm disabled:opacity-50"
+          onClick={() => fetchLeaveRecords(recordsPage + 1, recordsSearch, statusFilter)}
+          disabled={!recordsHasMore}
+          className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
         >
           Next
         </button>
