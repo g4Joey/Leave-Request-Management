@@ -52,6 +52,8 @@ services:
       else
         echo "Skipping setup_production_data (RUN_SEED_ON_DEPLOY not set to 1)";
       fi
+      # Always ensure leave data is properly set up for leave requests to work
+      python manage.py setup_production_leave_data
       python manage.py verify_db
       gunicorn --worker-tmp-dir /dev/shm --bind 0.0.0.0:$PORT leave_management.wsgi:application
     

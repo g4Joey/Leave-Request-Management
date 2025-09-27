@@ -341,18 +341,36 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """Set the employee to current user when creating - supports R1"""
-        leave_request = serializer.save(employee=self.request.user)
-        # Recalculate balance for authoritative state
+        import logging
+        logger = logging.getLogger('leaves')
+        
+        user = self.request.user
         try:
-            balance = LeaveBalance.objects.get(
-                employee=leave_request.employee,
-                leave_type=leave_request.leave_type,
-                year=leave_request.start_date.year
-            )
-            balance.update_balance()
-        except LeaveBalance.DoesNotExist:
-            # Safety net: if no balance exists, skip
-            pass
+            logger.info(f'Creating leave request for user: {user.username} (ID: {getattr(user, "id", "unknown")})')
+            
+            # Log the validated data for debugging
+            logger.info(f'Leave request data: {serializer.validated_data}')
+            
+            leave_request = serializer.save(employee=user)
+            logger.info(f'Leave request created successfully: ID={leave_request.id}')
+            
+            # Recalculate balance for authoritative state
+            try:
+                balance = LeaveBalance.objects.get(
+                    employee=leave_request.employee,
+                    leave_type=leave_request.leave_type,
+                    year=leave_request.start_date.year
+                )
+                balance.update_balance()
+                logger.info(f'Updated leave balance for {balance.leave_type.name}: {balance.remaining_days} remaining')
+            except LeaveBalance.DoesNotExist:
+                logger.warning(f'No leave balance found for {user.username}, leave_type_id={leave_request.leave_type.id}, year={leave_request.start_date.year}')
+                # Safety net: if no balance exists, skip
+                pass
+                
+        except Exception as e:
+            logger.error(f'Error creating leave request for {user.username}: {str(e)}', exc_info=True)
+            raise
     
     @action(detail=False, methods=['get'])
     def pending(self, request):
@@ -395,8 +413,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         
         # Current year statistics
         current_year_requests = user_requests.filter(start_date__year=current_year)
-        total_days_taken = sum(req.total_days for req in current_year_requests.filter(status='approved'))
-        pending_days = sum(req.total_days for req in current_year_requests.filter(status='pending'))
+        total_days_taken = sum(req.total_days or 0 for req in current_year_requests.filter(status='approved'))
+        pending_days = sum(req.total_days or 0 for req in current_year_requests.filter(status='pending'))
         
         # Recent requests (last 5)
         recent_requests = user_requests[:5]
