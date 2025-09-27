@@ -17,6 +17,7 @@ function ManagerDashboard() {
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsSearch, setRecordsSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(''); // 'approved', 'rejected', or '' for all
+  const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search
   
 
   const fetchLeaveRecords = useCallback(async (page = recordsPage, search = recordsSearch, status = statusFilter) => {
@@ -77,11 +78,13 @@ function ManagerDashboard() {
       
       setLeaveRecords(allItems);
       setRecordsPage(page);
+      setHasSearched(true);
     } catch (e) {
       console.error('Error fetching leave records:', e);
       // non-blocking - set empty array on error
       setLeaveRecords([]);
       setRecordsHasMore(false);
+      setHasSearched(true);
     }
   }, [PAGE_SIZE, recordsPage, recordsSearch, statusFilter]);
 
@@ -92,8 +95,7 @@ function ManagerDashboard() {
           api.get('/leaves/manager/pending_approvals/'),
         ]);
         setPendingRequests(pendingRes.data.results || pendingRes.data);
-        // initial load for leave records (approved + rejected)
-        await fetchLeaveRecords(0, recordsSearch, statusFilter);
+        // Don't load leave records initially - only when user searches
       } catch (error) {
         console.error('Error fetching pending requests:', error);
       } finally {
@@ -102,7 +104,7 @@ function ManagerDashboard() {
     };
 
     fetchAll();
-  }, [fetchLeaveRecords, recordsSearch, statusFilter]);
+  }, []);
 
   const handleAction = async (requestId, action, comments = '') => {
     setLoadingActionById((prev) => ({ ...prev, [requestId]: action }));
@@ -114,8 +116,10 @@ function ManagerDashboard() {
       
       // Remove the request from the pending list
       setPendingRequests(prev => prev.filter(req => req.id !== requestId));
-      // Refresh leave records to reflect the change with current filters
-      await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
+      // Refresh leave records only if user has already searched
+      if (hasSearched) {
+        await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
+      }
       // Global toast and optional haptics
       showToast({ type: 'success', message: `Request ${action}ed successfully.` });
       if (navigator && 'vibrate' in navigator) {
@@ -238,11 +242,29 @@ function ManagerDashboard() {
             <option value="rejected">Rejected Only</option>
           </select>
           <button
-            onClick={() => fetchLeaveRecords(0, recordsSearch, statusFilter)}
+            onClick={() => {
+              setRecordsPage(0);
+              fetchLeaveRecords(0, recordsSearch, statusFilter);
+            }}
             className="px-3 py-2 rounded-md bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"
           >
             Search
           </button>
+          {hasSearched && (
+            <button
+              onClick={() => {
+                setRecordsSearch('');
+                setStatusFilter('');
+                setLeaveRecords([]);
+                setHasSearched(false);
+                setRecordsPage(0);
+                setRecordsHasMore(false);
+              }}
+              className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
       <ul className="divide-y divide-gray-200">
@@ -295,31 +317,40 @@ function ManagerDashboard() {
             );
           })
         ) : (
-          <li><div className="px-4 py-3 text-sm text-gray-500 text-center">
-            {recordsSearch || statusFilter ? 'No records found matching your search criteria.' : 'No processed leave records yet.'}
+          <li><div className="px-4 py-12 text-center">
+            {!hasSearched ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-500">Use the search above to find leave records</p>
+                <p className="text-xs text-gray-400">Search by employee name, leave type, or filter by status</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No records found matching your search criteria.</p>
+            )}
           </div></li>
         )}
       </ul>
-      <div className="px-4 py-3 flex items-center justify-between">
-        <button
-          onClick={() => fetchLeaveRecords(Math.max(recordsPage - 1, 0), recordsSearch, statusFilter)}
-          disabled={recordsPage === 0}
-          className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
-        >
-          Previous
-        </button>
-        <div className="text-xs text-gray-500">
-          Page {recordsPage + 1} 
-          {statusFilter && <span className="ml-1">({statusFilter})</span>}
+      {hasSearched && (
+        <div className="px-4 py-3 flex items-center justify-between">
+          <button
+            onClick={() => fetchLeaveRecords(Math.max(recordsPage - 1, 0), recordsSearch, statusFilter)}
+            disabled={recordsPage === 0}
+            className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
+          >
+            Previous
+          </button>
+          <div className="text-xs text-gray-500">
+            Page {recordsPage + 1} 
+            {statusFilter && <span className="ml-1">({statusFilter})</span>}
+          </div>
+          <button
+            onClick={() => fetchLeaveRecords(recordsPage + 1, recordsSearch, statusFilter)}
+            disabled={!recordsHasMore}
+            className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
+          >
+            Next
+          </button>
         </div>
-        <button
-          onClick={() => fetchLeaveRecords(recordsPage + 1, recordsSearch, statusFilter)}
-          disabled={!recordsHasMore}
-          className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
-        >
-          Next
-        </button>
-      </div>
+      )}
       {/* Reject Reason Modal */}
       <Dialog open={rejectModal.open} onClose={() => setRejectModal({ open: false, requestId: null, reason: '' })} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
