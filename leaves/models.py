@@ -42,7 +42,7 @@ class LeaveRequest(models.Model):
     # Leave dates
     start_date = models.DateField()
     end_date = models.DateField()
-    total_days = models.PositiveIntegerField()
+    total_days = models.PositiveIntegerField(blank=True, null=True)
     
     # Request information (reason now optional for staff)
     reason = models.TextField(blank=True, null=True, help_text="Optional reason provided by employee")
@@ -73,8 +73,8 @@ class LeaveRequest(models.Model):
                 raise ValidationError("Cannot request leave for past dates while pending")
     
     def save(self, *args, **kwargs):
-        # Calculate total days if not provided
-        if self.start_date and self.end_date and not self.total_days:
+        # Always calculate total days from dates
+        if self.start_date and self.end_date:
             self.total_days = self.calculate_working_days()
         
         self.clean()
@@ -181,12 +181,12 @@ class LeaveBalance(models.Model):
         
         # Calculate used days (approved leaves)
         self.used_days = sum(
-            req.total_days for req in current_year_requests.filter(status='approved')
+            req.total_days or 0 for req in current_year_requests.filter(status='approved')
         )
         
         # Calculate pending days
         self.pending_days = sum(
-            req.total_days for req in current_year_requests.filter(status='pending')
+            req.total_days or 0 for req in current_year_requests.filter(status='pending')
         )
         
         self.save()
