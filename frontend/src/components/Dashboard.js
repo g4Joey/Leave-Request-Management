@@ -11,14 +11,31 @@ function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        console.log('Fetching dashboard data...');
+        
         const [balancesRes, requestsRes] = await Promise.all([
           api.get('/leaves/balances/current_year_full/'),
           api.get('/leaves/requests/?limit=5')
         ]);
-        setBalances(balancesRes.data.results || balancesRes.data);
-        setRecentRequests(requestsRes.data.results || requestsRes.data);
+        
+        console.log('Balances response:', balancesRes);
+        console.log('Requests response:', requestsRes);
+        
+        const balancesData = balancesRes.data.results || balancesRes.data;
+        const requestsData = requestsRes.data.results || requestsRes.data;
+        
+        console.log('Processed balances data:', balancesData);
+        console.log('Processed requests data:', requestsData);
+        
+        setBalances(balancesData);
+        setRecentRequests(requestsData);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        console.error('Error details:', error.response?.data || error.message);
+        
+        // Set empty arrays to show "No data" messages instead of loading forever
+        setBalances([]);
+        setRecentRequests([]);
       } finally {
         setLoading(false);
       }
@@ -84,7 +101,15 @@ function Dashboard() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500">No leave balances found.</p>
+            <div>
+              <p className="text-gray-500">No leave balances found.</p>
+              <p className="text-xs text-gray-400 mt-2">Debug: balances.length = {balances.length}</p>
+              {process.env.NODE_ENV === 'development' && (
+                <pre className="text-xs text-gray-400 mt-2 bg-gray-100 p-2 rounded">
+                  {JSON.stringify(balances, null, 2)}
+                </pre>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -125,7 +150,15 @@ function Dashboard() {
               </ul>
             </div>
           ) : (
-            <p className="text-gray-500">No recent leave requests.</p>
+            <div>
+              <p className="text-gray-500">No recent leave requests.</p>
+              <p className="text-xs text-gray-400 mt-2">Debug: recentRequests.length = {recentRequests.length}</p>
+              {process.env.NODE_ENV === 'development' && (
+                <pre className="text-xs text-gray-400 mt-2 bg-gray-100 p-2 rounded">
+                  {JSON.stringify(recentRequests, null, 2)}
+                </pre>
+              )}
+            </div>
           )}
         </div>
       </div>
