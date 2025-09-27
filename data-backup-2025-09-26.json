@@ -1,0 +1,643 @@
+[
+{
+  "model": "users.department",
+  "pk": 1,
+  "fields": {
+    "name": "Engineering",
+    "description": "Builds the product",
+    "created_at": "2025-09-21T10:35:30.534Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 2,
+  "fields": {
+    "name": "Human Resources",
+    "description": "Manages people and policies",
+    "created_at": "2025-09-21T10:35:30.636Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 3,
+  "fields": {
+    "name": "Operations",
+    "description": "Keeps the lights on",
+    "created_at": "2025-09-21T10:35:30.735Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 4,
+  "fields": {
+    "name": "IT",
+    "description": "Information Technology",
+    "created_at": "2025-09-22T12:48:00.310Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 5,
+  "fields": {
+    "name": "Accounts & Compliance",
+    "description": "Financial accounts and regulatory compliance",
+    "created_at": "2025-09-23T15:04:04.258Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 6,
+  "fields": {
+    "name": "IHL",
+    "description": "Investment and Holdings Limited",
+    "created_at": "2025-09-23T15:04:04.267Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 7,
+  "fields": {
+    "name": "Stockbrokers",
+    "description": "Stock brokerage services",
+    "created_at": "2025-09-23T15:04:04.270Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 8,
+  "fields": {
+    "name": "SDSL",
+    "description": "Securities Dealing Services Limited",
+    "created_at": "2025-09-23T15:04:04.272Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 9,
+  "fields": {
+    "name": "Client Service",
+    "description": "Customer service and support",
+    "created_at": "2025-09-23T15:04:04.275Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 10,
+  "fields": {
+    "name": "Pensions",
+    "description": "Pension fund management",
+    "created_at": "2025-09-23T15:04:04.277Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 11,
+  "fields": {
+    "name": "Government Securities",
+    "description": "Government securities trading",
+    "created_at": "2025-09-23T15:04:04.280Z"
+  }
+},
+{
+  "model": "users.department",
+  "pk": 12,
+  "fields": {
+    "name": "Marketing",
+    "description": "Marketing and communications",
+    "created_at": "2025-09-23T15:04:04.284Z"
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 1,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$SKYyQ0FsxHguTuXPESUpSE$QuwXXPdTpZdNi6snlKNFzYA8R1tzVL1aOQ61hVPO/BM=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "john.doe@company.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "email": "john.doe@company.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2025-09-21T10:35:31.112Z",
+    "employee_id": "EMP001",
+    "role": "staff",
+    "department": 1,
+    "manager": null,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-21T10:35:31.113Z",
+    "updated_at": "2025-09-21T13:11:31.393Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 2,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$TXqX7enUDD1aOMt8Xney0i$9HUBz4o2FDlHTp9uyvl2Y+zSmuMAPQheKnaC/SKfr5o=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "manager@company.com",
+    "first_name": "Mary",
+    "last_name": "Manager",
+    "email": "manager@company.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2025-09-21T10:35:32.282Z",
+    "employee_id": "MGR001",
+    "role": "manager",
+    "department": 1,
+    "manager": null,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-21T10:35:32.283Z",
+    "updated_at": "2025-09-21T13:11:32.432Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 3,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$lI3FOHJNS7SlhTNeBiSu5Z$tStWGQiOXhDwt3M0fWcytC3VP19oXYmCQ7oLs/qo7hM=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "hr@company.com",
+    "first_name": "Hank",
+    "last_name": "HR",
+    "email": "hr@company.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2025-09-21T10:35:33.434Z",
+    "employee_id": "HR001",
+    "role": "hr",
+    "department": 2,
+    "manager": null,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-21T10:35:33.435Z",
+    "updated_at": "2025-09-21T13:11:33.459Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 4,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$BnNgchSBZBBNG4KCVTiBm3$CtAx0UDd/MXe8RUi7Q9xseYCQ4X8jQO19uoCBQ326J8=",
+    "last_login": null,
+    "is_superuser": true,
+    "username": "admin@company.com",
+    "first_name": "Alice",
+    "last_name": "Admin",
+    "email": "admin@company.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2025-09-21T10:35:34.597Z",
+    "employee_id": "ADM001",
+    "role": "admin",
+    "department": 3,
+    "manager": null,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-21T10:35:34.597Z",
+    "updated_at": "2025-09-21T13:11:34.453Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 5,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$tA0GpuClp8VVzV6DnKVXkY$XQq6o8JaMnScaX/t42VwItIWFTd4Yf/eOb1F4dMbWK8=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "jmankoe",
+    "first_name": "Ato",
+    "last_name": "Mankoe",
+    "email": "jmankoe@umbcapital.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2025-09-22T12:48:00.433Z",
+    "employee_id": "EMP001JMANKOE",
+    "role": "manager",
+    "department": 4,
+    "manager": null,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-22T12:48:00.433Z",
+    "updated_at": "2025-09-22T12:48:37.897Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 6,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$EAVidLggUu5bSd9I1DNJIh$zFtTVTjccPMqAwe+IpDnvU8+bsFZWtRKWc5B8G0rB+o=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "aakorfu",
+    "first_name": "Augustine",
+    "last_name": "Akorfu",
+    "email": "aakorfu@umbcapital.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2025-09-22T12:48:38.748Z",
+    "employee_id": "EMP002AAKORFU",
+    "role": "staff",
+    "department": 4,
+    "manager": 5,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-22T12:48:38.748Z",
+    "updated_at": "2025-09-23T15:04:04.308Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 7,
+  "fields": {
+    "password": "pbkdf2_sha256$720000$pk0bNEixW1vCY9ImcDFJsW$0etGhOl6xTahpP5/HIRFtK5vaHGMOhMxap8S/+7+VIw=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "gsafo",
+    "first_name": "George",
+    "last_name": "Safo",
+    "email": "gsafo@umbcapital.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2025-09-22T12:48:39.519Z",
+    "employee_id": "EMP003GSAFO",
+    "role": "staff",
+    "department": 4,
+    "manager": 5,
+    "phone": "",
+    "hire_date": null,
+    "annual_leave_entitlement": 25,
+    "is_active_employee": true,
+    "profile_image": "",
+    "created_at": "2025-09-22T12:48:39.519Z",
+    "updated_at": "2025-09-23T15:04:04.292Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "leaves.leavetype",
+  "pk": 1,
+  "fields": {
+    "name": "Annual Leave",
+    "description": "Paid annual leave",
+    "max_days_per_request": 30,
+    "requires_medical_certificate": false,
+    "is_active": true,
+    "created_at": "2025-09-21T10:35:30.831Z"
+  }
+},
+{
+  "model": "leaves.leavetype",
+  "pk": 2,
+  "fields": {
+    "name": "Sick Leave",
+    "description": "Sick days",
+    "max_days_per_request": 14,
+    "requires_medical_certificate": true,
+    "is_active": true,
+    "created_at": "2025-09-21T10:35:30.925Z"
+  }
+},
+{
+  "model": "leaves.leavetype",
+  "pk": 3,
+  "fields": {
+    "name": "Maternity Leave",
+    "description": "Maternity leave",
+    "max_days_per_request": 90,
+    "requires_medical_certificate": false,
+    "is_active": true,
+    "created_at": "2025-09-21T10:35:31.012Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 1,
+  "fields": {
+    "employee": 4,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 25,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:21.772Z",
+    "updated_at": "2025-09-21T11:10:21.773Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 2,
+  "fields": {
+    "employee": 4,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 90,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:21.898Z",
+    "updated_at": "2025-09-21T11:10:21.898Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 3,
+  "fields": {
+    "employee": 4,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 14,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:21.995Z",
+    "updated_at": "2025-09-21T11:10:21.995Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 4,
+  "fields": {
+    "employee": 1,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 25,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.105Z",
+    "updated_at": "2025-09-21T11:10:22.105Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 5,
+  "fields": {
+    "employee": 1,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 90,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.231Z",
+    "updated_at": "2025-09-21T11:10:22.231Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 6,
+  "fields": {
+    "employee": 1,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 14,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.339Z",
+    "updated_at": "2025-09-21T11:10:22.339Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 7,
+  "fields": {
+    "employee": 3,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 25,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.449Z",
+    "updated_at": "2025-09-21T11:10:22.449Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 8,
+  "fields": {
+    "employee": 3,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 90,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.572Z",
+    "updated_at": "2025-09-21T11:10:22.572Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 9,
+  "fields": {
+    "employee": 3,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 14,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.681Z",
+    "updated_at": "2025-09-21T11:10:22.681Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 10,
+  "fields": {
+    "employee": 2,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 25,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.805Z",
+    "updated_at": "2025-09-21T11:10:22.805Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 11,
+  "fields": {
+    "employee": 2,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 90,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:22.926Z",
+    "updated_at": "2025-09-21T11:10:22.926Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 12,
+  "fields": {
+    "employee": 2,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 14,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-21T11:10:23.049Z",
+    "updated_at": "2025-09-21T11:10:23.049Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 13,
+  "fields": {
+    "employee": 5,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 15,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:00.596Z",
+    "updated_at": "2025-09-22T12:48:00.596Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 14,
+  "fields": {
+    "employee": 5,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 84,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:00.600Z",
+    "updated_at": "2025-09-22T12:48:00.600Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 15,
+  "fields": {
+    "employee": 5,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 10,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:00.603Z",
+    "updated_at": "2025-09-22T12:48:00.603Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 16,
+  "fields": {
+    "employee": 6,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 15,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:40.320Z",
+    "updated_at": "2025-09-22T12:48:40.320Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 17,
+  "fields": {
+    "employee": 6,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 84,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:40.324Z",
+    "updated_at": "2025-09-22T12:48:40.324Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 18,
+  "fields": {
+    "employee": 6,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 10,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:40.326Z",
+    "updated_at": "2025-09-22T12:48:40.326Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 19,
+  "fields": {
+    "employee": 7,
+    "leave_type": 1,
+    "year": 2025,
+    "entitled_days": 15,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:40.328Z",
+    "updated_at": "2025-09-22T12:48:40.328Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 20,
+  "fields": {
+    "employee": 7,
+    "leave_type": 3,
+    "year": 2025,
+    "entitled_days": 84,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:40.329Z",
+    "updated_at": "2025-09-22T12:48:40.329Z"
+  }
+},
+{
+  "model": "leaves.leavebalance",
+  "pk": 21,
+  "fields": {
+    "employee": 7,
+    "leave_type": 2,
+    "year": 2025,
+    "entitled_days": 10,
+    "used_days": 0,
+    "pending_days": 0,
+    "created_at": "2025-09-22T12:48:40.331Z",
+    "updated_at": "2025-09-22T12:48:40.331Z"
+  }
+}
+]
