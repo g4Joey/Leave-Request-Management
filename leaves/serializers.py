@@ -33,7 +33,10 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     employee_email = serializers.CharField(source='employee.email', read_only=True)
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.get_full_name', read_only=True)
-    total_days = serializers.IntegerField(read_only=True)
+    total_days = serializers.IntegerField(read_only=True, help_text="Working days (weekdays) between start and end date")
+    working_days = serializers.IntegerField(source='working_days', read_only=True)
+    calendar_days = serializers.IntegerField(source='calendar_days', read_only=True)
+    range_with_days = serializers.CharField(source='range_with_days', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
@@ -41,7 +44,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'employee', 'employee_name', 'employee_email',
             'leave_type', 'leave_type_name', 'start_date', 'end_date',
-            'total_days', 'reason', 'status', 'status_display',
+            'total_days', 'working_days', 'calendar_days', 'range_with_days', 'reason', 'status', 'status_display',
             'approved_by', 'approved_by_name', 'approval_comments',
             'created_at', 'updated_at'
         ]
@@ -69,7 +72,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             if start_date < timezone.now().date():
                 raise serializers.ValidationError("Cannot submit leave request for past dates.")
             
-            total_days = (end_date - start_date).days + 1
+            # Working days (weekdays only) to enforce balance realistically
+            total_days = self._calculate_working_days(start_date, end_date)
             
             # Check leave balance
             if leave_type and hasattr(self.context.get('request'), 'user'):
@@ -119,19 +123,34 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         validated_data['employee'] = self.context['request'].user
         return super().create(validated_data)
 
+    # Reuse same working-day logic the model uses (avoid import cycle / duplication risk if moved later)
+    def _calculate_working_days(self, start, end):
+        from datetime import timedelta
+        current = start
+        wd = 0
+        while current <= end:
+            if current.weekday() < 5:
+                wd += 1
+            current += timedelta(days=1)
+        return wd
+
 
 class LeaveRequestListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list views"""
     employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
-    total_days = serializers.IntegerField(read_only=True)
+    total_days = serializers.IntegerField(read_only=True, help_text="Working days (weekdays)")
+    working_days = serializers.IntegerField(source='working_days', read_only=True)
+    calendar_days = serializers.IntegerField(source='calendar_days', read_only=True)
+    range_with_days = serializers.CharField(source='range_with_days', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
         model = LeaveRequest
         fields = [
             'id', 'employee_name', 'leave_type_name', 'start_date', 
-            'end_date', 'total_days', 'status', 'status_display', 'created_at'
+            'end_date', 'total_days', 'working_days', 'calendar_days', 'range_with_days',
+            'status', 'status_display', 'created_at'
         ]
     
     # total_days is computed in model.save() (working days). Expose as read-only.

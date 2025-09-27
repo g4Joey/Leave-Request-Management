@@ -95,6 +95,25 @@ class LeaveRequest(models.Model):
             current_date += timedelta(days=1)
         
         return working_days
+
+    @property
+    def working_days(self):  # explicit alias for clarity in serializers/UI
+        return self.total_days
+
+    @property
+    def calendar_days(self):
+        if not self.start_date or not self.end_date:
+            return 0
+        return (self.end_date - self.start_date).days + 1
+
+    @property
+    def range_with_days(self):
+        """Human friendly range summary including working days (used by UI)."""
+        if not self.start_date or not self.end_date:
+            return "(dates pending)"
+        wd = self.working_days or self.calculate_working_days()
+        label = "working day" if wd == 1 else "working days"
+        return f"{self.start_date} to {self.end_date} ({wd} {label})"
     
     def approve(self, approved_by, comments=""):
         """Approve the leave request"""

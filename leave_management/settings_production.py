@@ -59,9 +59,16 @@ if 'DATABASE_URL' in os.environ:
 
             # Ensure MySQL engine and options for DigitalOcean MySQL
             db_config['ENGINE'] = 'django.db.backends.mysql'
-            # Fail faster on unreachable DB to avoid long health check hangs.
+            # Allow operator to tune base timeout; FAST_DB_FAIL halves it.
             fast_fail = os.getenv('FAST_DB_FAIL', '0').lower() in {'1', 'true', 'yes'}
-            base_timeout = 12 if not fast_fail else 6
+            configured_timeout = os.getenv('DB_TIMEOUT')  # seconds
+            try:
+                configured_timeout_val = int(configured_timeout) if configured_timeout else None
+            except ValueError:
+                configured_timeout_val = None
+            base_timeout = configured_timeout_val or 12
+            if fast_fail:
+                base_timeout = max(3, base_timeout // 2)
             db_config['OPTIONS'] = {
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
                 'charset': 'utf8mb4',
@@ -82,6 +89,15 @@ if 'DATABASE_URL' in os.environ:
 
 if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']):
     # Alternative: Use individual environment variables
+    fast_fail = os.getenv('FAST_DB_FAIL', '0').lower() in {'1', 'true', 'yes'}
+    configured_timeout = os.getenv('DB_TIMEOUT')
+    try:
+        configured_timeout_val = int(configured_timeout) if configured_timeout else None
+    except ValueError:
+        configured_timeout_val = None
+    base_timeout = configured_timeout_val or 12
+    if fast_fail:
+        base_timeout = max(3, base_timeout // 2)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
@@ -94,9 +110,9 @@ if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME'
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
                 'charset': 'utf8mb4',
                 'ssl': {'ssl-mode': 'REQUIRED'},
-                'connect_timeout': 12,
-                'read_timeout': 12,
-                'write_timeout': 12,
+                'connect_timeout': base_timeout,
+                'read_timeout': base_timeout,
+                'write_timeout': base_timeout,
             },
         }
     }
@@ -107,6 +123,25 @@ if not _db_configured:
         "Production database not configured. Set DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD env vars. "
         "(SQLite fallback removed intentionally to prevent accidental ephemeral data usage.)"
     )
+
+# Optional one-time logging of DB config (without credentials) to aid diagnosis
+if os.getenv('LOG_DB_CONFIG', '0').lower() in {'1', 'true', 'yes'} and _db_configured:
+    import logging
+    _db = DATABASES.get('default', {})
+    _opts = _db.get('OPTIONS') or {}
+    safe_snapshot = {
+        'ENGINE': _db.get('ENGINE'),
+        'HOST': _db.get('HOST') or _opts.get('host'),
+        'PORT': _db.get('PORT'),
+        'NAME': _db.get('NAME'),
+        'OPTIONS': {
+            'ssl': _opts.get('ssl'),
+            'connect_timeout': _opts.get('connect_timeout'),
+            'read_timeout': _opts.get('read_timeout'),
+            'write_timeout': _opts.get('write_timeout'),
+        }
+    }
+    logging.getLogger('users').info('DB CONFIG SNAPSHOT (sanitized): %s', safe_snapshot)
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
