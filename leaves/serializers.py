@@ -140,9 +140,9 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
     total_days = serializers.IntegerField(read_only=True, help_text="Working days (weekdays)")
-    working_days = serializers.IntegerField(source='working_days', read_only=True)
-    calendar_days = serializers.IntegerField(source='calendar_days', read_only=True)
-    range_with_days = serializers.CharField(source='range_with_days', read_only=True)
+    working_days = serializers.IntegerField(read_only=True)
+    calendar_days = serializers.IntegerField(read_only=True)
+    range_with_days = serializers.CharField(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
