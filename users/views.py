@@ -62,8 +62,16 @@ class MyProfileView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        data = serializer.data
+        
+        # Debug logging for production troubleshooting
+        logger.info(f"MyProfileView GET - User: {request.user.email}, Role: {request.user.role}, Is_superuser: {request.user.is_superuser}, Serialized data: {data}")
+        
+        return Response(data)
 
     def patch(self, request):
         serializer = UserSerializer(request.user, data=request.data, partial=True)

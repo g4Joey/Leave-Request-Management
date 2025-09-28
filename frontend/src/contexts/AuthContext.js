@@ -19,7 +19,11 @@ export function AuthProvider({ children }) {
         try {
           const profileRes = await api.get('/users/me/');
           const profile = profileRes.data || {};
-          setUser({
+          
+          // Debug profile data
+          console.log('🔍 DEBUG - Profile data from /users/me/:', profile);
+          
+          const userData = {
             token,
             email: profile.email,
             first_name: profile.first_name,
@@ -31,7 +35,10 @@ export function AuthProvider({ children }) {
             annual_leave_entitlement: profile.annual_leave_entitlement,
             phone: profile.phone,
             profile_image: profile.profile_image
-          });
+          };
+          
+          console.log('🔍 DEBUG - Processed user data:', userData);
+          setUser(userData);
         } catch (e) {
           // token might be invalid; clear it
           localStorage.removeItem('token');
@@ -60,19 +67,25 @@ export function AuthProvider({ children }) {
       try {
         const profileRes = await api.get('/users/me/');
         const profile = profileRes.data || {};
-        setUser({
+        
+        console.log('🔍 DEBUG - Login profile data:', profile);
+        
+        const userData = {
           token: access,
-            email: profile.email || email,
-            first_name: profile.first_name,
-            last_name: profile.last_name,
-            role: profile.role,
-            is_superuser: profile.is_superuser,
-            employee_id: profile.employee_id,
-            department: profile.department,
-            annual_leave_entitlement: profile.annual_leave_entitlement,
-            phone: profile.phone,
-            profile_image: profile.profile_image
-        });
+          email: profile.email || email,
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          role: profile.role,
+          is_superuser: profile.is_superuser,
+          employee_id: profile.employee_id,
+          department: profile.department,
+          annual_leave_entitlement: profile.annual_leave_entitlement,
+          phone: profile.phone,
+          profile_image: profile.profile_image
+        };
+        
+        console.log('🔍 DEBUG - Login user data:', userData);
+        setUser(userData);
       } catch (e) {
         setUser({ token: access, email });
       }
@@ -83,13 +96,11 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    console.log('🔍 DEBUG - Logout called');
+    localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
-    delete api.defaults.headers.common['Authorization'];
     setUser(null);
-  };
-
-  const value = { user, setUser, login, logout, loading };
+  };  const value = { user, setUser, login, logout, loading };
 
   return (
     <AuthContext.Provider value={value}>
