@@ -8,19 +8,7 @@ function Navbar() {
 
   const isActive = (path) => location.pathname === path;
   
-  // Debug user data in console (for production debugging)
-  React.useEffect(() => {
-    if (user) {
-      console.log('🔍 DEBUG - User data in Navbar:', {
-        role: user.role,
-        is_superuser: user.is_superuser,
-        email: user.email,
-        first_name: user.first_name,
-        should_see_manager: user?.role === 'manager' || user?.is_superuser,
-        should_see_staff: user?.role === 'hr' || user?.is_superuser,
-      });
-    }
-  }, [user]);
+
 
   return (
     <nav className="bg-white shadow-lg">
@@ -106,12 +94,7 @@ function Navbar() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            {/* Temporary debug info for production troubleshooting */}
-            {user && (
-              <div className="text-xs text-gray-600 hidden lg:block">
-                {user.first_name} | {user.role} | SU: {user.is_superuser ? 'Y' : 'N'}
-              </div>
-            )}
+
             <button
               onClick={logout}
               className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-md text-sm font-medium"

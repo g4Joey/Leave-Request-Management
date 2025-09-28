@@ -17,13 +17,9 @@ export function AuthProvider({ children }) {
       if (token) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         try {
-          const profileRes = await api.get('/users/me/');
-          const profile = profileRes.data || {};
-          
-          // Debug profile data
-          console.log('🔍 DEBUG - Profile data from /users/me/:', profile);
-          
-          const userData = {
+          const response = await api.get('/users/me/');
+          const profile = response.data || {};
+          setUser({
             token,
             email: profile.email,
             first_name: profile.first_name,
@@ -35,10 +31,7 @@ export function AuthProvider({ children }) {
             annual_leave_entitlement: profile.annual_leave_entitlement,
             phone: profile.phone,
             profile_image: profile.profile_image
-          };
-          
-          console.log('🔍 DEBUG - Processed user data:', userData);
-          setUser(userData);
+          });
         } catch (e) {
           // token might be invalid; clear it
           localStorage.removeItem('token');
@@ -67,10 +60,7 @@ export function AuthProvider({ children }) {
       try {
         const profileRes = await api.get('/users/me/');
         const profile = profileRes.data || {};
-        
-        console.log('🔍 DEBUG - Login profile data:', profile);
-        
-        const userData = {
+        setUser({
           token: access,
           email: profile.email || email,
           first_name: profile.first_name,
@@ -82,10 +72,7 @@ export function AuthProvider({ children }) {
           annual_leave_entitlement: profile.annual_leave_entitlement,
           phone: profile.phone,
           profile_image: profile.profile_image
-        };
-        
-        console.log('🔍 DEBUG - Login user data:', userData);
-        setUser(userData);
+        });
       } catch (e) {
         setUser({ token: access, email });
       }
@@ -96,8 +83,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    console.log('🔍 DEBUG - Logout called');
-    localStorage.removeItem('access_token');
+    localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     setUser(null);
   };  const value = { user, setUser, login, logout, loading };
