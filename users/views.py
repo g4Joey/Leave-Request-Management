@@ -66,10 +66,19 @@ class MyProfileView(APIView):
         return Response(serializer.data)
 
     def patch(self, request):
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"MyProfileView PATCH - Request data: {request.data}")
+        logger.info(f"MyProfileView PATCH - Content type: {request.content_type}")
+        
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            logger.info(f"MyProfileView PATCH - Success: {serializer.data}")
             return Response(serializer.data)
+        
+        logger.error(f"MyProfileView PATCH - Validation errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

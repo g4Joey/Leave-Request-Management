@@ -140,7 +140,16 @@ function MyProfile() {
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await api.patch('/users/me/', profileData);
+      // Exclude profile_image from JSON updates - it should only be updated via multipart uploads
+      const updateData = {
+        first_name: profileData.first_name,
+        last_name: profileData.last_name,
+        email: profileData.email,
+        phone: profileData.phone
+      };
+      console.log('Sending profile data:', updateData);
+      const response = await api.patch('/users/me/', updateData);
+      console.log('Profile update response:', response.data);
       setUser(prev => ({ 
         ...prev, 
         first_name: response.data.first_name,
@@ -151,7 +160,9 @@ function MyProfile() {
       showToast('Profile updated successfully', 'success');
     } catch (error) {
       console.error('Profile update error:', error);
-      showToast(error.response?.data?.detail || 'Failed to update profile', 'error');
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      showToast(error.response?.data?.detail || error.response?.data?.message || 'Failed to update profile', 'error');
     } finally {
       setLoading(false);
     }
