@@ -45,6 +45,15 @@ function MyProfile() {
     }
   }, [user]);
 
+  // Helper function to get full image URL
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+    // Get the base API URL and remove '/api' suffix if present
+    const baseUrl = api.defaults.baseURL.replace('/api', '');
+    return `${baseUrl}${imagePath.startsWith('/') ? imagePath : '/' + imagePath}`;
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setProfileData(prev => ({
@@ -111,6 +120,7 @@ function MyProfile() {
             }
           });
           
+          console.log('Profile image upload response:', response.data.profile_image);
           setUser(prev => ({ ...prev, profile_image: response.data.profile_image }));
           setImageUpload({ file: null, preview: null, cropping: false, cropData: { x: 0, y: 0, width: 160, height: 160 } });
           showToast('Profile image updated successfully', 'success');
@@ -192,11 +202,23 @@ function MyProfile() {
               <div className="relative">
                 <div className="w-32 h-32 bg-gray-200 rounded-full overflow-hidden border-4 border-white shadow-lg">
                   {user?.profile_image ? (
-                    <img 
-                      src={user.profile_image} 
-                      alt="Profile" 
-                      className="w-full h-full object-cover"
-                    />
+                    <>
+                      <img 
+                        src={getImageUrl(user.profile_image)} 
+                        alt="Profile" 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          console.log('Image load error for:', user.profile_image);
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-blue-600" style={{display: 'none'}}>
+                        <span className="text-2xl font-bold text-white">
+                          {user?.first_name?.[0]}{user?.last_name?.[0]}
+                        </span>
+                      </div>
+                    </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-blue-600">
                       <span className="text-2xl font-bold text-white">
