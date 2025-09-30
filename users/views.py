@@ -71,11 +71,22 @@ class MyProfileView(APIView):
         
         logger.info(f"MyProfileView PATCH - Request data: {request.data}")
         logger.info(f"MyProfileView PATCH - Content type: {request.content_type}")
+        logger.info(f"MyProfileView PATCH - Files: {request.FILES}")
+        
+        # Check if this is an image upload
+        if 'profile_image' in request.FILES:
+            image_file = request.FILES['profile_image']
+            logger.info(f"MyProfileView PATCH - Image upload detected:")
+            logger.info(f"  - Name: {image_file.name}")
+            logger.info(f"  - Size: {image_file.size}")
+            logger.info(f"  - Content type: {image_file.content_type}")
         
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            request.user.refresh_from_db()  # Refresh to get updated data
             logger.info(f"MyProfileView PATCH - Success: {serializer.data}")
+            logger.info(f"MyProfileView PATCH - User profile_image after save: {request.user.profile_image}")
             return Response(serializer.data)
         
         logger.error(f"MyProfileView PATCH - Validation errors: {serializer.errors}")

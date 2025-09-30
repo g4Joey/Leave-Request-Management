@@ -35,6 +35,8 @@ function MyProfile() {
   // Load user profile data
   useEffect(() => {
     if (user) {
+      console.log('👤 User object updated:', user);
+      console.log('👤 Profile image value:', user.profile_image);
       setProfileData({
         first_name: user.first_name || '',
         last_name: user.last_name || '',
@@ -47,11 +49,22 @@ function MyProfile() {
 
   // Helper function to get full image URL
   const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    if (imagePath.startsWith('http')) return imagePath;
+    console.log('🖼️ getImageUrl called with:', imagePath);
+    if (!imagePath) {
+      console.log('🖼️ No image path provided');
+      return null;
+    }
+    if (imagePath.startsWith('http')) {
+      console.log('🖼️ Full URL detected:', imagePath);
+      return imagePath;
+    }
     // Get the base API URL and remove '/api' suffix if present
     const baseUrl = api.defaults.baseURL.replace('/api', '');
-    return `${baseUrl}${imagePath.startsWith('/') ? imagePath : '/' + imagePath}`;
+    const fullUrl = `${baseUrl}${imagePath.startsWith('/') ? imagePath : '/' + imagePath}`;
+    console.log('🖼️ Constructed URL:', fullUrl);
+    console.log('🖼️ API baseURL:', api.defaults.baseURL);
+    console.log('🖼️ Base URL:', baseUrl);
+    return fullUrl;
   };
 
   const handleInputChange = (e) => {
@@ -112,15 +125,17 @@ function MyProfile() {
         const formData = new FormData();
         formData.append('profile_image', blob, 'profile_image.jpg');
         
+        console.log('📤 Uploading image blob:', blob);
+        console.log('📤 Blob size:', blob.size);
+        console.log('📤 Blob type:', blob.type);
+        
         try {
           setLoading(true);
-          const response = await api.patch('/users/me/', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            }
-          });
+          // Don't set Content-Type manually - let browser set it with correct boundary
+          const response = await api.patch('/users/me/', formData);
           
-          console.log('Profile image upload response:', response.data.profile_image);
+          console.log('📥 Image upload response:', response.data);
+          console.log('📥 Profile image path:', response.data.profile_image);
           setUser(prev => ({ ...prev, profile_image: response.data.profile_image }));
           setImageUpload({ file: null, preview: null, cropping: false, cropData: { x: 0, y: 0, width: 160, height: 160 } });
           showToast('Profile image updated successfully', 'success');
@@ -218,8 +233,13 @@ function MyProfile() {
                         src={getImageUrl(user.profile_image)} 
                         alt="Profile" 
                         className="w-full h-full object-cover"
+                        onLoad={(e) => {
+                          console.log('✅ Image loaded successfully:', e.target.src);
+                        }}
                         onError={(e) => {
-                          console.log('Image load error for:', user.profile_image);
+                          console.log('❌ Image load error for path:', user.profile_image);
+                          console.log('❌ Image load error for URL:', e.target.src);
+                          console.log('❌ Image error event:', e);
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'flex';
                         }}
