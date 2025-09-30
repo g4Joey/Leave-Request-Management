@@ -122,26 +122,33 @@ function MyProfile() {
       ctx.drawImage(img, x, y, width, height, 0, 0, 160, 160);
       
       canvas.toBlob(async (blob) => {
-        const formData = new FormData();
-        formData.append('profile_image', blob, 'profile_image.jpg');
-        
+        if (!blob) {
+          console.error('❌ Failed to create image blob from canvas');
+          showToast('Failed to process image before upload', 'error');
+          return;
+        }
+
         console.log('📤 Uploading image blob:', blob);
         console.log('📤 Blob size:', blob.size);
         console.log('📤 Blob type:', blob.type);
-        
+
+        const formData = new FormData();
+        formData.append('profile_image', blob, 'profile_image.jpg');
+
         try {
           setLoading(true);
-          // Don't set Content-Type manually - let browser set it with correct boundary
           const response = await api.patch('/users/me/', formData);
-          
           console.log('📥 Image upload response:', response.data);
-          console.log('📥 Profile image path:', response.data.profile_image);
+          if (!response.data.profile_image) {
+            console.warn('⚠️ Response missing profile_image field');
+          }
           setUser(prev => ({ ...prev, profile_image: response.data.profile_image }));
           setImageUpload({ file: null, preview: null, cropping: false, cropData: { x: 0, y: 0, width: 160, height: 160 } });
           showToast('Profile image updated successfully', 'success');
         } catch (error) {
           console.error('Image upload error:', error);
-          showToast(error.response?.data?.detail || 'Failed to update profile image', 'error');
+          console.error('Image upload error response:', error.response?.data);
+          showToast(error.response?.data?.detail || error.response?.data?.profile_image?.[0] || 'Failed to update profile image', 'error');
         } finally {
           setLoading(false);
         }

@@ -73,6 +73,20 @@ class MyProfileView(APIView):
         logger.info(f"MyProfileView PATCH - Content type: {request.content_type}")
         logger.info(f"MyProfileView PATCH - Files: {request.FILES}")
         
+        # Special case: explicit image removal (frontend sends empty string)
+        if 'profile_image' in request.data and request.data.get('profile_image') in ['', None]:
+            logger.info("MyProfileView PATCH - Clearing profile image as empty value provided")
+            if getattr(request.user, 'profile_image', None):
+                try:
+                    request.user.profile_image.delete(save=False)
+                except Exception as e:  # pragma: no cover - defensive
+                    logger.warning(f"Failed deleting old image file: {e}")
+            request.user.profile_image = None
+            request.user.save(update_fields=["profile_image", "updated_at"]) if hasattr(request.user, 'updated_at') else request.user.save()
+            refreshed = UserSerializer(request.user).data
+            logger.info("MyProfileView PATCH - Image cleared successfully")
+            return Response(refreshed)
+
         # Check if this is an image upload
         if 'profile_image' in request.FILES:
             image_file = request.FILES['profile_image']
