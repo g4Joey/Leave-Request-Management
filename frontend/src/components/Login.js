@@ -37,7 +37,7 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen grid place-items-center bg-gray-50 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen relative grid place-items-center bg-gray-50 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
@@ -124,6 +124,20 @@ function Login() {
           </div>
         )}
       </div>
+      {/* DigitalOcean referral badge */}
+      <a
+        href="https://www.digitalocean.com/?refcode=b763faf71d52&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hidden sm:block fixed bottom-4 right-4 opacity-80 hover:opacity-100 transition"
+        aria-label="DigitalOcean Referral Badge"
+      >
+        <img
+          src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%201.svg"
+          alt="DigitalOcean Referral Badge"
+          className="h-12 w-auto drop-shadow"
+        />
+      </a>
     </div>
   );
 }
