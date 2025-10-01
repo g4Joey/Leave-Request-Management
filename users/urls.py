@@ -3,7 +3,16 @@ from rest_framework.routers import DefaultRouter
 from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileView, DepartmentViewSet, ChangePasswordView
 
 router = DefaultRouter()
-router.register(r'users', UserViewSet, basename='user')
+"""Router configuration:
+Register the user viewset at the root so that including this urls.py at
+path('api/users/', ...) yields endpoints:
+    /api/users/            -> user list
+    /api/users/<pk>/       -> user detail
+
+Previously this was registered as 'users', producing paths like
+    /api/users/users/<pk>/ which broke frontend calls to /api/users/<pk>/.
+"""
+router.register(r'', UserViewSet, basename='user')
 router.register(r'departments', DepartmentViewSet, basename='department')
 
 urlpatterns = [
