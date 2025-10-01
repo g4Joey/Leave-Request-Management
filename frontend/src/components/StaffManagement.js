@@ -21,7 +21,7 @@ function StaffManagement() {
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
-  const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null });
+  const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
@@ -117,14 +117,24 @@ function StaffManagement() {
   }, [employeeQuery, employees]);
 
   const openProfile = async (emp) => {
+    if (!emp || !emp.id) {
+      showToast({ type: 'error', message: 'Invalid employee record – missing ID' });
+      console.error('openProfile called with invalid employee object:', emp);
+      return;
+    }
+    console.log('[StaffManagement] Opening profile for employee:', emp);
+    setProfileModal({ open: true, loading: true, employee: emp, data: null, error: null });
     try {
-      setProfileModal({ open: true, loading: true, employee: emp, data: null });
-      // Get full user profile (HR is allowed to read arbitrary users via existing list/retrieve guards)
+      // Get full user profile (requires HR / manager / admin / superuser OR own record)
       const res = await api.get(`/users/${emp.id}/`);
-      setProfileModal({ open: true, loading: false, employee: emp, data: res.data });
+      console.log('[StaffManagement] Profile response:', res.data);
+      setProfileModal({ open: true, loading: false, employee: emp, data: res.data, error: null });
     } catch (e) {
-      setProfileModal({ open: false, loading: false, employee: null, data: null });
-      const msg = e.response?.data?.detail || 'Failed to load profile';
+      const status = e.response?.status;
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
+      console.error('[StaffManagement] Failed to load profile', { status, error: e, response: e.response?.data });
+      // Keep modal open and show inline error so user sees something instead of silent close
+      setProfileModal({ open: true, loading: false, employee: emp, data: null, error: msg });
       showToast({ type: 'error', message: msg });
     }
   };
@@ -701,9 +711,15 @@ function StaffManagement() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
           <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
             <h3 className="text-lg font-semibold mb-2">Profile: {profileModal.employee?.name}</h3>
-            {profileModal.loading ? (
+            {profileModal.loading && (
               <div className="text-sm text-gray-500">Loading...</div>
-            ) : (
+            )}
+            {!profileModal.loading && profileModal.error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3 mb-2">
+                {profileModal.error}
+              </div>
+            )}
+            {!profileModal.loading && !profileModal.error && profileModal.data && (
               <div className="space-y-2 text-sm">
                 <div><span className="font-medium">Employee ID:</span> {profileModal.data?.employee_id}</div>
                 <div><span className="font-medium">Email:</span> {profileModal.data?.email}</div>
