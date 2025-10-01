@@ -127,8 +127,21 @@ function StaffManagement() {
     try {
       // Get full user profile (requires HR / manager / admin / superuser OR own record)
       const res = await api.get(`/users/${emp.id}/`);
-      console.log('[StaffManagement] Profile response:', res.data);
-      setProfileModal({ open: true, loading: false, employee: emp, data: res.data, error: null });
+      console.log('[StaffManagement] Raw profile response:', res.data);
+      // Normalize response to strip any unexpected nested objects that might break rendering
+      const raw = res.data || {};
+      const normalized = {
+        id: raw.id,
+        employee_id: raw.employee_id,
+        email: raw.email,
+        role: raw.role,
+        department_name: raw.department?.name || raw.department_name || (typeof raw.department === 'string' ? raw.department : undefined),
+        hire_date: raw.hire_date,
+        first_name: raw.first_name,
+        last_name: raw.last_name,
+      };
+      console.log('[StaffManagement] Normalized profile response:', normalized);
+      setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
     } catch (e) {
       const status = e.response?.status;
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
@@ -721,14 +734,20 @@ function StaffManagement() {
             )}
             {!profileModal.loading && !profileModal.error && profileModal.data && (
               <div className="space-y-2 text-sm">
-                <div><span className="font-medium">Employee ID:</span> {profileModal.data?.employee_id}</div>
-                <div><span className="font-medium">Email:</span> {profileModal.data?.email}</div>
-                <div><span className="font-medium">Role:</span> {profileModal.data?.role}</div>
-                <div><span className="font-medium">Department:</span> {profileModal.data?.department_name || profileModal.data?.department}</div>
-                {profileModal.data?.hire_date && (
+                {(() => { console.log('[StaffManagement] Rendering profile modal with data:', profileModal.data); return null; })()}
+                <div><span className="font-medium">Employee ID:</span> {profileModal.data.employee_id || '—'}</div>
+                <div><span className="font-medium">Email:</span> {profileModal.data.email || '—'}</div>
+                <div><span className="font-medium">Role:</span> {profileModal.data.role || '—'}</div>
+                <div><span className="font-medium">Department:</span> {profileModal.data.department_name || '—'}</div>
+                {profileModal.data.hire_date ? (
                   <div><span className="font-medium">Hire Date:</span> {new Date(profileModal.data.hire_date).toLocaleDateString()}</div>
+                ) : (
+                  <div><span className="font-medium">Hire Date:</span> —</div>
                 )}
               </div>
+            )}
+            {!profileModal.loading && !profileModal.error && !profileModal.data && (
+              <div className="text-sm text-gray-500 italic">No profile data available.</div>
             )}
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setProfileModal({ open: false, loading: false, employee: null, data: null })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200">Close</button>
