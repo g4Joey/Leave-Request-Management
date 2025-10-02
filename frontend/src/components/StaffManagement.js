@@ -104,11 +104,6 @@ function StaffManagement() {
 
   // Load employment grades once when user is authorized (HR/Admin or superuser)
   const loadGrades = useCallback(async (force = false) => {
-    if (!canManageGradeEntitlements) {
-      // If not privileged, do not fetch (entitlements UI) but keep existing list for profile view if previously loaded
-      if (force) console.debug('[StaffManagement] Skipping grade fetch (no privileges).');
-      return;
-    }
     console.debug('[StaffManagement] Loading grades...');
     setGradesLoading(true);
     setGradesError(null);
@@ -133,7 +128,7 @@ function StaffManagement() {
     } finally {
       setGradesLoading(false);
     }
-  }, [canManageGradeEntitlements, showToast]);
+  }, [showToast]);
 
   useEffect(() => {
     loadGrades();
