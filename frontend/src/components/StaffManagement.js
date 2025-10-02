@@ -103,12 +103,13 @@ function StaffManagement() {
   const [gradesError, setGradesError] = useState(null);
 
   // Load employment grades once when user is authorized (HR/Admin or superuser)
-  const loadGrades = useCallback(async () => {
+  const loadGrades = useCallback(async (force = false) => {
     if (!canManageGradeEntitlements) {
-      // Clear out any stale data if user lost privileges (e.g., role changed)
-      setGrades([]);
+      // If not privileged, do not fetch (entitlements UI) but keep existing list for profile view if previously loaded
+      if (force) console.debug('[StaffManagement] Skipping grade fetch (no privileges).');
       return;
     }
+    console.debug('[StaffManagement] Loading grades...');
     setGradesLoading(true);
     setGradesError(null);
     try {
@@ -116,7 +117,7 @@ function StaffManagement() {
       const data = res.data?.results || res.data || [];
       setGrades(data);
       if (!Array.isArray(data) || data.length === 0) {
-        console.warn('[StaffManagement] Grades API returned empty list');
+        console.warn('[StaffManagement] Grades API returned empty list or unexpected structure', res.data);
       }
     } catch (e) {
       const status = e.response?.status;
@@ -137,6 +138,46 @@ function StaffManagement() {
   useEffect(() => {
     loadGrades();
   }, [loadGrades]);
+
+  // Ensure grades refreshed when opening a profile (in case initial fetch failed or occurred before privileges resolved)
+  const openProfile = async (emp) => {
+    if (canManageGradeEntitlements && grades.length === 0 && !gradesLoading) {
+      loadGrades(true);
+    }
+    // ...existing code...
+    if (!emp || !emp.id) {
+      showToast({ type: 'error', message: 'Invalid employee record – missing ID' });
+      console.error('openProfile called with invalid employee object:', emp);
+      return;
+    }
+    console.log('[StaffManagement] Opening profile for employee:', emp);
+    setProfileModal({ open: true, loading: true, employee: emp, data: null, error: null });
+    try {
+      const res = await api.get(`/users/${emp.id}/`);
+      console.log('[StaffManagement] Raw profile response:', res.data);
+      const raw = res.data || {};
+      const normalized = {
+        id: raw.id,
+        employee_id: raw.employee_id,
+        email: raw.email,
+        role: raw.role,
+        department_name: raw.department?.name || raw.department_name || (typeof raw.department === 'string' ? raw.department : undefined),
+        hire_date: raw.hire_date,
+        first_name: raw.first_name,
+        last_name: raw.last_name,
+        grade: raw.grade || null,
+      };
+      console.log('[StaffManagement] Normalized profile response:', normalized);
+      setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
+      setProfileGradeId(normalized.grade?.id || null);
+    } catch (e) {
+      const status = e.response?.status;
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
+      console.error('[StaffManagement] Failed to load profile', { status, error: e, response: e.response?.data });
+      setProfileModal({ open: true, loading: false, employee: emp, data: null, error: msg });
+      showToast({ type: 'error', message: msg });
+    }
+  };
 
   const toggleDepartment = (deptId) => {
     setExpandedDepts((prev) => ({
@@ -175,44 +216,6 @@ function StaffManagement() {
         e.employee_id?.toLowerCase().includes(q)
     );
   }, [employeeQuery, employees]);
-
-  const openProfile = async (emp) => {
-    if (!emp || !emp.id) {
-      showToast({ type: 'error', message: 'Invalid employee record – missing ID' });
-      console.error('openProfile called with invalid employee object:', emp);
-      return;
-    }
-    console.log('[StaffManagement] Opening profile for employee:', emp);
-    setProfileModal({ open: true, loading: true, employee: emp, data: null, error: null });
-    try {
-      // Get full user profile (requires HR / manager / admin / superuser OR own record)
-      const res = await api.get(`/users/${emp.id}/`);
-      console.log('[StaffManagement] Raw profile response:', res.data);
-      // Normalize response to strip any unexpected nested objects that might break rendering
-      const raw = res.data || {};
-      const normalized = {
-        id: raw.id,
-        employee_id: raw.employee_id,
-        email: raw.email,
-        role: raw.role,
-        department_name: raw.department?.name || raw.department_name || (typeof raw.department === 'string' ? raw.department : undefined),
-        hire_date: raw.hire_date,
-        first_name: raw.first_name,
-        last_name: raw.last_name,
-        grade: raw.grade || null,
-      };
-      console.log('[StaffManagement] Normalized profile response:', normalized);
-      setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
-      setProfileGradeId(normalized.grade?.id || null);
-    } catch (e) {
-      const status = e.response?.status;
-      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
-      console.error('[StaffManagement] Failed to load profile', { status, error: e, response: e.response?.data });
-      // Keep modal open and show inline error so user sees something instead of silent close
-      setProfileModal({ open: true, loading: false, employee: emp, data: null, error: msg });
-      showToast({ type: 'error', message: msg });
-    }
-  };
 
   const saveProfileGrade = async () => {
     if (!profileModal?.employee?.id) return;
@@ -778,13 +781,27 @@ function StaffManagement() {
               <section>
                 <h2 className="text-lg font-medium mb-4">Grade Entitlements</h2>
                 {canManageGradeEntitlements ? (
-                  gradesLoading ? (
-                    <div className="text-sm text-gray-500">Loading grades...</div>
-                  ) : gradesError ? (
-                    <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">{gradesError}</div>
-                  ) : (
-                    <GradeEntitlements grades={grades} refreshGrades={loadGrades} />
-                  )
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => loadGrades(true)}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-gray-300 hover:bg-gray-50"
+                        disabled={gradesLoading}
+                      >
+                        {gradesLoading ? 'Refreshing...' : 'Reload Grades'}
+                      </button>
+                      {grades.length > 0 && !gradesLoading && (
+                        <span className="text-xs text-gray-500">{grades.length} grade{grades.length !== 1 ? 's' : ''} loaded</span>
+                      )}
+                    </div>
+                    {gradesLoading ? (
+                      <div className="text-sm text-gray-500">Loading grades...</div>
+                    ) : gradesError ? (
+                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">{gradesError}</div>
+                    ) : (
+                      <GradeEntitlements grades={grades} refreshGrades={loadGrades} />
+                    )}
+                  </div>
                 ) : (
                   <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">You are not authorized to view this section.</div>
                 )}
