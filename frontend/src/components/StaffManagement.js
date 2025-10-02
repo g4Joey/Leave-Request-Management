@@ -111,22 +111,30 @@ function StaffManagement() {
 
   // Load employment grades once when user is authorized (HR/Admin or superuser)
   const loadGrades = useCallback(async (force = false) => {
-    console.debug('[StaffManagement] Loading grades...');
+    console.log('[StaffManagement] Loading grades...');
     setGradesLoading(true);
     setGradesError(null);
     try {
       const res = await api.get('/leaves/grades/');
+      console.log('[StaffManagement] Grades API response:', res);
+      console.log('[StaffManagement] Response status:', res.status);
+      console.log('[StaffManagement] Response data:', res.data);
+      
       const data = res.data?.results || res.data || [];
+      console.log('[StaffManagement] Processed grades data:', data);
       setGrades(data);
+      
       if (!Array.isArray(data) || data.length === 0) {
         console.warn('[StaffManagement] Grades API returned empty list or unexpected structure', res.data);
+      } else {
+        console.log(`[StaffManagement] Successfully loaded ${data.length} grades:`, data.map(g => ({ id: g.id, name: g.name })));
       }
     } catch (e) {
       const status = e.response?.status;
       const detail = e.response?.data?.detail || e.message;
       setGrades([]);
       setGradesError(detail || 'Failed to load grades');
-      console.warn('Failed to load grades', { status, detail, error: e });
+      console.error('Failed to load grades', { status, detail, error: e, response: e.response });
       if (status === 403) {
         showToast({ type: 'warning', message: "You don't have permission to view grades." });
       } else {
@@ -926,7 +934,14 @@ function StaffManagement() {
                         disabled={profileGradeSaving}
                       >
                         <option value="">— None —</option>
-                        {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        {(() => {
+                          console.log('[StaffManagement] Rendering grade options, grades array:', grades);
+                          console.log('[StaffManagement] Grades length:', grades.length);
+                          return grades.map(g => {
+                            console.log('[StaffManagement] Rendering grade option:', g);
+                            return <option key={g.id} value={g.id}>{g.name}</option>;
+                          });
+                        })()}
                       </select>
                     )}
                     <button
