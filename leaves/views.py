@@ -590,7 +590,15 @@ class IsHRAdminPermission(permissions.BasePermission):
 class EmploymentGradeViewSet(viewsets.ModelViewSet):
     queryset = EmploymentGrade.objects.filter(is_active=True)
     serializer_class = EmploymentGradeSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRAdminPermission]
+    # Default relaxed auth; enforce HR/Admin for mutating actions in get_permissions
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):  # type: ignore[override]
+        """Allow any authenticated user to list/retrieve grades, but restrict write ops to HR/Admin."""
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        # For create/update/partial_update/destroy use HR/Admin gate
+        return [permissions.IsAuthenticated(), IsHRAdminPermission()]
 
 
 class LeaveGradeEntitlementViewSet(viewsets.ModelViewSet):
