@@ -70,17 +70,24 @@ function StaffManagement() {
       setDepartments(depts);
       // Flatten employees for the Employees tab
       const flattened = depts.flatMap((d) =>
-        (d.staff || []).map((s) => ({
-          id: s.id,
-          name: cleanName(s.name),
-          email: s.email,
-          department: d.name,
-          employee_id: s.employee_id,
-          role: s.role,
-          manager: s.manager,
-          hire_date: s.hire_date,
-          grade: s.grade?.name || null,
-        }))
+        (d.staff || []).map((s) => {
+          const gradeName = s?.grade?.name ?? null;
+          const gradeId = s?.grade?.id ?? s?.grade_id ?? null;
+          const gradeSlug = s?.grade?.slug ?? null;
+          return {
+            id: s.id,
+            name: cleanName(s.name),
+            email: s.email,
+            department: d.name,
+            employee_id: s.employee_id,
+            role: s.role,
+            manager: s.manager,
+            hire_date: s.hire_date,
+            grade: gradeName,
+            grade_id: gradeId,
+            grade_slug: gradeSlug,
+          };
+        })
       );
       setEmployees(flattened);
     } catch (error) {
@@ -218,11 +225,35 @@ function StaffManagement() {
     if (currentId === profileGradeId) return; // no change
     try {
       setProfileGradeSaving(true);
-      await api.patch(`/users/${profileModal.employee.id}/`, { grade_id: profileGradeId });
+      const res = await api.patch(`/users/${profileModal.employee.id}/`, { grade_id: profileGradeId });
+      const updatedUser = res.data || {};
+      const updatedGrade = updatedUser.grade || null;
       showToast({ type: 'success', message: 'Grade updated' });
       // Update local modal data
-      const g = grades.find(g => g.id === profileGradeId) || null;
-      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, grade: g } : prev.data }));
+      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, grade: updatedGrade } : prev.data }));
+      setProfileGradeId(updatedGrade?.id ?? null);
+      const employeeId = profileModal.employee.id;
+      const gradeName = updatedGrade?.name || null;
+      const gradeId = updatedGrade?.id ?? null;
+      const gradeSlug = updatedGrade?.slug ?? null;
+      setEmployees(prev => prev.map((emp) => (
+        emp.id === employeeId
+          ? { ...emp, grade: gradeName, grade_id: gradeId, grade_slug: gradeSlug }
+          : emp
+      )));
+      setDepartments(prev => prev.map((dept) => {
+        if (!Array.isArray(dept.staff)) {
+          return dept;
+        }
+        return {
+          ...dept,
+          staff: dept.staff.map((staffer) => (
+            staffer.id === employeeId
+              ? { ...staffer, grade: updatedGrade, grade_id: gradeId }
+              : staffer
+          )),
+        };
+      }));
     } catch (e) {
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to update grade';
       showToast({ type: 'error', message: msg });
@@ -622,6 +653,9 @@ function StaffManagement() {
                                               {new Date(staff.hire_date).toLocaleDateString()}
                                             </p>
                                           )}
+                                          <p className="text-sm text-gray-600">
+                                            <span className="font-medium">Grade:</span> {staff.grade?.name || '—'}
+                                          </p>
                                           {staff.manager && (
                                             <p className="text-sm text-gray-600">
                                               <span className="font-medium">Approver:</span>{' '}

@@ -1,6 +1,31 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 
+const normalizeProfile = (profile = {}, token = null) => {
+  const grade = profile.grade ?? null;
+  const gradeId = grade?.id ?? profile.grade_id ?? null;
+  const gradeSlug = grade?.slug ?? profile.grade_slug ?? null;
+  return {
+    token,
+    email: profile.email,
+    first_name: profile.first_name,
+    last_name: profile.last_name,
+    role: (profile.role || '').toLowerCase(),
+    is_superuser:
+      profile.is_superuser === true ||
+      profile.is_superuser === 'true' ||
+      profile.is_superuser === 'True',
+    employee_id: profile.employee_id,
+    department: profile.department,
+    annual_leave_entitlement: profile.annual_leave_entitlement,
+    phone: profile.phone,
+    profile_image: profile.profile_image,
+    grade,
+    grade_id: gradeId,
+    grade_slug: gradeSlug,
+  };
+};
+
 const AuthContext = createContext();
 
 export function useAuth() {
@@ -19,19 +44,7 @@ export function AuthProvider({ children }) {
         try {
           const response = await api.get('/users/me/');
           const profile = response.data || {};
-          const normalized = {
-            token,
-            email: profile.email,
-            first_name: profile.first_name,
-            last_name: profile.last_name,
-            role: (profile.role || '').toLowerCase(),
-            is_superuser: profile.is_superuser === true || profile.is_superuser === 'true' || profile.is_superuser === 'True',
-            employee_id: profile.employee_id,
-            department: profile.department,
-            annual_leave_entitlement: profile.annual_leave_entitlement,
-            phone: profile.phone,
-            profile_image: profile.profile_image
-          };
+          const normalized = normalizeProfile(profile, token);
           // Defensive logging if role missing or unexpected
           if (!normalized.role) {
             console.warn('AuthContext: Missing role in profile payload', profile);
@@ -65,25 +78,24 @@ export function AuthProvider({ children }) {
       try {
         const profileRes = await api.get('/users/me/');
         const profile = profileRes.data || {};
-        const normalized = {
-          token: access,
+        const normalized = normalizeProfile({
+          ...profile,
           email: profile.email || email,
-          first_name: profile.first_name,
-          last_name: profile.last_name,
-          role: (profile.role || '').toLowerCase(),
-          is_superuser: profile.is_superuser === true || profile.is_superuser === 'true' || profile.is_superuser === 'True',
-          employee_id: profile.employee_id,
-          department: profile.department,
-          annual_leave_entitlement: profile.annual_leave_entitlement,
-          phone: profile.phone,
-          profile_image: profile.profile_image
-        };
+        }, access);
         if (!normalized.role) {
             console.warn('AuthContext (login): Missing role in profile payload', profile);
         }
         setUser(normalized);
       } catch (e) {
-        setUser({ token: access, email, role: '', is_superuser: false });
+        setUser({
+          token: access,
+          email,
+          role: '',
+          is_superuser: false,
+          grade: null,
+          grade_id: null,
+          grade_slug: null,
+        });
       }
       return { success: true };
     } catch (error) {
@@ -95,7 +107,9 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     setUser(null);
-  };  const value = { user, setUser, login, logout, loading };
+  };
+
+  const value = { user, setUser, login, logout, loading };
 
   return (
     <AuthContext.Provider value={value}>

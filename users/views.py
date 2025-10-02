@@ -177,6 +177,15 @@ class StaffManagementView(APIView):
                         'name': staff.manager.get_full_name(),
                         'employee_id': staff.manager.employee_id
                     }
+
+                grade = getattr(staff, 'grade', None)
+                grade_info = None
+                if grade is not None:
+                    grade_info = {
+                        'id': getattr(grade, 'pk', None),
+                        'name': getattr(grade, 'name', None),
+                        'slug': getattr(grade, 'slug', None),
+                    }
                 
                 staff_data.append({
                     'id': staff.pk,
@@ -185,7 +194,9 @@ class StaffManagementView(APIView):
                     'email': staff.email,
                     'role': staff.role,
                     'hire_date': staff.hire_date,
-                    'manager': manager_info
+                    'manager': manager_info,
+                    'grade': grade_info,
+                    'grade_id': getattr(staff, 'grade_id', None)
                 })
             
             data.append({
