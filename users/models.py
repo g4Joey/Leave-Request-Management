@@ -53,6 +53,11 @@ class CustomUser(AbstractUser):
 
     # Profile image
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
+
+    # Employment grade (Heads, Senior Officers, etc.)
+    grade = models.ForeignKey(
+        'EmploymentGrade', null=True, blank=True, on_delete=models.SET_NULL, related_name='users'
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -81,3 +86,22 @@ class CustomUser(AbstractUser):
         ordering = ['employee_id']
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+
+
+class EmploymentGrade(models.Model):
+    """Employment grade representing rank/level for group entitlements."""
+    name = models.CharField(max_length=80, unique=True)
+    slug = models.SlugField(max_length=80, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # NOTE: After adding this model run migrations:
+    #   python manage.py makemigrations users
+    #   python manage.py migrate
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self) -> str:  # pragma: no cover - simple
+        return self.name

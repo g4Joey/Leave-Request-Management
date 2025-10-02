@@ -10,14 +10,18 @@ from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
-from .models import LeaveRequest, LeaveType, LeaveBalance
+from .models import LeaveRequest, LeaveType, LeaveBalance, LeaveGradeEntitlement
 from .serializers import (
     LeaveRequestSerializer, 
     LeaveRequestListSerializer,
     LeaveApprovalSerializer,
     LeaveTypeSerializer, 
-    LeaveBalanceSerializer
+    LeaveBalanceSerializer,
+    EmploymentGradeSerializer,
+    LeaveGradeEntitlementSerializer
 )
+from users.models import EmploymentGrade
+from .grade_entitlements import apply_grade_entitlements
 
 
 class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
@@ -573,3 +577,91 @@ class IsManagerPermission(permissions.BasePermission):
         return getattr(user, 'is_superuser', False) or (
             hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'admin']
         )
+
+
+class IsHRAdminPermission(permissions.BasePermission):
+    """Permission limited strictly to HR/Admin (or superuser)."""
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
+        user = request.user
+        role = getattr(user, 'role', None)
+        return bool(getattr(user, 'is_superuser', False) or role in ['hr', 'admin'])
+
+
+class EmploymentGradeViewSet(viewsets.ModelViewSet):
+    queryset = EmploymentGrade.objects.filter(is_active=True)
+    serializer_class = EmploymentGradeSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRAdminPermission]
+
+
+class LeaveGradeEntitlementViewSet(viewsets.ModelViewSet):
+    queryset = LeaveGradeEntitlement.objects.select_related('grade', 'leave_type')
+    serializer_class = LeaveGradeEntitlementSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRAdminPermission]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['grade', 'leave_type']
+
+    @action(detail=False, methods=['post'])
+    def bulk_set(self, request):
+        """Bulk set entitlements for a grade.
+
+        Body: { "grade_id": <id>, "items": [ {"leave_type_id": <id>, "entitled_days": <num>} ], "apply_now": true|false }
+        """
+        grade_id = request.data.get('grade_id')
+        items = request.data.get('items', [])
+        apply_now = bool(request.data.get('apply_now'))
+        try:
+            grade = EmploymentGrade.objects.get(pk=grade_id, is_active=True)
+        except EmploymentGrade.DoesNotExist:
+            return Response({'error': 'grade not found'}, status=404)
+
+        updated = 0
+        created = 0
+        errors = []
+        from decimal import Decimal
+        for idx, it in enumerate(items):
+            try:
+                lt_id = int(it.get('leave_type_id'))
+                days = Decimal(str(it.get('entitled_days')))
+            except Exception:
+                errors.append({'index': idx, 'error': 'invalid leave_type_id or entitled_days'})
+                continue
+            if days < 0:
+                errors.append({'index': idx, 'error': 'entitled_days must be non-negative'})
+                continue
+            try:
+                lt = LeaveType.objects.get(pk=lt_id, is_active=True)
+            except LeaveType.DoesNotExist:
+                errors.append({'index': idx, 'error': f'leave_type {lt_id} not found'})
+                continue
+            ent, created_flag = LeaveGradeEntitlement.objects.get_or_create(
+                grade=grade, leave_type=lt, defaults={'entitled_days': days}
+            )
+            if created_flag:
+                created += 1
+            else:
+                if ent.entitled_days != days:
+                    ent.entitled_days = days
+                    ent.save(update_fields=['entitled_days', 'updated_at'])
+                    updated += 1
+
+        applied = 0
+        if apply_now:
+            applied = apply_grade_entitlements(grade)
+
+        return Response({
+            'message': 'Grade entitlements processed',
+            'grade': grade.name,
+            'updated': updated,
+            'created': created,
+            'applied_to_balances': applied,
+            'errors': errors,
+        })
+
+    @action(detail=True, methods=['post'])
+    def apply(self, request, pk=None):
+        grade = self.get_object().grade if isinstance(self.get_object(), LeaveGradeEntitlement) else None
+        # If detail route on an entitlement record, apply for its grade; if we later add grade detail, adapt
+        if not grade:
+            return Response({'error': 'Unable to resolve grade from entitlement'}, status=400)
+        applied = apply_grade_entitlements(grade)
+        return Response({'message': 'Applied grade entitlements', 'grade': grade.name, 'applied_to_balances': applied})

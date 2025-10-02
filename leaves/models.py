@@ -231,3 +231,25 @@ class LeavePolicy(models.Model):
         ordering = ['leave_type', 'department']
         verbose_name = 'Leave Policy'
         verbose_name_plural = 'Leave Policies'
+
+
+class LeaveGradeEntitlement(models.Model):
+    """Entitlement per leave type for a specific employment grade."""
+    grade = models.ForeignKey('users.EmploymentGrade', on_delete=models.CASCADE, related_name='entitlements')
+    leave_type = models.ForeignKey(LeaveType, on_delete=models.CASCADE, related_name='grade_entitlements')
+    entitled_days = models.DecimalField(max_digits=5, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # NOTE: After adding this model run migrations:
+    #   python manage.py makemigrations leaves
+    #   python manage.py migrate
+
+    class Meta:
+        unique_together = ('grade', 'leave_type')
+        ordering = ['grade__name', 'leave_type__name']
+        verbose_name = 'Grade Entitlement'
+        verbose_name_plural = 'Grade Entitlements'
+
+    def __str__(self):  # pragma: no cover
+        return f"{self.grade.name} - {self.leave_type.name}: {self.entitled_days}"

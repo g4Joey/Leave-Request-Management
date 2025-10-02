@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
-const SIDEBAR_ITEMS = [
+// Base sidebar items (grade-entitlements will be conditionally included for privileged roles)
+const BASE_SIDEBAR_ITEMS = [
   { id: 'departments', label: 'Departments' },
   { id: 'employees', label: 'Employees' },
   { id: 'leave-types', label: 'Leave Types' },
@@ -13,15 +15,32 @@ const SIDEBAR_ITEMS = [
 
 function StaffManagement() {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const canManageGradeEntitlements = useMemo(() => {
+    if (!user) return false;
+    return user.is_superuser || ['hr','admin'].includes(user.role);
+  }, [user]);
+
+  // Build sidebar items dynamically (hide Grade Entitlements unless privileged)
+  const SIDEBAR_ITEMS = useMemo(() => {
+    const items = [...BASE_SIDEBAR_ITEMS];
+    if (canManageGradeEntitlements) {
+      items.push({ id: 'grade-entitlements', label: 'Grade Entitlements' });
+    }
+    return items;
+  }, [canManageGradeEntitlements]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
-  const [active, setActive] = useState(SIDEBAR_ITEMS[0].id);
+  const [active, setActive] = useState('departments');
   const [employees, setEmployees] = useState([]);
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
+  const [profileGradeId, setProfileGradeId] = useState(null);
+  const [profileGradeSaving, setProfileGradeSaving] = useState(false);
+  const [grades, setGrades] = useState([]);
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
@@ -47,7 +66,7 @@ function StaffManagement() {
   const fetchStaffData = useCallback(async () => {
     try {
       const response = await api.get('/users/staff/');
-      const depts = response.data || [];
+    const depts = response.data.results || response.data || [];
       setDepartments(depts);
       // Flatten employees for the Employees tab
       const flattened = depts.flatMap((d) =>
@@ -60,6 +79,7 @@ function StaffManagement() {
           role: s.role,
           manager: s.manager,
           hire_date: s.hire_date,
+          grade: s.grade?.name || null,
         }))
       );
       setEmployees(flattened);
@@ -78,7 +98,19 @@ function StaffManagement() {
     fetchStaffData();
   }, [fetchStaffData]);
 
-  const toggleDepartment = (deptId) => {
+  // Load employment grades once (for profile modal dropdown & entitlements UI)
+  const loadGrades = useCallback(async () => {
+    try {
+      const res = await api.get('/leaves/grades/');
+      setGrades(res.data.results || res.data || []);
+    } catch (e) {
+      console.warn('Failed to load grades', e.response?.data || e.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGrades();
+  }, [loadGrades]);  const toggleDepartment = (deptId) => {
     setExpandedDepts((prev) => ({
       ...prev,
       [deptId]: !prev[deptId],
@@ -139,9 +171,11 @@ function StaffManagement() {
         hire_date: raw.hire_date,
         first_name: raw.first_name,
         last_name: raw.last_name,
+        grade: raw.grade || null,
       };
       console.log('[StaffManagement] Normalized profile response:', normalized);
       setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
+      setProfileGradeId(normalized.grade?.id || null);
     } catch (e) {
       const status = e.response?.status;
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
@@ -149,6 +183,25 @@ function StaffManagement() {
       // Keep modal open and show inline error so user sees something instead of silent close
       setProfileModal({ open: true, loading: false, employee: emp, data: null, error: msg });
       showToast({ type: 'error', message: msg });
+    }
+  };
+
+  const saveProfileGrade = async () => {
+    if (!profileModal?.employee?.id) return;
+    const currentId = profileModal?.data?.grade?.id || null;
+    if (currentId === profileGradeId) return; // no change
+    try {
+      setProfileGradeSaving(true);
+      await api.patch(`/users/${profileModal.employee.id}/`, { grade_id: profileGradeId });
+      showToast({ type: 'success', message: 'Grade updated' });
+      // Update local modal data
+      const g = grades.find(g => g.id === profileGradeId) || null;
+      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, grade: g } : prev.data }));
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to update grade';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setProfileGradeSaving(false);
     }
   };
 
@@ -378,6 +431,13 @@ function StaffManagement() {
     }
   };
 
+  // Prevent unauthorized direct navigation (e.g., stale state or manual set)
+  useEffect(() => {
+    if (active === 'grade-entitlements' && !canManageGradeEntitlements) {
+      setActive('leave-policies');
+    }
+  }, [active, canManageGradeEntitlements]);
+
   const openLeaveTypeModal = async (lt) => {
     try {
       setLeaveTypeModal({ open: true, name: lt.name, id: lt.id, value: '', loading: false });
@@ -587,6 +647,7 @@ function StaffManagement() {
                         <th className="px-3 py-2">Department</th>
                         <th className="px-3 py-2">Employee ID</th>
                         <th className="px-3 py-2">Role</th>
+                        <th className="px-3 py-2">Grade</th>
                         <th className="px-3 py-2">Actions</th>
                       </tr>
                     </thead>
@@ -598,6 +659,11 @@ function StaffManagement() {
                           <td className="px-3 py-2">{emp.department}</td>
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {emp.grade || '—'}
+                            </span>
+                          </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -633,6 +699,17 @@ function StaffManagement() {
               <section>
                 <h2 className="text-lg font-medium mb-4">Leave Policies</h2>
                 <p className="text-sm text-gray-600 mb-4">Create rules and entitlements (carryover, blackout dates, max continuous days)</p>
+                {canManageGradeEntitlements && (
+                  <div className="mb-6">
+                    <button
+                      onClick={() => setActive('grade-entitlements')}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700"
+                    >
+                      Manage Grade Entitlements
+                    </button>
+                    <p className="mt-2 text-xs text-gray-500 max-w-md">Set per-grade default leave entitlements and propagate them to current users.</p>
+                  </div>
+                )}
                 <div className="space-y-3">
                   <div className="p-3 bg-gray-50 rounded">Default annual allocation: <strong>20 days</strong></div>
                   <div className="p-3 bg-gray-50 rounded">Maternity: <strong>90 days</strong></div>
@@ -667,6 +744,16 @@ function StaffManagement() {
                 >
                   Export CSV
                 </button>
+              </section>
+            )}
+            {active === 'grade-entitlements' && (
+              <section>
+                <h2 className="text-lg font-medium mb-4">Grade Entitlements</h2>
+                {canManageGradeEntitlements ? (
+                  <GradeEntitlements grades={grades} refreshGrades={() => { /* placeholder if needed later */ }} />
+                ) : (
+                  <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">You are not authorized to view this section.</div>
+                )}
               </section>
             )}
           </div>
@@ -744,6 +831,27 @@ function StaffManagement() {
                 ) : (
                   <div><span className="font-medium">Hire Date:</span> —</div>
                 )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Grade</label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={profileGradeId ?? ''}
+                      onChange={(e) => setProfileGradeId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                      className="border rounded-md px-2 py-1 text-sm"
+                      disabled={profileGradeSaving}
+                    >
+                      <option value="">— None —</option>
+                      {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                    <button
+                      onClick={saveProfileGrade}
+                      disabled={profileGradeSaving || (profileModal.data.grade?.id || null) === profileGradeId}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-sky-600 text-white bg-sky-600 disabled:opacity-50"
+                    >
+                      {profileGradeSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
             {!profileModal.loading && !profileModal.error && !profileModal.data && (
@@ -1039,5 +1147,158 @@ function LeaveTypesList({ onConfigure }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function GradeEntitlements({ grades }) {
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [loadingEntitlements, setLoadingEntitlements] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState([]);
+  const [gradeId, setGradeId] = useState('');
+  const [rows, setRows] = useState([]); // {leave_type_id, name, entitled_days}
+  const [saving, setSaving] = useState(false);
+  const [applyNow, setApplyNow] = useState(true);
+  const [lastSaved, setLastSaved] = useState(null);
+
+  // Load leave types once
+  useEffect(() => {
+    const loadTypes = async () => {
+      try {
+        const res = await api.get('/leaves/types/');
+        const t = res.data.results || res.data || [];
+        setLeaveTypes(t);
+      } catch (e) {
+        showToast({ type: 'error', message: 'Failed to load leave types' });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadTypes();
+  }, [showToast]);
+
+  // When selecting a grade, load existing entitlements
+  useEffect(() => {
+    const loadEnt = async () => {
+      if (!gradeId) { setRows([]); return; }
+      try {
+    const res = await api.get(`/leaves/grade-entitlements/?grade=${gradeId}`);
+        // Backend now returns leave_type_id explicitly for cleaner mapping
+        const entsNormalized = (res.data.results || res.data || []).map(e => ({
+          leave_type_id: e.leave_type_id,
+          entitled_days: e.entitled_days
+        }));
+        const rowsBuild = leaveTypes.map(lt => {
+          const found = entsNormalized.find(en => String(en.leave_type_id) === String(lt.id));
+          return {
+            leave_type_id: lt.id,
+            name: lt.name,
+            entitled_days: found ? String(found.entitled_days) : ''
+          };
+        });
+        setRows(rowsBuild);
+      } catch (e) {
+        console.warn('Failed to load grade entitlements', e.response?.data || e.message);
+        setRows(leaveTypes.map(lt => ({ leave_type_id: lt.id, name: lt.name, entitled_days: '' })));
+      } finally {
+        setLoadingEntitlements(false);
+      }
+    };
+    loadEnt();
+  }, [gradeId, leaveTypes]);
+
+  const save = async () => {
+    if (!gradeId) { showToast({ type: 'warning', message: 'Select a grade first' }); return; }
+    const items = rows.filter(r => r.entitled_days !== '').map(r => ({
+      leave_type_id: r.leave_type_id,
+      entitled_days: parseFloat(r.entitled_days) || 0
+    }));
+    if (items.some(i => i.entitled_days < 0)) {
+      showToast({ type: 'warning', message: 'Entitled days must be non-negative' });
+      return;
+    }
+    try {
+      setSaving(true);
+      const res = await api.post('/leaves/grade-entitlements/bulk_set/', { grade_id: gradeId, items, apply_now: applyNow });
+      const errs = res.data?.errors || [];
+      if (errs.length) {
+        showToast({ type: 'warning', message: `Saved with ${errs.length} warnings` });
+      } else {
+        showToast({ type: 'success', message: 'Grade entitlements saved' });
+        setLastSaved(new Date());
+      }
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to save grade entitlements';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Grade</label>
+          <select
+            value={gradeId}
+            onChange={e => setGradeId(e.target.value)}
+            className="border rounded-md px-3 py-2 w-60"
+          >
+            <option value="">Select grade</option>
+            {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <label className="text-sm flex items-center gap-2">
+            <input type="checkbox" checked={applyNow} onChange={e => setApplyNow(e.target.checked)} />
+            <span>Apply to current users now</span>
+          </label>
+          <button
+            onClick={save}
+            disabled={saving || !gradeId}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+      {loading ? (
+        <div className="text-sm text-gray-500">Loading leave types...</div>
+      ) : !leaveTypes.length ? (
+        <div className="text-sm text-gray-500">No leave types found.</div>
+      ) : !gradeId ? (
+        <div className="text-sm text-gray-500">Select a grade to view/set entitlements.</div>
+      ) : loadingEntitlements ? (
+        <div className="text-sm text-gray-500">Loading entitlements...</div>
+      ) : (
+        <div className="space-y-3">
+          {lastSaved && (
+            <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+              ✓ Last saved: {lastSaved.toLocaleTimeString()}
+            </div>
+          )}
+          {rows.map((r, idx) => (
+            <div key={r.leave_type_id} className="flex items-center gap-3">
+              <div className="w-48 text-sm">{r.name}</div>
+              <input
+                type="number"
+                min="0"
+                value={r.entitled_days}
+                onChange={e => {
+                  const v = e.target.value;
+                  setRows(prev => {
+                    const next = prev.slice();
+                    next[idx] = { ...next[idx], entitled_days: v };
+                    return next;
+                  });
+                }}
+                className="border rounded-md px-2 py-1 w-28"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

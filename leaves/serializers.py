@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.db.models import Q
-from .models import LeaveRequest, LeaveType, LeaveBalance
+from .models import LeaveRequest, LeaveType, LeaveBalance, LeaveGradeEntitlement
+from users.models import EmploymentGrade
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -177,3 +178,20 @@ class LeaveApprovalSerializer(serializers.ModelSerializer):
         instance.approval_date = timezone.now()
         instance.save(update_fields=['approval_date'])
         return instance
+
+
+class EmploymentGradeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmploymentGrade
+        fields = ['id', 'name', 'slug', 'description', 'is_active']
+
+
+class LeaveGradeEntitlementSerializer(serializers.ModelSerializer):
+    grade = EmploymentGradeSerializer(read_only=True)
+    grade_id = serializers.PrimaryKeyRelatedField(source='grade', queryset=EmploymentGrade.objects.filter(is_active=True), write_only=True)
+    leave_type = serializers.StringRelatedField(read_only=True)
+    leave_type_id = serializers.PrimaryKeyRelatedField(source='leave_type', queryset=LeaveType.objects.filter(is_active=True))
+
+    class Meta:
+        model = LeaveGradeEntitlement
+        fields = ['id', 'grade', 'grade_id', 'leave_type', 'leave_type_id', 'entitled_days']

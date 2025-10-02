@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Department, CustomUser as User
+from .models import Department, CustomUser as User, EmploymentGrade
 
 class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,10 +10,18 @@ class UserSerializer(serializers.ModelSerializer):
     department = DepartmentSerializer(read_only=True)
     department_id = serializers.IntegerField(write_only=True, required=False)
     password = serializers.CharField(write_only=True, required=False)
-    # Expose superuser flag for frontend role-based UI (read-only)
     is_superuser = serializers.BooleanField(read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
-    
+    grade = serializers.SerializerMethodField(read_only=True)
+    grade_id = serializers.PrimaryKeyRelatedField(
+        queryset=EmploymentGrade.objects.filter(is_active=True), source='grade', allow_null=True, required=False, write_only=True
+    )
+
+    def get_grade(self, obj):
+        if obj.grade:
+            return {'id': obj.grade.id, 'name': obj.grade.name, 'slug': obj.grade.slug}
+        return None
+
     class Meta:
         model = User
         fields = [
@@ -21,7 +29,7 @@ class UserSerializer(serializers.ModelSerializer):
             'employee_id', 'role', 'department', 'department_id',
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
-            'is_superuser'
+            'is_superuser', 'grade', 'grade_id'
         ]
         extra_kwargs = {
             'password': {'write_only': True},

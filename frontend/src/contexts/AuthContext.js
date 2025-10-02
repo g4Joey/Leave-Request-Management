@@ -19,19 +19,24 @@ export function AuthProvider({ children }) {
         try {
           const response = await api.get('/users/me/');
           const profile = response.data || {};
-          setUser({
+          const normalized = {
             token,
             email: profile.email,
             first_name: profile.first_name,
             last_name: profile.last_name,
-            role: profile.role,
-            is_superuser: profile.is_superuser,
+            role: (profile.role || '').toLowerCase(),
+            is_superuser: profile.is_superuser === true || profile.is_superuser === 'true' || profile.is_superuser === 'True',
             employee_id: profile.employee_id,
             department: profile.department,
             annual_leave_entitlement: profile.annual_leave_entitlement,
             phone: profile.phone,
             profile_image: profile.profile_image
-          });
+          };
+          // Defensive logging if role missing or unexpected
+          if (!normalized.role) {
+            console.warn('AuthContext: Missing role in profile payload', profile);
+          }
+          setUser(normalized);
         } catch (e) {
           // token might be invalid; clear it
           localStorage.removeItem('token');
@@ -60,21 +65,25 @@ export function AuthProvider({ children }) {
       try {
         const profileRes = await api.get('/users/me/');
         const profile = profileRes.data || {};
-        setUser({
+        const normalized = {
           token: access,
           email: profile.email || email,
           first_name: profile.first_name,
           last_name: profile.last_name,
-          role: profile.role,
-          is_superuser: profile.is_superuser,
+          role: (profile.role || '').toLowerCase(),
+          is_superuser: profile.is_superuser === true || profile.is_superuser === 'true' || profile.is_superuser === 'True',
           employee_id: profile.employee_id,
           department: profile.department,
           annual_leave_entitlement: profile.annual_leave_entitlement,
           phone: profile.phone,
           profile_image: profile.profile_image
-        });
+        };
+        if (!normalized.role) {
+            console.warn('AuthContext (login): Missing role in profile payload', profile);
+        }
+        setUser(normalized);
       } catch (e) {
-        setUser({ token: access, email });
+        setUser({ token: access, email, role: '', is_superuser: false });
       }
       return { success: true };
     } catch (error) {
