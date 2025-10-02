@@ -98,19 +98,47 @@ function StaffManagement() {
     fetchStaffData();
   }, [fetchStaffData]);
 
-  // Load employment grades once (for profile modal dropdown & entitlements UI)
+  // Track grade loading status + error for better UX
+  const [gradesLoading, setGradesLoading] = useState(false);
+  const [gradesError, setGradesError] = useState(null);
+
+  // Load employment grades once when user is authorized (HR/Admin or superuser)
   const loadGrades = useCallback(async () => {
+    if (!canManageGradeEntitlements) {
+      // Clear out any stale data if user lost privileges (e.g., role changed)
+      setGrades([]);
+      return;
+    }
+    setGradesLoading(true);
+    setGradesError(null);
     try {
       const res = await api.get('/leaves/grades/');
-      setGrades(res.data.results || res.data || []);
+      const data = res.data?.results || res.data || [];
+      setGrades(data);
+      if (!Array.isArray(data) || data.length === 0) {
+        console.warn('[StaffManagement] Grades API returned empty list');
+      }
     } catch (e) {
-      console.warn('Failed to load grades', e.response?.data || e.message);
+      const status = e.response?.status;
+      const detail = e.response?.data?.detail || e.message;
+      setGrades([]);
+      setGradesError(detail || 'Failed to load grades');
+      console.warn('Failed to load grades', { status, detail, error: e });
+      if (status === 403) {
+        showToast({ type: 'warning', message: "You don't have permission to view grades." });
+      } else {
+        showToast({ type: 'error', message: 'Failed to load grades' });
+      }
+    } finally {
+      setGradesLoading(false);
     }
-  }, []);
+  }, [canManageGradeEntitlements, showToast]);
 
   useEffect(() => {
     loadGrades();
-  }, [loadGrades]);  const toggleDepartment = (deptId) => {
+  }, [loadGrades]);
+
+  const toggleDepartment = (deptId) => {
     setExpandedDepts((prev) => ({
       ...prev,
       [deptId]: !prev[deptId],
@@ -750,7 +778,13 @@ function StaffManagement() {
               <section>
                 <h2 className="text-lg font-medium mb-4">Grade Entitlements</h2>
                 {canManageGradeEntitlements ? (
-                  <GradeEntitlements grades={grades} refreshGrades={() => { /* placeholder if needed later */ }} />
+                  gradesLoading ? (
+                    <div className="text-sm text-gray-500">Loading grades...</div>
+                  ) : gradesError ? (
+                    <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">{gradesError}</div>
+                  ) : (
+                    <GradeEntitlements grades={grades} refreshGrades={loadGrades} />
+                  )
                 ) : (
                   <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">You are not authorized to view this section.</div>
                 )}
@@ -834,15 +868,21 @@ function StaffManagement() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Grade</label>
                   <div className="flex items-center gap-2">
-                    <select
-                      value={profileGradeId ?? ''}
-                      onChange={(e) => setProfileGradeId(e.target.value ? parseInt(e.target.value, 10) : null)}
-                      className="border rounded-md px-2 py-1 text-sm"
-                      disabled={profileGradeSaving}
-                    >
-                      <option value="">— None —</option>
-                      {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                    </select>
+                    {gradesLoading ? (
+                      <div className="text-xs text-gray-500">Loading grades...</div>
+                    ) : gradesError ? (
+                      <div className="text-xs text-red-600">{gradesError}</div>
+                    ) : (
+                      <select
+                        value={profileGradeId ?? ''}
+                        onChange={(e) => setProfileGradeId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                        className="border rounded-md px-2 py-1 text-sm"
+                        disabled={profileGradeSaving}
+                      >
+                        <option value="">— None —</option>
+                        {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    )}
                     <button
                       onClick={saveProfileGrade}
                       disabled={profileGradeSaving || (profileModal.data.grade?.id || null) === profileGradeId}
