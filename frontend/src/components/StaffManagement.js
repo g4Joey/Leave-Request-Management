@@ -49,7 +49,7 @@ function StaffManagement() {
     first_name: '', 
     last_name: '', 
     employee_id: '', 
-    role: 'staff', 
+    role: 'junior_staff', 
     department_id: '', 
     password: '',
     hire_date: ''
@@ -307,7 +307,7 @@ function StaffManagement() {
       first_name: '', 
       last_name: '', 
       employee_id: '', 
-      role: 'staff', 
+      role: 'junior_staff', 
       department_id: '', 
       password: '',
       hire_date: ''
@@ -317,8 +317,8 @@ function StaffManagement() {
   const createEmployee = async () => {
     const { username, email, first_name, last_name, employee_id, role, department_id, password, hire_date } = newEmployeeModal;
     
-    if (!username.trim() || !email.trim() || !first_name.trim() || !employee_id.trim()) {
-      showToast({ type: 'warning', message: 'Username, email, first name, and employee ID are required' });
+    if (!username.trim() || !email.trim() || !first_name.trim() || !employee_id.trim() || !role) {
+      showToast({ type: 'warning', message: 'Username, email, first name, employee ID, and role are required' });
       return;
     }
     
@@ -1072,14 +1072,16 @@ function StaffManagement() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
                   <select
                     value={newEmployeeModal.role}
                     onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, role: e.target.value }))}
                     className="w-full border rounded-md px-3 py-2"
                     disabled={newEmployeeModal.loading}
                   >
-                    <option value="staff">Staff</option>
+                    <option value="">Select Role</option>
+                    <option value="junior_staff">Junior Staff</option>
+                    <option value="senior_staff">Senior Staff</option>
                     <option value="manager">Manager</option>
                     <option value="hr">HR</option>
                     <option value="admin">Admin</option>
