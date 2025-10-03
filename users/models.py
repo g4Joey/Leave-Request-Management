@@ -23,7 +23,8 @@ class CustomUser(AbstractUser):
     Supports requirements R4, R8, R10 for role-based access
     """
     ROLE_CHOICES = [
-        ('staff', 'Staff'),
+        ('junior_staff', 'Junior Staff'),
+        ('senior_staff', 'Senior Staff'),
         ('manager', 'Manager'),
         ('hr', 'HR'),
         ('admin', 'Admin'),
@@ -31,7 +32,7 @@ class CustomUser(AbstractUser):
     
     # Basic profile information
     employee_id = models.CharField(max_length=20, unique=True)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='staff')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='junior_staff')
     department = models.ForeignKey(Department, on_delete=models.PROTECT, null=True, blank=True)
     manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, 
                                related_name='managed_employees')

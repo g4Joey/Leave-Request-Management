@@ -21,11 +21,11 @@ function StaffManagement() {
     return user.is_superuser || ['hr','admin'].includes(user.role);
   }, [user]);
 
-  // Build sidebar items dynamically (hide Grade Entitlements unless privileged)
+  // Build sidebar items dynamically (hide Role Management unless privileged)
   const SIDEBAR_ITEMS = useMemo(() => {
     const items = [...BASE_SIDEBAR_ITEMS];
     if (canManageGradeEntitlements) {
-      items.push({ id: 'grade-entitlements', label: 'Grade Entitlements' });
+      items.push({ id: 'role-management', label: 'Role Management' });
     }
     return items;
   }, [canManageGradeEntitlements]);
@@ -38,9 +38,7 @@ function StaffManagement() {
   const fileInputRef = useRef(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
-  const [profileGradeId, setProfileGradeId] = useState(null);
-  const [profileGradeSaving, setProfileGradeSaving] = useState(false);
-  const [grades, setGrades] = useState([]);
+  const [profileRoleSaving, setProfileRoleSaving] = useState(false);
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
@@ -71,9 +69,7 @@ function StaffManagement() {
       // Flatten employees for the Employees tab
       const flattened = depts.flatMap((d) =>
         (d.staff || []).map((s) => {
-          const gradeName = s?.grade?.name ?? null;
-          const gradeId = s?.grade?.id ?? s?.grade_id ?? null;
-          const gradeSlug = s?.grade?.slug ?? null;
+
           return {
             id: s.id,
             name: cleanName(s.name),
@@ -83,9 +79,6 @@ function StaffManagement() {
             role: s.role,
             manager: s.manager,
             hire_date: s.hire_date,
-            grade: gradeName,
-            grade_id: gradeId,
-            grade_slug: gradeSlug,
           };
         })
       );
@@ -105,56 +98,11 @@ function StaffManagement() {
     fetchStaffData();
   }, [fetchStaffData]);
 
-  // Track grade loading status + error for better UX
-  const [gradesLoading, setGradesLoading] = useState(false);
-  const [gradesError, setGradesError] = useState(null);
 
-  // Load employment grades once when user is authorized (HR/Admin or superuser)
-  const loadGrades = useCallback(async (force = false) => {
-    console.log('[StaffManagement] Loading grades...');
-    setGradesLoading(true);
-    setGradesError(null);
-    try {
-      const res = await api.get('/leaves/grades/');
-      console.log('[StaffManagement] Grades API response:', res);
-      console.log('[StaffManagement] Response status:', res.status);
-      console.log('[StaffManagement] Response data:', res.data);
-      
-      const data = res.data?.results || res.data || [];
-      console.log('[StaffManagement] Processed grades data:', data);
-      setGrades(data);
-      
-      if (!Array.isArray(data) || data.length === 0) {
-        console.warn('[StaffManagement] Grades API returned empty list or unexpected structure', res.data);
-      } else {
-        console.log(`[StaffManagement] Successfully loaded ${data.length} grades:`, data.map(g => ({ id: g.id, name: g.name })));
-      }
-    } catch (e) {
-      const status = e.response?.status;
-      const detail = e.response?.data?.detail || e.message;
-      setGrades([]);
-      setGradesError(detail || 'Failed to load grades');
-      console.error('Failed to load grades', { status, detail, error: e, response: e.response });
-      if (status === 403) {
-        showToast({ type: 'warning', message: "You don't have permission to view grades." });
-      } else {
-        showToast({ type: 'error', message: 'Failed to load grades' });
-      }
-    } finally {
-      setGradesLoading(false);
-    }
-  }, [showToast]);
 
-  useEffect(() => {
-    loadGrades();
-  }, [loadGrades]);
 
-  // Ensure grades refreshed when opening a profile (in case initial fetch failed or occurred before privileges resolved)
+
   const openProfile = async (emp) => {
-    if (canManageGradeEntitlements && grades.length === 0 && !gradesLoading) {
-      loadGrades(true);
-    }
-    // ...existing code...
     if (!emp || !emp.id) {
       showToast({ type: 'error', message: 'Invalid employee record – missing ID' });
       console.error('openProfile called with invalid employee object:', emp);
@@ -179,7 +127,7 @@ function StaffManagement() {
       };
       console.log('[StaffManagement] Normalized profile response:', normalized);
       setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
-      setProfileGradeId(normalized.grade?.id || null);
+      setSelectedRole(normalized.role || 'junior_staff');
     } catch (e) {
       const status = e.response?.status;
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
@@ -198,19 +146,22 @@ function StaffManagement() {
 
   const getRoleBadge = (role) => {
     const roleColors = {
-      staff: 'bg-gray-100 text-gray-800',
+      junior_staff: 'bg-gray-100 text-gray-800',
+      senior_staff: 'bg-slate-100 text-slate-800',
       manager: 'bg-blue-100 text-blue-800',
       hr: 'bg-green-100 text-green-800',
       admin: 'bg-purple-100 text-purple-800',
     };
 
+    const displayName = role?.replace('_', ' ')?.replace(/\b\w/g, l => l.toUpperCase()) || 'Staff';
+    
     return (
       <span
         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-          roleColors[role] || roleColors.staff
+          roleColors[role] || roleColors.junior_staff
         }`}
       >
-        {role?.charAt(0).toUpperCase() + role?.slice(1)}
+        {displayName}
       </span>
     );
   };
@@ -227,26 +178,27 @@ function StaffManagement() {
     );
   }, [employeeQuery, employees]);
 
-  const saveProfileGrade = async () => {
-    if (!profileModal?.employee?.id) return;
-    const currentId = profileModal?.data?.grade?.id || null;
-    if (currentId === profileGradeId) return; // no change
+  const [selectedRole, setSelectedRole] = useState('');
+
+  const handleRoleChange = (newRole) => {
+    setSelectedRole(newRole);
+  };
+
+  const saveProfileRole = async () => {
+    if (!profileModal?.employee?.id || !selectedRole) return;
+    const currentRole = profileModal?.data?.role || 'junior_staff';
+    if (currentRole === selectedRole) return; // no change
     try {
-      setProfileGradeSaving(true);
-      const res = await api.patch(`/users/${profileModal.employee.id}/`, { grade_id: profileGradeId });
+      setProfileRoleSaving(true);
+      const res = await api.patch(`/users/${profileModal.employee.id}/`, { role: selectedRole });
       const updatedUser = res.data || {};
-      const updatedGrade = updatedUser.grade || null;
-      showToast({ type: 'success', message: 'Grade updated' });
+      showToast({ type: 'success', message: 'Role updated' });
       // Update local modal data
-      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, grade: updatedGrade } : prev.data }));
-      setProfileGradeId(updatedGrade?.id ?? null);
+      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, role: updatedUser.role } : prev.data }));
       const employeeId = profileModal.employee.id;
-      const gradeName = updatedGrade?.name || null;
-      const gradeId = updatedGrade?.id ?? null;
-      const gradeSlug = updatedGrade?.slug ?? null;
       setEmployees(prev => prev.map((emp) => (
         emp.id === employeeId
-          ? { ...emp, grade: gradeName, grade_id: gradeId, grade_slug: gradeSlug }
+          ? { ...emp, role: updatedUser.role }
           : emp
       )));
       setDepartments(prev => prev.map((dept) => {
@@ -257,16 +209,16 @@ function StaffManagement() {
           ...dept,
           staff: dept.staff.map((staffer) => (
             staffer.id === employeeId
-              ? { ...staffer, grade: updatedGrade, grade_id: gradeId }
+              ? { ...staffer, role: updatedUser.role }
               : staffer
           )),
         };
       }));
     } catch (e) {
-      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to update grade';
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to update role';
       showToast({ type: 'error', message: msg });
     } finally {
-      setProfileGradeSaving(false);
+      setProfileRoleSaving(false);
     }
   };
 
@@ -498,7 +450,7 @@ function StaffManagement() {
 
   // Prevent unauthorized direct navigation (e.g., stale state or manual set)
   useEffect(() => {
-    if (active === 'grade-entitlements' && !canManageGradeEntitlements) {
+    if (active === 'role-management' && !canManageGradeEntitlements) {
       setActive('leave-policies');
     }
   }, [active, canManageGradeEntitlements]);
@@ -661,9 +613,7 @@ function StaffManagement() {
                                               {new Date(staff.hire_date).toLocaleDateString()}
                                             </p>
                                           )}
-                                          <p className="text-sm text-gray-600">
-                                            <span className="font-medium">Grade:</span> {staff.grade?.name || '—'}
-                                          </p>
+
                                           {staff.manager && (
                                             <p className="text-sm text-gray-600">
                                               <span className="font-medium">Approver:</span>{' '}
@@ -715,7 +665,6 @@ function StaffManagement() {
                         <th className="px-3 py-2">Department</th>
                         <th className="px-3 py-2">Employee ID</th>
                         <th className="px-3 py-2">Role</th>
-                        <th className="px-3 py-2">Grade</th>
                         <th className="px-3 py-2">Actions</th>
                       </tr>
                     </thead>
@@ -770,12 +719,12 @@ function StaffManagement() {
                 {canManageGradeEntitlements && (
                   <div className="mb-6">
                     <button
-                      onClick={() => setActive('grade-entitlements')}
+                      onClick={() => setActive('role-management')}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700"
                     >
-                      Manage Grade Entitlements
+                      Manage Roles
                     </button>
-                    <p className="mt-2 text-xs text-gray-500 max-w-md">Set per-grade default leave entitlements and propagate them to current users.</p>
+                    <p className="mt-2 text-xs text-gray-500 max-w-md">Set role-based leave entitlements and manage employee classifications.</p>
                   </div>
                 )}
                 <div className="space-y-3">
@@ -814,30 +763,29 @@ function StaffManagement() {
                 </button>
               </section>
             )}
-            {active === 'grade-entitlements' && (
+            {active === 'role-management' && (
               <section>
-                <h2 className="text-lg font-medium mb-4">Grade Entitlements</h2>
+                <h2 className="text-lg font-medium mb-4">Role Management</h2>
                 {canManageGradeEntitlements ? (
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => loadGrades(true)}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-gray-300 hover:bg-gray-50"
-                        disabled={gradesLoading}
-                      >
-                        {gradesLoading ? 'Refreshing...' : 'Reload Grades'}
-                      </button>
-                      {grades.length > 0 && !gradesLoading && (
-                        <span className="text-xs text-gray-500">{grades.length} grade{grades.length !== 1 ? 's' : ''} loaded</span>
-                      )}
+                    <p className="text-sm text-gray-600">Manage employee roles and their associated leave entitlements.</p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <div className="p-4 border rounded-lg">
+                        <h3 className="font-medium text-green-700">Junior Staff</h3>
+                        <p className="text-sm text-gray-600 mt-1">Entry-level employees</p>
+                        <p className="text-xs text-gray-500 mt-2">Default: 20 days annual leave</p>
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <h3 className="font-medium text-blue-700">Senior Staff</h3>
+                        <p className="text-sm text-gray-600 mt-1">Experienced employees</p>
+                        <p className="text-xs text-gray-500 mt-2">Default: 25 days annual leave</p>
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <h3 className="font-medium text-purple-700">Manager</h3>
+                        <p className="text-sm text-gray-600 mt-1">Team leaders</p>
+                        <p className="text-xs text-gray-500 mt-2">Default: 30 days annual leave</p>
+                      </div>
                     </div>
-                    {gradesLoading ? (
-                      <div className="text-sm text-gray-500">Loading grades...</div>
-                    ) : gradesError ? (
-                      <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">{gradesError}</div>
-                    ) : (
-                      <GradeEntitlements grades={grades} refreshGrades={loadGrades} />
-                    )}
                   </div>
                 ) : (
                   <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">You are not authorized to view this section.</div>
@@ -920,36 +868,26 @@ function StaffManagement() {
                   <div><span className="font-medium">Hire Date:</span> —</div>
                 )}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Grade</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
                   <div className="flex items-center gap-2">
-                    {gradesLoading ? (
-                      <div className="text-xs text-gray-500">Loading grades...</div>
-                    ) : gradesError ? (
-                      <div className="text-xs text-red-600">{gradesError}</div>
-                    ) : (
-                      <select
-                        value={profileGradeId ?? ''}
-                        onChange={(e) => setProfileGradeId(e.target.value ? parseInt(e.target.value, 10) : null)}
-                        className="border rounded-md px-2 py-1 text-sm"
-                        disabled={profileGradeSaving}
-                      >
-                        <option value="">— None —</option>
-                        {(() => {
-                          console.log('[StaffManagement] Rendering grade options, grades array:', grades);
-                          console.log('[StaffManagement] Grades length:', grades.length);
-                          return grades.map(g => {
-                            console.log('[StaffManagement] Rendering grade option:', g);
-                            return <option key={g.id} value={g.id}>{g.name}</option>;
-                          });
-                        })()}
-                      </select>
-                    )}
+                    <select
+                      value={selectedRole || profileModal.data.role || 'junior_staff'}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      className="border rounded-md px-2 py-1 text-sm"
+                      disabled={profileRoleSaving}
+                    >
+                      <option value="junior_staff">Junior Staff</option>
+                      <option value="senior_staff">Senior Staff</option>
+                      <option value="manager">Manager</option>
+                      <option value="hr">HR</option>
+                      <option value="admin">Admin</option>
+                    </select>
                     <button
-                      onClick={saveProfileGrade}
-                      disabled={profileGradeSaving || (profileModal.data.grade?.id || null) === profileGradeId}
+                      onClick={saveProfileRole}
+                      disabled={profileRoleSaving || (profileModal.data.role || 'junior_staff') === selectedRole}
                       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-sky-600 text-white bg-sky-600 disabled:opacity-50"
                     >
-                      {profileGradeSaving ? 'Saving...' : 'Save'}
+                      {profileRoleSaving ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>
@@ -1251,155 +1189,3 @@ function LeaveTypesList({ onConfigure }) {
   );
 }
 
-function GradeEntitlements({ grades }) {
-  const { showToast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [loadingEntitlements, setLoadingEntitlements] = useState(false);
-  const [leaveTypes, setLeaveTypes] = useState([]);
-  const [gradeId, setGradeId] = useState('');
-  const [rows, setRows] = useState([]); // {leave_type_id, name, entitled_days}
-  const [saving, setSaving] = useState(false);
-  const [applyNow, setApplyNow] = useState(true);
-  const [lastSaved, setLastSaved] = useState(null);
-
-  // Load leave types once
-  useEffect(() => {
-    const loadTypes = async () => {
-      try {
-        const res = await api.get('/leaves/types/');
-        const t = res.data.results || res.data || [];
-        setLeaveTypes(t);
-      } catch (e) {
-        showToast({ type: 'error', message: 'Failed to load leave types' });
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadTypes();
-  }, [showToast]);
-
-  // When selecting a grade, load existing entitlements
-  useEffect(() => {
-    const loadEnt = async () => {
-      if (!gradeId) { setRows([]); return; }
-      try {
-    const res = await api.get(`/leaves/grade-entitlements/?grade=${gradeId}`);
-        // Backend now returns leave_type_id explicitly for cleaner mapping
-        const entsNormalized = (res.data.results || res.data || []).map(e => ({
-          leave_type_id: e.leave_type_id,
-          entitled_days: e.entitled_days
-        }));
-        const rowsBuild = leaveTypes.map(lt => {
-          const found = entsNormalized.find(en => String(en.leave_type_id) === String(lt.id));
-          return {
-            leave_type_id: lt.id,
-            name: lt.name,
-            entitled_days: found ? String(found.entitled_days) : ''
-          };
-        });
-        setRows(rowsBuild);
-      } catch (e) {
-        console.warn('Failed to load grade entitlements', e.response?.data || e.message);
-        setRows(leaveTypes.map(lt => ({ leave_type_id: lt.id, name: lt.name, entitled_days: '' })));
-      } finally {
-        setLoadingEntitlements(false);
-      }
-    };
-    loadEnt();
-  }, [gradeId, leaveTypes]);
-
-  const save = async () => {
-    if (!gradeId) { showToast({ type: 'warning', message: 'Select a grade first' }); return; }
-    const items = rows.filter(r => r.entitled_days !== '').map(r => ({
-      leave_type_id: r.leave_type_id,
-      entitled_days: parseFloat(r.entitled_days) || 0
-    }));
-    if (items.some(i => i.entitled_days < 0)) {
-      showToast({ type: 'warning', message: 'Entitled days must be non-negative' });
-      return;
-    }
-    try {
-      setSaving(true);
-      const res = await api.post('/leaves/grade-entitlements/bulk_set/', { grade_id: gradeId, items, apply_now: applyNow });
-      const errs = res.data?.errors || [];
-      if (errs.length) {
-        showToast({ type: 'warning', message: `Saved with ${errs.length} warnings` });
-      } else {
-        showToast({ type: 'success', message: 'Grade entitlements saved' });
-        setLastSaved(new Date());
-      }
-    } catch (e) {
-      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to save grade entitlements';
-      showToast({ type: 'error', message: msg });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Grade</label>
-          <select
-            value={gradeId}
-            onChange={e => setGradeId(e.target.value)}
-            className="border rounded-md px-3 py-2 w-60"
-          >
-            <option value="">Select grade</option>
-            {grades.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-2 mt-2">
-          <label className="text-sm flex items-center gap-2">
-            <input type="checkbox" checked={applyNow} onChange={e => setApplyNow(e.target.checked)} />
-            <span>Apply to current users now</span>
-          </label>
-          <button
-            onClick={save}
-            disabled={saving || !gradeId}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-      </div>
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading leave types...</div>
-      ) : !leaveTypes.length ? (
-        <div className="text-sm text-gray-500">No leave types found.</div>
-      ) : !gradeId ? (
-        <div className="text-sm text-gray-500">Select a grade to view/set entitlements.</div>
-      ) : loadingEntitlements ? (
-        <div className="text-sm text-gray-500">Loading entitlements...</div>
-      ) : (
-        <div className="space-y-3">
-          {lastSaved && (
-            <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-              ✓ Last saved: {lastSaved.toLocaleTimeString()}
-            </div>
-          )}
-          {rows.map((r, idx) => (
-            <div key={r.leave_type_id} className="flex items-center gap-3">
-              <div className="w-48 text-sm">{r.name}</div>
-              <input
-                type="number"
-                min="0"
-                value={r.entitled_days}
-                onChange={e => {
-                  const v = e.target.value;
-                  setRows(prev => {
-                    const next = prev.slice();
-                    next[idx] = { ...next[idx], entitled_days: v };
-                    return next;
-                  });
-                }}
-                className="border rounded-md px-2 py-1 w-28"
-              />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
