@@ -98,6 +98,13 @@ function StaffManagement() {
     fetchStaffData();
   }, [fetchStaffData]);
 
+  // Force refresh data when component becomes visible
+  useEffect(() => {
+    const handleFocus = () => fetchStaffData();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchStaffData]);
+
 
 
 
@@ -529,6 +536,15 @@ function StaffManagement() {
           <div className="mb-4 flex items-center justify-between">
             <h1 className="text-2xl font-semibold">Staff</h1>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  console.log('🔄 Manual refresh triggered');
+                  fetchStaffData();
+                }}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              >
+                Refresh
+              </button>
               {active === 'departments' && (
                 <button
                   onClick={openNewDepartmentModal}

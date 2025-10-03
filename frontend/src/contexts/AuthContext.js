@@ -109,7 +109,24 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const value = { user, setUser, login, logout, loading };
+  const refreshUser = async () => {
+    const token = localStorage.getItem('token');
+    if (token && user) {
+      try {
+        const response = await api.get('/users/me/');
+        const profile = response.data || {};
+        const normalized = normalizeProfile(profile, token);
+        setUser(normalized);
+        console.log('🔄 User profile refreshed:', normalized);
+        return normalized;
+      } catch (e) {
+        console.error('Failed to refresh user profile:', e);
+      }
+    }
+    return user;
+  };
+
+  const value = { user, setUser, login, logout, refreshUser, loading };
 
   return (
     <AuthContext.Provider value={value}>

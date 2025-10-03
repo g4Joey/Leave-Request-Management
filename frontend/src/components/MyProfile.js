@@ -4,7 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import api from '../services/api';
 
 function MyProfile() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, refreshUser } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
@@ -31,6 +31,11 @@ function MyProfile() {
     cropping: false,
     cropData: { x: 0, y: 0, width: 160, height: 160 }
   });
+
+  // Refresh user data when component loads
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
 
   // Load user profile data
   useEffect(() => {
@@ -423,12 +428,18 @@ function MyProfile() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Role
                 </label>
-                <input
-                  type="text"
-                  value={user?.role || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 capitalize"
-                  disabled
-                />
+                <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                    user?.role === 'junior_staff' ? 'bg-gray-100 text-gray-800' :
+                    user?.role === 'senior_staff' ? 'bg-slate-100 text-slate-800' :
+                    user?.role === 'manager' ? 'bg-blue-100 text-blue-800' :
+                    user?.role === 'hr' ? 'bg-green-100 text-green-800' :
+                    user?.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {user?.role?.replace('_', ' ')?.replace(/\b\w/g, l => l.toUpperCase()) || 'Staff'}
+                  </span>
+                </div>
               </div>
 
               <div>
