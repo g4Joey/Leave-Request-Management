@@ -11,6 +11,33 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write('Running production data setup...')
         try:
+            # Securely update credentials for key users if env vars are present
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            user_envs = [
+                # (env_email, env_password, username fallback)
+                (os.environ.get('ADMIN_EMAIL'), os.environ.get('ADMIN_PASSWORD'), 'admin@company.com'),
+                (os.environ.get('JMANKOE_EMAIL'), os.environ.get('JMANKOE_PASSWORD'), 'jmankoe@umbcapital.com'),
+                (os.environ.get('GSAFO_EMAIL'), os.environ.get('GSAFO_PASSWORD'), 'gsafo@umbcapital.com'),
+                (os.environ.get('AAKORFU_EMAIL'), os.environ.get('AAKORFU_PASSWORD'), 'aakorfu@umbcapital.com'),
+                (os.environ.get('HRADMIN_EMAIL'), os.environ.get('HRADMIN_PASSWORD'), 'hradmin@umbcapital.com'),
+            ]
+            for email, password, username in user_envs:
+                if email and password:
+                    user = User.objects.filter(email=email).first()
+                    if not user:
+                        user = User.objects.filter(username=username).first()
+                    if user:
+                        user.email = email
+                        user.set_password(password)
+                        user.is_active = True
+                        user.save()
+                        if username in ["admin@company.com", "hradmin@umbcapital.com"]:
+                            self.stdout.write(self.style.SUCCESS(f"Updated credentials for {username} (id={user.pk}, username={user.username}, email={user.email})"))
+                    else:
+                        if username in ["admin@company.com", "hradmin@umbcapital.com"]:
+                            self.stdout.write(self.style.WARNING(f"No user found for {username} (email={email}) to update credentials."))
+            # ...existing code...
             # Ensure base departments and relationships, but never create default HR with local password
             call_command('setup_departments', skip_hr=True)
             # Ensure default leave types exist for HR configuration
