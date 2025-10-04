@@ -50,11 +50,13 @@ if not settings.DEBUG:
     from django.urls import re_path
     import os
     
-    # Serve React app for all other routes (SPA routing)
-    # Exclude API, static, and media paths so static assets and media are
-    # served normally instead of returning the React index.html.
+    # Serve React app for all other routes (SPA routing).
+    # Exclude API, static, media, and any path that looks like a file
+    # (contains a dot) so asset requests are not routed to index.html.
+    # Matches only URLs that do NOT start with api/, static/, media/
+    # and do NOT contain a dot (e.g. .js, .css, .png).
     urlpatterns += [
-        re_path(r'^(?!api/|static/|media/).*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
+        re_path(r'^(?!api/|static/|media/)(?!.*\.).*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
     ]
 
 if settings.DEBUG:
