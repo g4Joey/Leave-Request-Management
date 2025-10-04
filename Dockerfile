@@ -29,11 +29,12 @@ RUN npm ci && npm run build
 WORKDIR /app
 COPY . .
 
-# Collect static files and run migrations
-RUN python manage.py collectstatic --noinput
+# Copy and set entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Expose port
+# Expose port (Render populates $PORT at runtime)
 EXPOSE 10000
 
-# Start command
-CMD python manage.py migrate && gunicorn leave_management.wsgi:application --bind 0.0.0.0:$PORT
+# Use entrypoint to run migrations, collectstatic, then start gunicorn
+ENTRYPOINT ["/entrypoint.sh"]
