@@ -51,9 +51,10 @@ if not settings.DEBUG:
     import os
     
     # Serve React app for all other routes (SPA routing)
-    # This catches all routes that don't match API endpoints
+    # Exclude API, static, and media paths so static assets and media are
+    # served normally instead of returning the React index.html.
     urlpatterns += [
-        re_path(r'^(?!api/).*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
+        re_path(r'^(?!api/|static/|media/).*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
     ]
 
 if settings.DEBUG:
