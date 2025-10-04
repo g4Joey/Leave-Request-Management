@@ -51,14 +51,22 @@ class Command(BaseCommand):
             if existing_hr:
                 self.stdout.write('HR user already present; skipping HR creation.')
             else:
-                username = os.environ.get('HR_ADMIN_USERNAME', 'hr_admin')
-                password = os.environ.get('HR_ADMIN_PASSWORD')
+                # Accept both HR_ADMIN_* and HRADMIN_* variants
+                def _env_any_hr(*keys):
+                    for k in keys:
+                        v = os.environ.get(k)
+                        if v:
+                            return v
+                    return None
+
+                username = _env_any_hr('HR_ADMIN_USERNAME', 'HRADMIN_USERNAME') or 'hr_admin'
+                password = _env_any_hr('HR_ADMIN_PASSWORD', 'HRADMIN_PASSWORD')
                 if password:
                     dept = Department.objects.filter(name='Client Service').first()
                     user, created = CustomUser.objects.get_or_create(
                         username=username,
                         defaults={
-                            'email': os.environ.get('HR_ADMIN_EMAIL', 'hr@company.com'),
+                            'email': _env_any_hr('HR_ADMIN_EMAIL', 'HRADMIN_EMAIL') or 'hr@company.com',
                             'first_name': os.environ.get('HR_ADMIN_FIRST_NAME', 'HR'),
                             'last_name': os.environ.get('HR_ADMIN_LAST_NAME', 'Administrator'),
                             'employee_id': os.environ.get('HR_ADMIN_EMPLOYEE_ID', 'HR001'),
