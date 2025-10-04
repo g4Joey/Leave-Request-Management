@@ -28,13 +28,41 @@ else:
         }
     }
 
+# Templates configuration for serving React app
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [
+            os.path.join(BASE_DIR, 'templates'),
+            os.path.join(BASE_DIR, 'frontend', 'build'),  # React build directory
+        ],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
 # Static files configuration
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# React build files location
+REACT_BUILD_DIR = os.path.join(BASE_DIR, 'frontend', 'build')
+
 # Use WhiteNoise for static files serving
 MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Additional directories for static files (includes React build)
+STATICFILES_DIRS = [
+    REACT_BUILD_DIR,
+] if os.path.exists(REACT_BUILD_DIR) else []
 
 # CORS configuration for frontend
 CORS_ORIGINS_STR = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000')
