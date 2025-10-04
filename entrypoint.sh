@@ -36,5 +36,24 @@ if ! retry_cmd "collectstatic" python manage.py collectstatic --noinput; then
 	echo "Warning: collectstatic failed after retries. Static assets may be missing." >&2
 fi
 
+# Optionally run production data setup (idempotent). This is controlled by:
+# - RUN_SEED_ON_DEPLOY=1 OR presence of DJANGO_SUPERUSER_USERNAME, HR_ADMIN_PASSWORD, or SEED_USERS env vars.
+should_seed=0
+if [ "${RUN_SEED_ON_DEPLOY:-0}" = "1" ]; then
+	should_seed=1
+fi
+if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ] || [ -n "${HR_ADMIN_PASSWORD:-}" ] || [ -n "${SEED_USERS:-}" ]; then
+	should_seed=1
+fi
+
+if [ "$should_seed" = "1" ]; then
+	echo "Running setup_production_data (seed on deploy)..."
+	if ! retry_cmd "setup_production_data" python manage.py setup_production_data; then
+		echo "Warning: setup_production_data failed after retries." >&2
+	fi
+else
+	echo "Skipping setup_production_data (no RUN_SEED_ON_DEPLOY and no seed env vars detected)."
+fi
+
 echo "Starting Gunicorn..."
 exec gunicorn leave_management.wsgi:application --bind 0.0.0.0:${PORT:-8000}
