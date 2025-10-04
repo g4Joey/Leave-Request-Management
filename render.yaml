@@ -2,16 +2,9 @@ services:
   # Unified Web Service - Django Backend + React Frontend
   - type: web
     name: leave-management-app
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: |
-      pip install -r requirements-render.txt && 
-      curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - &&
-      sudo apt-get install -y nodejs &&
-      cd frontend && npm ci && npm run build && cd .. &&
-      python manage.py collectstatic --noinput && 
-      python manage.py migrate
-    startCommand: gunicorn leave_management.wsgi:application
+    # Docker will handle build and start commands
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: leave_management.settings_render

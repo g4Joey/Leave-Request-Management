@@ -47,17 +47,18 @@ If Blueprint doesn't work, create services manually:
 - `SECRET_KEY` = (Auto-generate)
 - `CORS_ALLOWED_ORIGINS` = `https://your-frontend-url.onrender.com`
 
-### 3. Frontend Deployment
+### 3. Unified Deployment (Current Setup)
 
-**Option 1: Static Site on Render**
-1. New → Static Site
-2. Connect GitHub repo
-3. Configure:
-   - **Build Command**: `cd frontend && npm ci && npm run build`
-   - **Publish Directory**: `frontend/build`
+The current configuration deploys both Django backend and React frontend in a single service:
 
-**Option 2: Separate Frontend Repository (Recommended)**
-For better performance, you might want to deploy the frontend separately.
+- **Single Service Approach**: The `render.yaml` file builds both React frontend and Django backend
+- **Build Process**: Installs Node.js → builds React → installs Python dependencies → serves both
+- **Static Files**: React build files served through Django's WhiteNoise middleware
+- **Routing**: Django handles API routes (`/api/*`) and serves React app for all other routes
+- **Similar to Digital Ocean**: Both frontend and backend served from same service URL
+
+**Alternative: Separate Frontend Service**
+If you prefer separate services, you can use `frontend-render.yaml` for a static site deployment.
 
 ### 4. Update CORS Settings
 After both services are deployed:
