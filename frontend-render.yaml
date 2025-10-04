@@ -1,0 +1,11 @@
+# Frontend-only deployment configuration
+services:
+  - type: web
+    name: leave-management-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/build
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://leave-management-backend.onrender.com
