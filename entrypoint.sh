@@ -1,23 +1,20 @@
-echo "Running migrations..."
-echo "Collecting static files..."
-echo "Starting Gunicorn..."
-#!/bin/sh
+#!/usr/bin/env bash
 # Do not exit immediately; handle transient failures (DB not ready) with retries.
 set -u
 
 retry_cmd() {
-	# $1 = friendly name, $2 = command (as string)
+	# Usage: retry_cmd "friendly-name" <command...>
 	local name="$1"
 	shift
-	local -i max_attempts=8
-	local -i attempt=0
+	local max_attempts=8
+	local attempt=0
 	local sleep_seconds=5
 
 	while [ $attempt -lt $max_attempts ]; do
 		attempt=$((attempt + 1))
 		echo "[$name] Attempt $attempt of $max_attempts..."
-		# Use eval so we can pass a simple command string
-		if eval "$@"; then
+		# Use eval on the joined arguments so we handle commands with args
+		if eval "$(printf '%s ' "$@")"; then
 			echo "[$name] Succeeded"
 			return 0
 		fi
@@ -31,7 +28,7 @@ retry_cmd() {
 
 echo "Running migrations..."
 if ! retry_cmd "migrate" python manage.py migrate --noinput; then
-	echo "Warning: migrations failed after retries. Proceeding to start server so the site can respond."
+	echo "Warning: migrations failed after retries. Proceeding to start server so the site can respond." >&2
 fi
 
 echo "Collecting static files..."
