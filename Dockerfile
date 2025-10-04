@@ -22,13 +22,24 @@ RUN pip install --no-cache-dir -r requirements-render.txt
 
 # Copy frontend directory and build React app
 COPY frontend ./frontend
-WORKDIR /app/frontend
-RUN npm ci && npm run build
 
 # Go back to app directory and copy the rest of the application
 WORKDIR /app
 COPY . .
 
+# Build the frontend after copying the full repo so the build output isn't
+# accidentally overwritten by the subsequent COPY. This runs npm in the
+# frontend directory and writes the build into frontend/build.
+RUN if [ -d ./frontend ]; then \
+            cd frontend && npm ci && npm run build; \
+        fi
+
+# Ensure build static files are copied into STATIC_ROOT so WhiteNoise can serve
+# them even if collectstatic doesn't run at container start for some reason.
+RUN mkdir -p /app/staticfiles && \
+        if [ -d ./frontend/build/static ]; then \
+            cp -R ./frontend/build/static/* /app/staticfiles/ || true; \
+        fi
 # Copy and set entrypoint
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

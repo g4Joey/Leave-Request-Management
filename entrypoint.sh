@@ -1,13 +1,43 @@
-#!/bin/sh
-set -e
-
-# Run migrations and collect static files at container start
 echo "Running migrations..."
-python manage.py migrate --noinput
+echo "Collecting static files..."
+echo "Starting Gunicorn..."
+#!/bin/sh
+# Do not exit immediately; handle transient failures (DB not ready) with retries.
+set -u
+
+retry_cmd() {
+	# $1 = friendly name, $2 = command (as string)
+	local name="$1"
+	shift
+	local -i max_attempts=8
+	local -i attempt=0
+	local sleep_seconds=5
+
+	while [ $attempt -lt $max_attempts ]; do
+		attempt=$((attempt + 1))
+		echo "[$name] Attempt $attempt of $max_attempts..."
+		# Use eval so we can pass a simple command string
+		if eval "$@"; then
+			echo "[$name] Succeeded"
+			return 0
+		fi
+		echo "[$name] Failed (attempt $attempt). Retrying in ${sleep_seconds}s..."
+		sleep $sleep_seconds
+	done
+
+	echo "[$name] Giving up after ${max_attempts} attempts." >&2
+	return 1
+}
+
+echo "Running migrations..."
+if ! retry_cmd "migrate" python manage.py migrate --noinput; then
+	echo "Warning: migrations failed after retries. Proceeding to start server so the site can respond."
+fi
 
 echo "Collecting static files..."
-python manage.py collectstatic --noinput
+if ! retry_cmd "collectstatic" python manage.py collectstatic --noinput; then
+	echo "Warning: collectstatic failed after retries. Static assets may be missing." >&2
+fi
 
-# Start Gunicorn
 echo "Starting Gunicorn..."
 exec gunicorn leave_management.wsgi:application --bind 0.0.0.0:${PORT:-8000}

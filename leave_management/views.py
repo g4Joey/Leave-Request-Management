@@ -75,4 +75,34 @@ def not_found(request, exception, template_name='404.html'):
     from django.shortcuts import render
     return render(request, '404.html', status=404)
 
+@csrf_exempt
+def debug_static_files(request):
+    """Return a JSON list of files present in STATIC_ROOT and frontend build static dir.
+
+    This endpoint is intended for short-term debugging in production and is
+    protected by a simple secret header to avoid exposing file lists publicly.
+    """
+    secret = os.environ.get('DEBUG_SECRET', None)
+    header = request.META.get('HTTP_X_DEBUG_SECRET')
+    if not secret or header != secret:
+        return JsonResponse({'error': 'unauthorized'}, status=401)
+
+    static_root = getattr(settings, 'STATIC_ROOT', None)
+    react_static = os.path.join(str(getattr(settings, 'BASE_DIR', os.getcwd())), 'frontend', 'build', 'static')
+
+    def list_files(root):
+        files = []
+        if root and os.path.exists(root):
+            for dirpath, dirnames, filenames in os.walk(root):
+                for f in filenames:
+                    rel = os.path.relpath(os.path.join(dirpath, f), root)
+                    files.append(rel)
+        return files
+
+    return JsonResponse({
+        'static_root': static_root,
+        'static_root_files': list_files(static_root),
+        'react_static_dir': react_static,
+        'react_static_files': list_files(react_static),
+    })
     

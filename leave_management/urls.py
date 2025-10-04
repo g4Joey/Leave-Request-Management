@@ -42,21 +42,32 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh_root'),
     path('leaves/', include('leaves.urls')),
     path('users/', include('users.urls')),
+    path('internal/debug-static-files/', views.debug_static_files),
 ]
 
 # Serve React app (for production)
 if not settings.DEBUG:
     from django.views.generic import TemplateView
     from django.urls import re_path
+    from django.views.static import serve as static_serve
     import os
-    
-    # Serve React app for all other routes (SPA routing).
-    # Exclude API, static, media, and any path that looks like a file
-    # (contains a dot) so asset requests are not routed to index.html.
-    # Matches only URLs that do NOT start with api/, static/, media/
-    # and do NOT contain a dot (e.g. .js, .css, .png).
+
+    # Fallback: serve static assets directly from the React build directory if
+    # WhiteNoise or collectstatic didn't make them available in STATIC_ROOT.
+    # This helps the unified Docker deployment serve the SPA assets reliably.
+    REACT_STATIC_DIR = os.path.join(str(settings.BASE_DIR) if hasattr(settings, 'BASE_DIR') else os.getcwd(), 'frontend', 'build', 'static')
+
+    # Serve static and media files explicitly before the SPA catch-all.
     urlpatterns += [
-        re_path(r'^(?!api/|static/|media/)(?!.*\.).*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
+        re_path(r'^static/(?P<path>.*)$', static_serve, {'document_root': REACT_STATIC_DIR}),
+        re_path(r'^media/(?P<path>.*)$', static_serve, {'document_root': settings.MEDIA_ROOT}),
+    ]
+
+    # Serve React app for all other routes (SPA routing).
+    # Exclude API and any path that looks like a file (contains a dot)
+    # so asset requests are not routed to index.html.
+    urlpatterns += [
+        re_path(r'^(?!api/)(?!.*\.).*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
     ]
 
 if settings.DEBUG:
