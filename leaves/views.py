@@ -494,72 +494,111 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['put'])
     def approve(self, request, pk=None):
         """Approve a leave request - supports R4"""
-        leave_request = self.get_object()
+        import logging
+        logger = logging.getLogger('leaves')
         
-        if leave_request.status != 'pending':
-            return Response(
-                {'error': 'Only pending requests can be approved'}, 
-                status=status.HTTP_400_BAD_REQUEST
+        try:
+            leave_request = self.get_object()
+            logger.info(f'Attempting to approve leave request {pk} by user {request.user.username}')
+            
+            if leave_request.status != 'pending':
+                logger.warning(f'Leave request {pk} is not pending (status: {leave_request.status})')
+                return Response(
+                    {'error': 'Only pending requests can be approved'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = LeaveApprovalSerializer(
+                leave_request, 
+                data={'status': 'approved', 'approval_comments': request.data.get('approval_comments', '')},
+                context={'request': request}
             )
-        
-        serializer = LeaveApprovalSerializer(
-            leave_request, 
-            data={'status': 'approved', 'approval_comments': request.data.get('approval_comments', '')},
-            context={'request': request}
-        )
-        
-        if serializer.is_valid():
-            serializer.save()
             
-            # Update leave balance
-            self._update_leave_balance(leave_request, 'approve')
-            
-            return Response({'message': 'Leave request approved successfully'})
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            if serializer.is_valid():
+                logger.info(f'Serializer is valid, saving approval for request {pk}')
+                serializer.save()
+                
+                # Update leave balance
+                logger.info(f'Updating leave balance for approved request {pk}')
+                self._update_leave_balance(leave_request, 'approve')
+                
+                logger.info(f'Successfully approved leave request {pk}')
+                return Response({'message': 'Leave request approved successfully'})
+            else:
+                logger.error(f'Serializer validation failed for request {pk}: {serializer.errors}')
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f'Error approving leave request {pk}: {str(e)}', exc_info=True)
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['put'])
     def reject(self, request, pk=None):
         """Reject a leave request - supports R4"""
-        leave_request = self.get_object()
+        import logging
+        logger = logging.getLogger('leaves')
         
-        if leave_request.status != 'pending':
-            return Response(
-                {'error': 'Only pending requests can be rejected'}, 
-                status=status.HTTP_400_BAD_REQUEST
+        try:
+            leave_request = self.get_object()
+            logger.info(f'Attempting to reject leave request {pk} by user {request.user.username}')
+            
+            if leave_request.status != 'pending':
+                logger.warning(f'Leave request {pk} is not pending (status: {leave_request.status})')
+                return Response(
+                    {'error': 'Only pending requests can be rejected'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = LeaveApprovalSerializer(
+                leave_request,
+                data={'status': 'rejected', 'approval_comments': request.data.get('approval_comments', '')},
+                context={'request': request}
             )
-        
-        serializer = LeaveApprovalSerializer(
-            leave_request,
-            data={'status': 'rejected', 'approval_comments': request.data.get('approval_comments', '')},
-            context={'request': request}
-        )
-        
-        if serializer.is_valid():
-            serializer.save()
             
-            # Update leave balance (remove from pending)
-            self._update_leave_balance(leave_request, 'reject')
-            
-            return Response({'message': 'Leave request rejected'})
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            if serializer.is_valid():
+                logger.info(f'Serializer is valid, saving rejection for request {pk}')
+                serializer.save()
+                
+                # Update leave balance (remove from pending)
+                logger.info(f'Updating leave balance for rejected request {pk}')
+                self._update_leave_balance(leave_request, 'reject')
+                
+                logger.info(f'Successfully rejected leave request {pk}')
+                return Response({'message': 'Leave request rejected'})
+            else:
+                logger.error(f'Serializer validation failed for request {pk}: {serializer.errors}')
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f'Error rejecting leave request {pk}: {str(e)}', exc_info=True)
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def _update_leave_balance(self, leave_request, action):
         """Update leave balance based on approval/rejection"""
+        import logging
+        logger = logging.getLogger('leaves')
+        
         try:
+            logger.info(f'Updating leave balance for {action} action on request {leave_request.id}')
             balance = LeaveBalance.objects.get(
                 employee=leave_request.employee,
                 leave_type=leave_request.leave_type,
                 year=leave_request.start_date.year
             )
             
+            logger.info(f'Found balance for {leave_request.employee.username} - {leave_request.leave_type.name} - {leave_request.start_date.year}')
+            
             # Recompute from source of truth to avoid negative values
             balance.update_balance()
+            logger.info(f'Updated balance: entitled={balance.entitled_days}, used={balance.used_days}, pending={balance.pending_days}')
             
         except LeaveBalance.DoesNotExist:
+            logger.warning(f'No leave balance found for {leave_request.employee.username} - {leave_request.leave_type.name} - {leave_request.start_date.year}')
             # Handle case where balance doesn't exist
             pass
+        except Exception as e:
+            logger.error(f'Error updating leave balance: {str(e)}', exc_info=True)
+            raise
 
 
 class IsManagerPermission(permissions.BasePermission):
