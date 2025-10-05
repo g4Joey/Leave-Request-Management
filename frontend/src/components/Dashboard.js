@@ -34,7 +34,30 @@ function Dashboard() {
         console.log('Requests data is array:', Array.isArray(requestsData));
         console.log('Requests data length:', requestsData?.length);
         
-        setBalances(balancesData);
+        // If no balances found, try to force create them
+        if (!balancesData || balancesData.length === 0) {
+          console.log('No balances found, attempting to create dashboard data...');
+          try {
+            const forceRes = await api.post('/leaves/force-dashboard-data/');
+            console.log('Force dashboard data response:', forceRes.data);
+            
+            if (forceRes.data.status === 'success') {
+              // Refetch balances after creation
+              const newBalancesRes = await api.get('/leaves/balances/current_year_full/');
+              const newBalancesData = newBalancesRes.data.results || newBalancesRes.data;
+              console.log('Refetched balances:', newBalancesData);
+              setBalances(newBalancesData);
+            } else {
+              setBalances([]);
+            }
+          } catch (forceError) {
+            console.error('Error forcing dashboard data creation:', forceError);
+            setBalances([]);
+          }
+        } else {
+          setBalances(balancesData);
+        }
+        
         setRecentRequests(requestsData);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);

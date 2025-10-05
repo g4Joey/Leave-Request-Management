@@ -290,3 +290,9 @@ if 'EMAIL_HOST' in os.environ:
     EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
     DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@example.com')
+
+# Import dashboard data ensurer to run on startup
+try:
+    import ensure_dashboard_data
+except:
+    pass  # Silently fail if there are issues

@@ -9,6 +9,7 @@ from .views import (
     LeaveGradeEntitlementViewSet,
 )
 from .role_views import RoleEntitlementViewSet
+from .force_dashboard_data import force_create_dashboard_data
 
 router = DefaultRouter()
 router.register(r'requests', LeaveRequestViewSet, basename='leave-requests')
@@ -21,4 +22,5 @@ router.register(r'role-entitlements', RoleEntitlementViewSet, basename='role-ent
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('force-dashboard-data/', force_create_dashboard_data, name='force-dashboard-data'),
 ]
