@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import RoleManagement from './RoleManagement';
 
 // Base sidebar items (grade-entitlements will be conditionally included for privileged roles)
 const BASE_SIDEBAR_ITEMS = [
@@ -781,28 +782,8 @@ function StaffManagement() {
             )}
             {active === 'role-management' && (
               <section>
-                <h2 className="text-lg font-medium mb-4">Role Management</h2>
                 {canManageGradeEntitlements ? (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600">Manage employee roles and their associated leave entitlements.</p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      <div className="p-4 border rounded-lg">
-                        <h3 className="font-medium text-green-700">Junior Staff</h3>
-                        <p className="text-sm text-gray-600 mt-1">Entry-level employees</p>
-                        <p className="text-xs text-gray-500 mt-2">Default: 20 days annual leave</p>
-                      </div>
-                      <div className="p-4 border rounded-lg">
-                        <h3 className="font-medium text-blue-700">Senior Staff</h3>
-                        <p className="text-sm text-gray-600 mt-1">Experienced employees</p>
-                        <p className="text-xs text-gray-500 mt-2">Default: 25 days annual leave</p>
-                      </div>
-                      <div className="p-4 border rounded-lg">
-                        <h3 className="font-medium text-purple-700">Manager</h3>
-                        <p className="text-sm text-gray-600 mt-1">Team leaders</p>
-                        <p className="text-xs text-gray-500 mt-2">Default: 30 days annual leave</p>
-                      </div>
-                    </div>
-                  </div>
+                  <RoleManagement />
                 ) : (
                   <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">You are not authorized to view this section.</div>
                 )}

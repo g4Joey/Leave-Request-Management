@@ -48,17 +48,60 @@ def health_check(request):
 def server_error(request, template_name='500.html'):
     """
     500 error handler that returns JSON for API requests
-    and HTML for regular requests.
     """
-    if request.path.startswith('/api/'):
-        return JsonResponse({
-            'error': 'Internal server error',
-            'message': 'Something went wrong on our end. Please try again later.'
-        }, status=500)
+    if 'api' in request.path:
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+    # For HTML requests, use default error page
+    return HttpResponse("Internal Server Error", status=500)
+
+
+def debug_dashboard_data(request):
+    """Debug endpoint to check dashboard data for authenticated users"""
+    from rest_framework.decorators import api_view, permission_classes
+    from rest_framework.permissions import IsAuthenticated
+    from rest_framework.response import Response
+    from leaves.models import LeaveBalance, LeaveType
+    from django.utils import timezone
     
-    # For non-API requests, you could render an HTML template
-    from django.shortcuts import render
-    return render(request, '500.html', status=500)
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Authentication required'}, status=401)
+    
+    current_year = timezone.now().year
+    user = request.user
+    
+    # Get user's leave balances
+    balances = LeaveBalance.objects.filter(employee=user, year=current_year)
+    
+    # Get all active leave types for comparison
+    leave_types = LeaveType.objects.filter(is_active=True)
+    
+    debug_data = {
+        'user_info': {
+            'username': user.username,
+            'full_name': user.get_full_name(),
+            'is_active': user.is_active,
+            'is_active_employee': getattr(user, 'is_active_employee', None),
+        },
+        'year': current_year,
+        'leave_types_count': leave_types.count(),
+        'leave_types': [{'id': getattr(lt, 'id'), 'name': lt.name} for lt in leave_types],
+        'balances_count': balances.count(),
+        'balances': [
+            {
+                'leave_type': balance.leave_type.name,
+                'entitled_days': balance.entitled_days,
+                'used_days': balance.used_days,
+                'pending_days': balance.pending_days,
+                'remaining_days': balance.remaining_days,
+            }
+            for balance in balances
+        ]
+    }
+    
+    return JsonResponse(debug_data)
+
+
+
 
 def not_found(request, exception, template_name='404.html'):
     """

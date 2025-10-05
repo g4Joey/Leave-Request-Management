@@ -43,6 +43,7 @@ urlpatterns = [
     path('leaves/', include('leaves.urls')),
     path('users/', include('users.urls')),
     path('internal/debug-static-files/', views.debug_static_files),
+    path('internal/debug-dashboard-data/', views.debug_dashboard_data),
 ]
 
 # Serve React app (for production)
