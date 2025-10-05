@@ -22,7 +22,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from users.auth import EmailOrUsernameTokenObtainPairView
 from . import views
 from django.views.generic import RedirectView  # noqa: F401 (kept for potential future use)
-from debug_production_views import debug_fix_production_data, debug_production_stats
+from debug_production_views import debug_fix_production_data, debug_production_stats, debug_setup_fresh_database
 
 urlpatterns = [
     path('api/health/', views.health_check, name='health_check'),
@@ -46,6 +46,7 @@ urlpatterns = [
     path('internal/debug-static-files/', views.debug_static_files),
     path('internal/debug-dashboard-data/', views.debug_dashboard_data),
     path('internal/debug-fix-production-data/', debug_fix_production_data),
+    path('internal/debug-setup-fresh-database/', debug_setup_fresh_database),
     path('internal/debug-production-stats/', debug_production_stats),
 ]
 

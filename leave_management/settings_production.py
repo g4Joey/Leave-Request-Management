@@ -187,7 +187,19 @@ if not DEBUG:
 from django.core.management import call_command
 import sys
 
-# --- AUTO DATA FIX TRIGGER ---
+# --- AUTO DATABASE SETUP TRIGGER ---
+if os.getenv('SETUP_FRESH_DATABASE', '0').lower() in {'1', 'true', 'yes'}:
+    try:
+        print('==> Running setup_fresh_database management command (auto-triggered by SETUP_FRESH_DATABASE)...')
+        call_command('setup_fresh_database')
+        print('==> setup_fresh_database completed.')
+    except Exception as e:
+        print(f'!! Error running setup_fresh_database: {e}')
+        # Print full traceback for debugging
+        import traceback
+        traceback.print_exc()
+
+# --- AUTO DATA FIX TRIGGER (for existing databases) ---
 if os.getenv('RUN_FIX_PRODUCTION_DATA', '0').lower() in {'1', 'true', 'yes'}:
     try:
         print('==> Running fix_production_data management command (auto-triggered by RUN_FIX_PRODUCTION_DATA)...')

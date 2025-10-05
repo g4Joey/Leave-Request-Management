@@ -49,6 +49,41 @@ def debug_fix_production_data(request):
     finally:
         output.close()
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def debug_setup_fresh_database(request):
+    """Manually trigger the setup_fresh_database command and return output"""
+    # Capture command output
+    output = io.StringIO()
+    try:
+        call_command('setup_fresh_database', stdout=output)
+        command_output = output.getvalue()
+        
+        # Get current stats
+        current_year = timezone.now().year
+        employees = CustomUser.objects.filter(is_active=True, is_active_employee=True)
+        balances = LeaveBalance.objects.filter(year=current_year)
+        leave_types = LeaveType.objects.filter(is_active=True)
+        
+        return JsonResponse({
+            'status': 'success',
+            'command_output': command_output,
+            'stats': {
+                'active_employees': employees.count(),
+                'leave_balances': balances.count(),
+                'active_leave_types': leave_types.count(),
+                'current_year': current_year,
+            }
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': str(e),
+            'command_output': output.getvalue()
+        })
+    finally:
+        output.close()
+
 @require_http_methods(["GET"])
 def debug_production_stats(request):
     """Get production database stats"""
@@ -73,6 +108,7 @@ def debug_production_stats(request):
     return JsonResponse({
         'current_year': current_year,
         'environment': {
+            'SETUP_FRESH_DATABASE': os.getenv('SETUP_FRESH_DATABASE', 'NOT_SET'),
             'RUN_FIX_PRODUCTION_DATA': os.getenv('RUN_FIX_PRODUCTION_DATA', 'NOT_SET'),
             'DATABASE_URL': 'SET' if os.getenv('DATABASE_URL') else 'NOT_SET',
             'DEBUG': os.getenv('DEBUG', 'NOT_SET'),
