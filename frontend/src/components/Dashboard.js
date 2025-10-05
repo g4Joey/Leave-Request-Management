@@ -25,7 +25,14 @@ function Dashboard() {
         const requestsData = requestsRes.data.results || requestsRes.data;
         
         console.log('Processed balances data:', balancesData);
+        console.log('Balances data type:', typeof balancesData);
+        console.log('Balances data is array:', Array.isArray(balancesData));
+        console.log('Balances data length:', balancesData?.length);
+        
         console.log('Processed requests data:', requestsData);
+        console.log('Requests data type:', typeof requestsData);
+        console.log('Requests data is array:', Array.isArray(requestsData));
+        console.log('Requests data length:', requestsData?.length);
         
         setBalances(balancesData);
         setRecentRequests(requestsData);
@@ -83,17 +90,17 @@ function Dashboard() {
           {balances.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {balances.map((balance, index) => (
-                <div key={balance.id || index} className="bg-gray-50 rounded-lg p-4">
+                <div key={index} className="bg-gray-50 rounded-lg p-4">
                   <div className="flex items-center">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">
-                        {balance.leave_type_name || balance.leave_type?.name || 'Leave Type'}
+                        {balance.leave_type?.name || balance.leave_type_name || 'Leave Type'}
                       </p>
                       <p className="text-2xl font-bold text-primary-600">
                         {balance.remaining_days || 0}
                       </p>
                       <p className="text-xs text-gray-500">
-                        of {balance.entitled_days ?? balance.allocated_days ?? 0} days remaining
+                        of {balance.entitled_days || 0} days remaining
                       </p>
                     </div>
                   </div>
