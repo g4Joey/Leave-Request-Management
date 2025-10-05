@@ -11,7 +11,7 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-# Prefer production settings by default in deployed environments.
+# Use environment-specified settings module, with production as fallback
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'leave_management.settings_production')
 
 application = get_wsgi_application()

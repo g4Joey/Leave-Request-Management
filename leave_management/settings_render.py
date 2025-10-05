@@ -65,10 +65,26 @@ STATICFILES_DIRS = [
 ] if os.path.exists(REACT_BUILD_DIR) else []
 
 # CORS configuration for frontend
-CORS_ORIGINS_STR = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000')
+# On Render, frontend and backend are served from same domain, so we need to allow same-origin
+CORS_ORIGINS_STR = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://leave-management-app-w7zp.onrender.com')
 CORS_ALLOWED_ORIGINS = CORS_ORIGINS_STR.split(',') if ',' in CORS_ORIGINS_STR else [CORS_ORIGINS_STR]
 
+# For unified deployment, allow same-origin requests
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Allow all origins only in debug mode
+
+# Additional CORS settings for API endpoints
+CORS_ALLOWED_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # Media files (for file uploads)
 MEDIA_URL = '/media/'
@@ -78,6 +94,32 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# --- AUTO DATABASE SETUP TRIGGER FOR RENDER ---
+from django.core.management import call_command
+
+if os.getenv('SETUP_FRESH_DATABASE', '0').lower() in {'1', 'true', 'yes'}:
+    try:
+        print('==> Running setup_fresh_database management command (auto-triggered by SETUP_FRESH_DATABASE)...')
+        call_command('setup_fresh_database')
+        print('==> setup_fresh_database completed.')
+    except Exception as e:
+        print(f'!! Error running setup_fresh_database: {e}')
+        # Print full traceback for debugging
+        import traceback
+        traceback.print_exc()
+
+# --- AUTO DATA FIX TRIGGER (for existing databases) ---
+if os.getenv('RUN_FIX_PRODUCTION_DATA', '0').lower() in {'1', 'true', 'yes'}:
+    try:
+        print('==> Running fix_production_data management command (auto-triggered by RUN_FIX_PRODUCTION_DATA)...')
+        call_command('fix_production_data')
+        print('==> fix_production_data completed.')
+    except Exception as e:
+        print(f'!! Error running fix_production_data: {e}')
+        # Print full traceback for debugging
+        import traceback
+        traceback.print_exc()
 
 # Logging
 LOGGING = {
