@@ -184,6 +184,17 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     CSRF_COOKIE_HTTPONLY = True
 
+import subprocess
+
+# --- AUTO DATA FIX TRIGGER ---
+if os.getenv('RUN_FIX_PRODUCTION_DATA', '0').lower() in {'1', 'true', 'yes'}:
+    try:
+        print('==> Running fix_production_data management command (auto-triggered by RUN_FIX_PRODUCTION_DATA)...')
+        subprocess.run(['python', 'manage.py', 'fix_production_data'], check=True)
+        print('==> fix_production_data completed.')
+    except Exception as e:
+        print(f'!! Error running fix_production_data: {e}')
+
 # Logging configuration
 LOGGING = {
     'version': 1,
