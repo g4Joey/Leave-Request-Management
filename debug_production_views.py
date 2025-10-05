@@ -52,6 +52,7 @@ def debug_fix_production_data(request):
 @require_http_methods(["GET"])
 def debug_production_stats(request):
     """Get production database stats"""
+    import os
     current_year = timezone.now().year
     employees = CustomUser.objects.filter(is_active=True, is_active_employee=True)
     balances = LeaveBalance.objects.filter(year=current_year)
@@ -71,6 +72,11 @@ def debug_production_stats(request):
     
     return JsonResponse({
         'current_year': current_year,
+        'environment': {
+            'RUN_FIX_PRODUCTION_DATA': os.getenv('RUN_FIX_PRODUCTION_DATA', 'NOT_SET'),
+            'DATABASE_URL': 'SET' if os.getenv('DATABASE_URL') else 'NOT_SET',
+            'DEBUG': os.getenv('DEBUG', 'NOT_SET'),
+        },
         'stats': {
             'active_employees': employees.count(),
             'leave_balances': balances.count(),
