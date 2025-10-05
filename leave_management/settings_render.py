@@ -96,30 +96,7 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
 # --- AUTO DATABASE SETUP TRIGGER FOR RENDER ---
-from django.core.management import call_command
-
-if os.getenv('SETUP_FRESH_DATABASE', '0').lower() in {'1', 'true', 'yes'}:
-    try:
-        print('==> Running setup_fresh_database management command (auto-triggered by SETUP_FRESH_DATABASE)...')
-        call_command('setup_fresh_database')
-        print('==> setup_fresh_database completed.')
-    except Exception as e:
-        print(f'!! Error running setup_fresh_database: {e}')
-        # Print full traceback for debugging
-        import traceback
-        traceback.print_exc()
-
-# --- AUTO DATA FIX TRIGGER (for existing databases) ---
-if os.getenv('RUN_FIX_PRODUCTION_DATA', '0').lower() in {'1', 'true', 'yes'}:
-    try:
-        print('==> Running fix_production_data management command (auto-triggered by RUN_FIX_PRODUCTION_DATA)...')
-        call_command('fix_production_data')
-        print('==> fix_production_data completed.')
-    except Exception as e:
-        print(f'!! Error running fix_production_data: {e}')
-        # Print full traceback for debugging
-        import traceback
-        traceback.print_exc()
+# Note: Management commands will run after Django is fully initialized via AppConfig
 
 # Logging
 LOGGING = {

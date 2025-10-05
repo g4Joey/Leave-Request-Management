@@ -36,6 +36,22 @@ if ! retry_cmd "collectstatic" python manage.py collectstatic --noinput; then
 	echo "Warning: collectstatic failed after retries. Static assets may be missing." >&2
 fi
 
+# Run fresh database setup if requested
+if [ "${SETUP_FRESH_DATABASE:-0}" = "1" ]; then
+	echo "Running setup_fresh_database..."
+	if ! retry_cmd "setup_fresh_database" python manage.py setup_fresh_database; then
+		echo "Warning: setup_fresh_database failed after retries." >&2
+	fi
+fi
+
+# Run production data fix if requested
+if [ "${RUN_FIX_PRODUCTION_DATA:-0}" = "1" ]; then
+	echo "Running fix_production_data..."
+	if ! retry_cmd "fix_production_data" python manage.py fix_production_data; then
+		echo "Warning: fix_production_data failed after retries." >&2
+	fi
+fi
+
 # Optionally run production data setup (idempotent). This is controlled by:
 # - RUN_SEED_ON_DEPLOY=1 OR presence of DJANGO_SUPERUSER_USERNAME, HR_ADMIN_PASSWORD, or SEED_USERS env vars.
 should_seed=0
