@@ -50,6 +50,60 @@ def debug_fix_production_data(request):
         output.close()
 
 @csrf_exempt
+def debug_api_functionality(request):
+    """Debug all API functionality issues"""
+    from django.contrib.auth import get_user_model
+    from leaves.models import LeaveRequest
+    
+    User = get_user_model()
+    current_year = timezone.now().year
+    
+    # Check all users and their data
+    users_data = []
+    for user in User.objects.filter(is_active=True):
+        # Check leave balances
+        balances = LeaveBalance.objects.filter(employee=user, year=current_year)
+        
+        # Check leave requests
+        requests = LeaveRequest.objects.filter(employee=user)
+        
+        users_data.append({
+            'user_id': getattr(user, 'id', 'unknown'),
+            'username': user.username,
+            'email': user.email,
+            'role': getattr(user, 'role', 'unknown'),
+            'is_active_employee': getattr(user, 'is_active_employee', 'unknown'),
+            'leave_balances_count': balances.count(),
+            'leave_requests_count': requests.count(),
+            'leave_balances': [
+                {
+                    'leave_type': b.leave_type.name,
+                    'entitled': b.entitled_days,
+                    'used': b.used_days,
+                    'remaining': b.remaining_days
+                } for b in balances
+            ],
+            'recent_requests': [
+                {
+                    'id': getattr(r, 'id', 'unknown'),
+                    'status': r.status,
+                    'leave_type': r.leave_type.name,
+                    'start_date': str(r.start_date),
+                    'end_date': str(r.end_date)
+                } for r in requests.order_by('-created_at')[:3]
+            ]
+        })
+    
+    return JsonResponse({
+        'timestamp': timezone.now().isoformat(),
+        'current_year': current_year,
+        'total_users': User.objects.filter(is_active=True).count(),
+        'total_balances': LeaveBalance.objects.filter(year=current_year).count(),
+        'total_requests': LeaveRequest.objects.count(),
+        'users_data': users_data
+    })
+
+@csrf_exempt
 @require_http_methods(["POST"])
 def debug_quick_user_fix(request):
     """Manually trigger the quick_user_fix command and return output"""
