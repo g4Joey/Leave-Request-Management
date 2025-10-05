@@ -107,6 +107,9 @@ if not _db_configured and all(key in os.environ for key in ['DB_HOST', 'DB_NAME'
             'HOST': os.environ.get('DB_HOST'),
             'PORT': os.environ.get('DB_PORT', '3306'),
             'OPTIONS': {
+            from django.core.management import call_command
+            from django.db.utils import OperationalError
+
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
                 'charset': 'utf8mb4',
                 'ssl': {'ssl-mode': 'REQUIRED'},
@@ -142,6 +145,21 @@ if os.getenv('LOG_DB_CONFIG', '0').lower() in {'1', 'true', 'yes'} and _db_confi
         }
     }
     logging.getLogger('users').info('DB CONFIG SNAPSHOT (sanitized): %s', safe_snapshot)
+# --- ONE-TIME MIGRATION AND DATA FIX FOR DASHBOARD ---
+# Place this at the end of the file, outside any config block.
+if os.getenv('RUN_DASHBOARD_FIX_ONCE', '0').lower() in {'1', 'true', 'yes'}:
+    try:
+        from django.core.management import call_command
+        from django.db.utils import OperationalError
+        print('== Running database migrations... ==')
+        call_command('migrate', interactive=False)
+        print('== Running fix_production_data... ==')
+        call_command('fix_production_data')
+        print('== Dashboard data fix complete. ==')
+    except OperationalError as oe:
+        print(f"Database error during migrations or data fix: {oe}")
+    except Exception as e:
+        print(f"Error running dashboard data fix: {e}")
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
