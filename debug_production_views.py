@@ -105,6 +105,47 @@ def debug_api_functionality(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def debug_fix_all_user_references(request):
+    """Manually trigger the comprehensive user reference fix command and return output"""
+    # Capture command output
+    output = io.StringIO()
+    try:
+        call_command('fix_all_user_references', stdout=output)
+        command_output = output.getvalue()
+        
+        # Get current stats after fix
+        current_year = timezone.now().year
+        from django.contrib.auth import get_user_model
+        from leaves.models import LeaveRequest
+        User = get_user_model()
+        
+        employees = User.objects.filter(is_active=True)
+        balances = LeaveBalance.objects.filter(year=current_year)
+        requests = LeaveRequest.objects.all()
+        leave_types = LeaveType.objects.filter(is_active=True)
+        
+        return JsonResponse({
+            'status': 'success',
+            'command_output': command_output,
+            'stats_after_fix': {
+                'total_users': employees.count(),
+                'leave_balances': balances.count(),
+                'leave_requests': requests.count(),
+                'active_leave_types': leave_types.count(),
+                'current_year': current_year,
+            }
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': str(e),
+            'command_output': output.getvalue()
+        })
+    finally:
+        output.close()
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def debug_quick_user_fix(request):
     """Manually trigger the quick_user_fix command and return output"""
     # Capture command output
