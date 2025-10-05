@@ -51,6 +51,41 @@ def debug_fix_production_data(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def debug_quick_user_fix(request):
+    """Manually trigger the quick_user_fix command and return output"""
+    # Capture command output
+    output = io.StringIO()
+    try:
+        call_command('quick_user_fix', stdout=output)
+        command_output = output.getvalue()
+        
+        # Get current stats
+        current_year = timezone.now().year
+        employees = CustomUser.objects.filter(is_active=True, is_active_employee=True)
+        balances = LeaveBalance.objects.filter(year=current_year)
+        leave_types = LeaveType.objects.filter(is_active=True)
+        
+        return JsonResponse({
+            'status': 'success',
+            'command_output': command_output,
+            'stats': {
+                'active_employees': employees.count(),
+                'leave_balances': balances.count(),
+                'active_leave_types': leave_types.count(),
+                'current_year': current_year,
+            }
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': str(e),
+            'command_output': output.getvalue()
+        })
+    finally:
+        output.close()
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def debug_fix_user_mismatches(request):
     """Manually trigger the fix_user_mismatches command and return output"""
     # Capture command output
