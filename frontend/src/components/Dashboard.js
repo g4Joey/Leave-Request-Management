@@ -12,6 +12,9 @@ function Dashboard() {
     const fetchData = async () => {
       try {
         console.log('Fetching dashboard data...');
+        console.log('Current user:', user);
+        console.log('Token in localStorage:', localStorage.getItem('token') ? 'EXISTS' : 'NOT_FOUND');
+        console.log('API base URL:', api.defaults.baseURL);
         
         const [balancesRes, requestsRes] = await Promise.all([
           api.get('/leaves/balances/current_year_full/'),
@@ -34,30 +37,7 @@ function Dashboard() {
         console.log('Requests data is array:', Array.isArray(requestsData));
         console.log('Requests data length:', requestsData?.length);
         
-        // If no balances found, try to force create them
-        if (!balancesData || balancesData.length === 0) {
-          console.log('No balances found, attempting to create dashboard data...');
-          try {
-            const forceRes = await api.post('/leaves/force-dashboard-data/');
-            console.log('Force dashboard data response:', forceRes.data);
-            
-            if (forceRes.data.status === 'success') {
-              // Refetch balances after creation
-              const newBalancesRes = await api.get('/leaves/balances/current_year_full/');
-              const newBalancesData = newBalancesRes.data.results || newBalancesRes.data;
-              console.log('Refetched balances:', newBalancesData);
-              setBalances(newBalancesData);
-            } else {
-              setBalances([]);
-            }
-          } catch (forceError) {
-            console.error('Error forcing dashboard data creation:', forceError);
-            setBalances([]);
-          }
-        } else {
-          setBalances(balancesData);
-        }
-        
+        setBalances(balancesData);
         setRecentRequests(requestsData);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -72,7 +52,7 @@ function Dashboard() {
     };
 
     fetchData();
-  }, []);
+  }, [user]);
 
   const getStatusColor = (status) => {
     const colors = {
@@ -134,6 +114,8 @@ function Dashboard() {
             <div>
               <p className="text-gray-500">No leave balances found.</p>
               <p className="text-xs text-gray-400 mt-2">Debug: balances.length = {balances.length}</p>
+              <p className="text-xs text-gray-400">User: {user?.email || 'Not logged in'}</p>
+              <p className="text-xs text-gray-400">Token: {localStorage.getItem('token') ? 'EXISTS' : 'MISSING'}</p>
               {process.env.NODE_ENV === 'development' && (
                 <pre className="text-xs text-gray-400 mt-2 bg-gray-100 p-2 rounded">
                   {JSON.stringify(balances, null, 2)}
@@ -183,6 +165,8 @@ function Dashboard() {
             <div>
               <p className="text-gray-500">No recent leave requests.</p>
               <p className="text-xs text-gray-400 mt-2">Debug: recentRequests.length = {recentRequests.length}</p>
+              <p className="text-xs text-gray-400">User: {user?.email || 'Not logged in'}</p>
+              <p className="text-xs text-gray-400">Token: {localStorage.getItem('token') ? 'EXISTS' : 'MISSING'}</p>
               {process.env.NODE_ENV === 'development' && (
                 <pre className="text-xs text-gray-400 mt-2 bg-gray-100 p-2 rounded">
                   {JSON.stringify(recentRequests, null, 2)}
