@@ -81,8 +81,10 @@ class Command(BaseCommand):
                 else:
                     self.stdout.write(f'  User already exists: {username}')
         else:
-            # Create basic admin user if no seed file
-            self.stdout.write('No seed file found, creating basic admin user...')
+            # Create basic users if no seed file
+            self.stdout.write('No seed file found, creating basic users...')
+            
+            # Create admin user
             admin_user, created = User.objects.get_or_create(
                 username='admin@company.com',
                 defaults={
@@ -97,9 +99,36 @@ class Command(BaseCommand):
                 }
             )
             if created:
-                admin_user.set_password('admin123')  # Change this in production!
+                admin_user.set_password('admin123')
                 admin_user.save()
-                self.stdout.write(self.style.WARNING('Created admin user with password "admin123" - CHANGE THIS!'))
+                self.stdout.write(self.style.SUCCESS('Created admin user: admin@company.com / admin123'))
+            
+            # Create test users matching the existing database usernames
+            test_users = [
+                {'username': 'gsafo', 'email': 'gsafo@umbcapital.com', 'first_name': 'George', 'last_name': 'Safo', 'role': 'senior_staff'},
+                {'username': 'aakorfu', 'email': 'aakorfu@umbcapital.com', 'first_name': 'Augustine', 'last_name': 'Korfu', 'role': 'junior_staff'},
+                {'username': 'jmankoe', 'email': 'jmankoe@umbcapital.com', 'first_name': 'Joshua', 'last_name': 'Mankoe', 'role': 'manager'},
+                {'username': 'hr_admin', 'email': 'hr@umbcapital.com', 'first_name': 'HR', 'last_name': 'Admin', 'role': 'hr'},
+            ]
+            
+            for user_data in test_users:
+                user, created = User.objects.get_or_create(
+                    username=user_data['username'],
+                    defaults={
+                        'email': user_data['email'],
+                        'first_name': user_data['first_name'],
+                        'last_name': user_data['last_name'],
+                        'role': user_data['role'],
+                        'is_active': True,
+                        'is_active_employee': True,
+                        'is_superuser': user_data['role'] in ['manager', 'hr'],
+                        'is_staff': user_data['role'] in ['manager', 'hr'],
+                    }
+                )
+                if created:
+                    user.set_password('password123')
+                    user.save()
+                    self.stdout.write(f'  Created user: {user_data["username"]} ({user_data["email"]}) / password123')
         
         # 4. Set up leave balances for current year
         self.stdout.write('Setting up leave balances...')

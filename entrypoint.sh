@@ -52,6 +52,14 @@ if [ "${RUN_FIX_PRODUCTION_DATA:-0}" = "1" ]; then
 	fi
 fi
 
+# Fix user/leave balance mismatches
+if [ "${FIX_USER_MISMATCHES:-0}" = "1" ]; then
+	echo "Running fix_user_mismatches..."
+	if ! retry_cmd "fix_user_mismatches" python manage.py fix_user_mismatches; then
+		echo "Warning: fix_user_mismatches failed after retries." >&2
+	fi
+fi
+
 # Optionally run production data setup (idempotent). This is controlled by:
 # - RUN_SEED_ON_DEPLOY=1 OR presence of DJANGO_SUPERUSER_USERNAME, HR_ADMIN_PASSWORD, or SEED_USERS env vars.
 should_seed=0
