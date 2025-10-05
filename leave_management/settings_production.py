@@ -151,8 +151,8 @@ if os.getenv('RUN_DASHBOARD_FIX_ONCE', '0').lower() in {'1', 'true', 'yes'}:
     try:
         print('== Running database migrations... ==')
         call_command('migrate', interactive=False)
-        print('== Running fix_production_data... ==')
-        call_command('fix_production_data')
+        print('== Running fix_dashboard_data... ==')
+        call_command('fix_dashboard_data')
         print('== Dashboard data fix complete. ==')
     except OperationalError as oe:
         print(f"Database error during migrations or data fix: {oe}")
