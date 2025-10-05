@@ -142,22 +142,6 @@ if os.getenv('LOG_DB_CONFIG', '0').lower() in {'1', 'true', 'yes'} and _db_confi
         }
     }
     logging.getLogger('users').info('DB CONFIG SNAPSHOT (sanitized): %s', safe_snapshot)
-# --- ONE-TIME MIGRATION AND DATA FIX FOR DASHBOARD ---
-# Place this at the end of the file, outside any config block.
-from django.core.management import call_command
-from django.db.utils import OperationalError
-
-if os.getenv('RUN_DASHBOARD_FIX_ONCE', '0').lower() in {'1', 'true', 'yes'}:
-    try:
-        print('== Running database migrations... ==')
-        call_command('migrate', interactive=False)
-        print('== Running fix_dashboard_data... ==')
-        call_command('fix_dashboard_data')
-        print('== Dashboard data fix complete. ==')
-    except OperationalError as oe:
-        print(f"Database error during migrations or data fix: {oe}")
-    except Exception as e:
-        print(f"Error running dashboard data fix: {e}")
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
@@ -200,16 +184,20 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     CSRF_COOKIE_HTTPONLY = True
 
-import subprocess
+from django.core.management import call_command
+import sys
 
 # --- AUTO DATA FIX TRIGGER ---
 if os.getenv('RUN_FIX_PRODUCTION_DATA', '0').lower() in {'1', 'true', 'yes'}:
     try:
         print('==> Running fix_production_data management command (auto-triggered by RUN_FIX_PRODUCTION_DATA)...')
-        subprocess.run(['python', 'manage.py', 'fix_production_data'], check=True)
+        call_command('fix_production_data')
         print('==> fix_production_data completed.')
     except Exception as e:
         print(f'!! Error running fix_production_data: {e}')
+        # Print full traceback for debugging
+        import traceback
+        traceback.print_exc()
 
 # Logging configuration
 LOGGING = {
@@ -290,9 +278,3 @@ if 'EMAIL_HOST' in os.environ:
     EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
     DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@example.com')
-
-# Import dashboard data ensurer to run on startup
-try:
-    import ensure_dashboard_data
-except:
-    pass  # Silently fail if there are issues
