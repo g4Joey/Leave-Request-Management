@@ -187,3 +187,6 @@ static/
 # Logs
 logs/
 *.log
+
+# Leave-management generated env files
+leave-management-*.env
