@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
-COPY requirements-render.txt .
-RUN pip install --no-cache-dir -r requirements-render.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy frontend directory and build React app
 COPY frontend ./frontend
@@ -27,11 +27,15 @@ COPY frontend ./frontend
 WORKDIR /app
 COPY . .
 
-# Build the frontend after copying the full repo so the build output isn't
-# accidentally overwritten by the subsequent COPY. This runs npm in the
-# frontend directory and writes the build into frontend/build.
+# Build the frontend with retry logic and extended timeouts
 RUN if [ -d ./frontend ]; then \
-            cd frontend && npm ci && npm run build; \
+            cd frontend && \
+            npm config set fetch-timeout 300000 && \
+            npm config set fetch-retry-mintimeout 20000 && \
+            npm config set fetch-retry-maxtimeout 120000 && \
+            npm config set fetch-retries 3 && \
+            npm ci --production=false --no-audit --no-fund && \
+            npm run build; \
         fi
 
 # Ensure build static files are copied into STATIC_ROOT so WhiteNoise can serve
