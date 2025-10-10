@@ -9,6 +9,7 @@ from .views import (
     LeaveGradeEntitlementViewSet,
 )
 from .role_views import RoleEntitlementViewSet
+from .approval_dashboard import approval_dashboard
 
 router = DefaultRouter()
 router.register(r'requests', LeaveRequestViewSet, basename='leave-requests')
@@ -21,4 +22,5 @@ router.register(r'role-entitlements', RoleEntitlementViewSet, basename='role-ent
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('approval-dashboard/', approval_dashboard, name='approval-dashboard'),
 ]

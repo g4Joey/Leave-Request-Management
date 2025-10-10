@@ -27,6 +27,7 @@ class CustomUser(AbstractUser):
         ('senior_staff', 'Senior Staff'),
         ('manager', 'Manager'),
         ('hr', 'HR'),
+        ('ceo', 'CEO'),
         ('admin', 'Admin'),
     ]
     
@@ -79,9 +80,13 @@ class CustomUser(AbstractUser):
         """Check if user is HR"""
         return self.role in ['hr', 'admin']
     
+    def is_ceo(self):
+        """Check if user is CEO"""
+        return self.role in ['ceo', 'admin']
+    
     def can_approve_leaves(self):
         """Check if user can approve leave requests"""
-        return self.role in ['manager', 'hr', 'admin']
+        return self.role in ['manager', 'hr', 'ceo', 'admin']
     
     class Meta:
         ordering = ['employee_id']

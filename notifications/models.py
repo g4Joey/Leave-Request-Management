@@ -9,7 +9,9 @@ class Notification(models.Model):
     """
     NOTIFICATION_TYPES = [
         ('leave_submitted', 'Leave Request Submitted'),
-        ('leave_approved', 'Leave Request Approved'),
+        ('leave_manager_approved', 'Leave Request Approved by Manager'),
+        ('leave_hr_approved', 'Leave Request Approved by HR'),
+        ('leave_approved', 'Leave Request Fully Approved'),
         ('leave_rejected', 'Leave Request Rejected'),
         ('leave_cancelled', 'Leave Request Cancelled'),
         ('balance_low', 'Leave Balance Low'),
@@ -23,7 +25,7 @@ class Notification(models.Model):
                               null=True, blank=True, related_name='sent_notifications')
     
     # Notification content
-    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
+    notification_type = models.CharField(max_length=30, choices=NOTIFICATION_TYPES)
     title = models.CharField(max_length=200)
     message = models.TextField()
     

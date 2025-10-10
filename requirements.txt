@@ -1,50 +1,61 @@
-# Django Framework
-Django==5.0.7
-djangorestframework==3.15.2
-
-# Python 3.13 compatibility
-setuptools
-
-# MySQL Database - Pure Python implementation
-PyMySQL==1.1.1
-
-# Environment Management
-python-decouple==3.8
-
-# CORS Headers for API
-django-cors-headers==4.3.1
-
-# Authentication & Authorization
+altair==5.5.0
+asgiref==3.9.1
+attrs==25.3.0
+blinker==1.9.0
+cachetools==6.2.0
+certifi==2025.8.3
+cffi==2.0.0
+charset-normalizer==3.4.3
+click==8.3.0
+colorama==0.4.6
+cryptography==46.0.1
+dj-database-url==2.1.0
+Django==5.2.6
+django-cors-headers==4.9.0
+django-filter==25.2
+djangorestframework==3.16.1
 djangorestframework-simplejwt==5.3.0
-
-# API Filtering
-django-filter==25.1
-
-# Date/Time handling
-python-dateutil==2.9.0
-
-# Development & Testing
+gitdb==4.0.12
+GitPython==3.1.45
+gunicorn==22.0.0
+idna==3.10
+iniconfig==2.1.0
+Jinja2==3.1.6
+josepy==2.1.0
+jsonschema==4.25.1
+jsonschema-specifications==2025.9.1
+MarkupSafe==3.0.3
+mozilla-django-oidc==4.0.1
+narwhals==2.7.0
+numpy==2.3.3
+packaging==25.0
+pandas==2.3.3
+pillow==11.3.0
+pluggy==1.6.0
+protobuf==6.32.1
+pyarrow==21.0.0
+pycparser==2.23
+pydeck==0.9.1
+PyJWT==2.10.1
+PyMySQL==1.1.2
 pytest==8.2.2
 pytest-django==4.8.0
-
-# Production server
-gunicorn==22.0.0
-
-# Database URL parsing for production
-dj-database-url==2.1.0
-
-# PostgreSQL adapter for production
-# Note: On Windows dev machines without PostgreSQL client tools (pg_config), installing psycopg2-binary may fail.
-# Keep this pinned for production environments where a prebuilt wheel or pg_config is available.
-# If local installs fail on Windows, consider commenting this line out locally or using WSL.
-psycopg2-binary==2.9.9
-
-# WhiteNoise for static files in production
-whitenoise==6.6.0
-
-# Additional utilities
+python-dateutil==2.9.0
+python-decouple==3.8
 pytz==2024.1
-
-# Image processing for Django ImageField (required)
-# Pin to a version compatible with Python 3.13
-Pillow==10.4.0
+referencing==0.36.2
+requests==2.32.5
+rpds-py==0.27.1
+setuptools==80.9.0
+six==1.17.0
+smmap==5.0.2
+sqlparse==0.5.3
+streamlit==1.50.0
+tenacity==9.1.2
+toml==0.10.2
+tornado==6.5.2
+typing_extensions==4.15.0
+tzdata==2025.2
+urllib3==2.5.0
+watchdog==6.0.0
+whitenoise==6.6.0

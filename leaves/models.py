@@ -28,8 +28,10 @@ class LeaveRequest(models.Model):
     Core leave request model - supports requirements R1, R2, R4, R5, R12
     """
     STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('approved', 'Approved'),
+        ('pending', 'Pending Manager Approval'),
+        ('manager_approved', 'Manager Approved - Pending HR'),
+        ('hr_approved', 'HR Approved - Pending CEO'),
+        ('approved', 'Fully Approved'),
         ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
     ]
@@ -48,7 +50,26 @@ class LeaveRequest(models.Model):
     reason = models.TextField(blank=True, null=True, help_text="Optional reason provided by employee")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     
-    # Approval workflow
+    # Multi-stage approval workflow
+    # Manager approval
+    manager_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
+                                           null=True, blank=True, related_name='manager_approved_leaves')
+    manager_approval_date = models.DateTimeField(null=True, blank=True)
+    manager_approval_comments = models.TextField(blank=True)
+    
+    # HR approval
+    hr_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
+                                      null=True, blank=True, related_name='hr_approved_leaves')
+    hr_approval_date = models.DateTimeField(null=True, blank=True)
+    hr_approval_comments = models.TextField(blank=True)
+    
+    # CEO approval
+    ceo_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
+                                       null=True, blank=True, related_name='ceo_approved_leaves')
+    ceo_approval_date = models.DateTimeField(null=True, blank=True)
+    ceo_approval_comments = models.TextField(blank=True)
+    
+    # Final approval (legacy field - will point to CEO)
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, 
                                    null=True, blank=True, related_name='approved_leaves')
     approval_date = models.DateTimeField(null=True, blank=True)
@@ -115,29 +136,130 @@ class LeaveRequest(models.Model):
         label = "working day" if wd == 1 else "working days"
         return f"{self.start_date} to {self.end_date} ({wd} {label})"
     
-    def approve(self, approved_by, comments=""):
-        """Approve the leave request"""
+    def manager_approve(self, approved_by, comments=""):
+        """Manager approves the leave request"""
+        self.status = 'manager_approved'
+        self.manager_approved_by = approved_by
+        self.manager_approval_date = timezone.now()
+        self.manager_approval_comments = comments
+        self.save()
+    
+    def hr_approve(self, approved_by, comments=""):
+        """HR approves the leave request"""
+        self.status = 'hr_approved'
+        self.hr_approved_by = approved_by
+        self.hr_approval_date = timezone.now()
+        self.hr_approval_comments = comments
+        self.save()
+    
+    def ceo_approve(self, approved_by, comments=""):
+        """CEO gives final approval"""
         self.status = 'approved'
+        self.ceo_approved_by = approved_by
+        self.ceo_approval_date = timezone.now()
+        self.ceo_approval_comments = comments
+        # Set legacy fields for backward compatibility
         self.approved_by = approved_by
-        self.approval_date = timezone.now()
+        self.approval_date = self.ceo_approval_date
         self.approval_comments = comments
         self.save()
     
-    def reject(self, rejected_by, comments=""):
-        """Reject the leave request"""
+    def reject(self, rejected_by, comments="", rejection_stage=""):
+        """Reject the leave request at any stage"""
         self.status = 'rejected'
+        # Record who rejected it based on their role
+        if hasattr(rejected_by, 'role'):
+            if rejected_by.role == 'manager':
+                self.manager_approved_by = rejected_by
+                self.manager_approval_date = timezone.now()
+                self.manager_approval_comments = f"REJECTED: {comments}"
+            elif rejected_by.role == 'hr':
+                self.hr_approved_by = rejected_by
+                self.hr_approval_date = timezone.now()
+                self.hr_approval_comments = f"REJECTED: {comments}"
+            elif rejected_by.role in ['ceo', 'admin']:
+                self.ceo_approved_by = rejected_by
+                self.ceo_approval_date = timezone.now()
+                self.ceo_approval_comments = f"REJECTED: {comments}"
+        
+        # Set legacy fields
         self.approved_by = rejected_by
         self.approval_date = timezone.now()
-        self.approval_comments = comments
+        self.approval_comments = f"REJECTED: {comments}"
         self.save()
+    
+    def approve(self, approved_by, comments=""):
+        """Legacy approve method - redirects to appropriate approval stage"""
+        if hasattr(approved_by, 'role'):
+            if approved_by.role == 'manager' and self.status == 'pending':
+                self.manager_approve(approved_by, comments)
+            elif approved_by.role == 'hr' and self.status == 'manager_approved':
+                self.hr_approve(approved_by, comments)
+            elif approved_by.role in ['ceo', 'admin'] and self.status == 'hr_approved':
+                self.ceo_approve(approved_by, comments)
+            else:
+                # For backward compatibility or admin override
+                self.status = 'approved'
+                self.approved_by = approved_by
+                self.approval_date = timezone.now()
+                self.approval_comments = comments
+                self.save()
+        else:
+            # Fallback to old behavior
+            self.status = 'approved'
+            self.approved_by = approved_by
+            self.approval_date = timezone.now()
+            self.approval_comments = comments
+            self.save()
     
     @property
     def is_pending(self):
         return self.status == 'pending'
     
     @property
+    def is_manager_approved(self):
+        return self.status == 'manager_approved'
+    
+    @property
+    def is_hr_approved(self):
+        return self.status == 'hr_approved'
+    
+    @property
     def is_approved(self):
         return self.status == 'approved'
+    
+    @property
+    def is_rejected(self):
+        return self.status == 'rejected'
+    
+    @property
+    def current_approval_stage(self):
+        """Return which stage of approval this request is at"""
+        if self.status == 'pending':
+            return 'manager'
+        elif self.status == 'manager_approved':
+            return 'hr'
+        elif self.status == 'hr_approved':
+            return 'ceo'
+        elif self.status == 'approved':
+            return 'completed'
+        elif self.status == 'rejected':
+            return 'rejected'
+        else:
+            return 'unknown'
+    
+    @property
+    def next_approver_role(self):
+        """Return the role of the next person who needs to approve"""
+        stage = self.current_approval_stage
+        if stage == 'manager':
+            return 'manager'
+        elif stage == 'hr':
+            return 'hr'
+        elif stage == 'ceo':
+            return 'ceo'
+        else:
+            return None
     
     def __str__(self):
         return f"{self.employee.get_full_name()} - {self.leave_type.name} ({self.start_date} to {self.end_date})"
@@ -184,9 +306,10 @@ class LeaveBalance(models.Model):
             req.total_days or 0 for req in current_year_requests.filter(status='approved')
         )
         
-        # Calculate pending days
+        # Calculate pending days (all requests in approval workflow)
+        pending_statuses = ['pending', 'manager_approved', 'hr_approved']
         self.pending_days = sum(
-            req.total_days or 0 for req in current_year_requests.filter(status='pending')
+            req.total_days or 0 for req in current_year_requests.filter(status__in=pending_statuses)
         )
         
         self.save()

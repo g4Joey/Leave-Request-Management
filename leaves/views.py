@@ -346,6 +346,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Set the employee to current user when creating - supports R1"""
         import logging
+        from notifications.services import LeaveNotificationService
         logger = logging.getLogger('leaves')
         
         user = self.request.user
@@ -357,6 +358,10 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             
             leave_request = serializer.save(employee=user)
             logger.info(f'Leave request created successfully: ID={leave_request.id}')
+            
+            # Send notification to manager
+            LeaveNotificationService.notify_leave_submitted(leave_request)
+            logger.info(f'Notification sent for new leave request {leave_request.id}')
             
             # Recalculate balance for authoritative state
             try:
@@ -460,7 +465,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             from users.models import CustomUser
             if isinstance(user, CustomUser):
-                if user.is_superuser or user.role in ['manager', 'hr', 'admin']:
+                if user.is_superuser or user.role in ['manager', 'hr', 'ceo', 'admin']:
                     return LeaveRequest.objects.all()
                 else:
                     return LeaveRequest.objects.none()
@@ -468,7 +473,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             pass
 
         if getattr(user, 'is_superuser', False) or (
-            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'admin']
+            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'ceo', 'admin']
         ):
             return LeaveRequest.objects.all()
         else:
@@ -486,47 +491,112 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=False, methods=['get'])
     def pending_approvals(self, request):
-        """Get all pending leave requests for approval"""
-        pending_requests = self.get_queryset().filter(status='pending')
+        """Get leave requests pending approval for current user's role"""
+        user = request.user
+        user_role = getattr(user, 'role', None)
+        
+        # Filter requests based on user's role and approval stage
+        if user_role == 'manager':
+            # Managers see requests pending their approval
+            pending_requests = self.get_queryset().filter(status='pending')
+        elif user_role == 'hr':
+            # HR sees requests approved by manager
+            pending_requests = self.get_queryset().filter(status='manager_approved')
+        elif user_role == 'ceo':
+            # CEO sees requests approved by HR
+            pending_requests = self.get_queryset().filter(status='hr_approved')
+        elif user_role == 'admin':
+            # Admin sees all pending requests
+            pending_requests = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved'])
+        else:
+            # No approval permissions
+            pending_requests = self.get_queryset().none()
+        
         serializer = self.get_serializer(pending_requests, many=True)
-        return Response(serializer.data)
+        
+        # Add summary information
+        response_data = {
+            'requests': serializer.data,
+            'count': len(serializer.data),
+            'user_role': user_role,
+            'approval_stage': {
+                'manager': 'Initial Manager Approval',
+                'hr': 'HR Review',
+                'ceo': 'Final CEO Approval',
+                'admin': 'Administrative Override'
+            }.get(user_role, 'No approval permissions')
+        }
+        
+        return Response(response_data)
     
     @action(detail=True, methods=['put'])
     def approve(self, request, pk=None):
-        """Approve a leave request - supports R4"""
+        """Multi-stage approval system: Manager → HR → CEO"""
         import logging
+        from notifications.services import LeaveNotificationService
         logger = logging.getLogger('leaves')
         
         try:
             leave_request = self.get_object()
-            logger.info(f'Attempting to approve leave request {pk} by user {request.user.username}')
+            user = request.user
+            comments = request.data.get('approval_comments', '')
             
-            if leave_request.status != 'pending':
-                logger.warning(f'Leave request {pk} is not pending (status: {leave_request.status})')
-                return Response(
-                    {'error': 'Only pending requests can be approved'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            logger.info(f'Attempting to approve leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
             
-            serializer = LeaveApprovalSerializer(
-                leave_request, 
-                data={'status': 'approved', 'approval_comments': request.data.get('approval_comments', '')},
-                context={'request': request}
-            )
+            # Check if request can be approved
+            if leave_request.status == 'rejected':
+                return Response({'error': 'Cannot approve a rejected request'}, status=status.HTTP_400_BAD_REQUEST)
+            elif leave_request.status == 'approved':
+                return Response({'error': 'Request is already fully approved'}, status=status.HTTP_400_BAD_REQUEST)
             
-            if serializer.is_valid():
-                logger.info(f'Serializer is valid, saving approval for request {pk}')
-                serializer.save()
+            # Determine approval action based on user role and current status
+            user_role = getattr(user, 'role', None)
+            
+            if user_role == 'manager' and leave_request.status == 'pending':
+                # Manager approval - move to HR stage
+                leave_request.manager_approve(user, comments)
+                LeaveNotificationService.notify_manager_approval(leave_request, user)
+                message = 'Leave request approved by manager and forwarded to HR'
+                logger.info(f'Manager approved leave request {pk}')
                 
-                # Update leave balance
-                logger.info(f'Updating leave balance for approved request {pk}')
+            elif user_role == 'hr' and leave_request.status == 'manager_approved':
+                # HR approval - move to CEO stage
+                leave_request.hr_approve(user, comments)
+                LeaveNotificationService.notify_hr_approval(leave_request, user)
+                message = 'Leave request approved by HR and forwarded to CEO'
+                logger.info(f'HR approved leave request {pk}')
+                
+            elif user_role in ['ceo', 'admin'] and leave_request.status == 'hr_approved':
+                # CEO final approval
+                leave_request.ceo_approve(user, comments)
+                LeaveNotificationService.notify_ceo_approval(leave_request, user)
+                # Update leave balance only on final approval
                 self._update_leave_balance(leave_request, 'approve')
+                message = 'Leave request given final approval by CEO'
+                logger.info(f'CEO gave final approval for leave request {pk}')
                 
-                logger.info(f'Successfully approved leave request {pk}')
-                return Response({'message': 'Leave request approved successfully'})
+            elif user_role == 'admin':
+                # Admin can approve at any stage (override)
+                if leave_request.status == 'pending':
+                    leave_request.manager_approve(user, f"ADMIN OVERRIDE: {comments}")
+                if leave_request.status == 'manager_approved':
+                    leave_request.hr_approve(user, f"ADMIN OVERRIDE: {comments}")
+                if leave_request.status == 'hr_approved':
+                    leave_request.ceo_approve(user, f"ADMIN OVERRIDE: {comments}")
+                    self._update_leave_balance(leave_request, 'approve')
+                LeaveNotificationService.notify_ceo_approval(leave_request, user)
+                message = 'Leave request approved by admin (full override)'
+                logger.info(f'Admin gave full approval override for leave request {pk}')
+                
             else:
-                logger.error(f'Serializer validation failed for request {pk}: {serializer.errors}')
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                # Invalid approval attempt
+                current_stage = leave_request.current_approval_stage
+                required_role = leave_request.next_approver_role
+                return Response({
+                    'error': f'Cannot approve this request. Current stage: {current_stage}, requires: {required_role}, your role: {user_role}'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            return Response({'message': message, 'current_status': leave_request.status})
                 
         except Exception as e:
             logger.error(f'Error approving leave request {pk}: {str(e)}', exc_info=True)
@@ -534,40 +604,53 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=True, methods=['put'])
     def reject(self, request, pk=None):
-        """Reject a leave request - supports R4"""
+        """Reject a leave request at any stage"""
         import logging
+        from notifications.services import LeaveNotificationService
         logger = logging.getLogger('leaves')
         
         try:
             leave_request = self.get_object()
-            logger.info(f'Attempting to reject leave request {pk} by user {request.user.username}')
+            user = request.user
+            comments = request.data.get('approval_comments', '')
             
-            if leave_request.status != 'pending':
-                logger.warning(f'Leave request {pk} is not pending (status: {leave_request.status})')
-                return Response(
-                    {'error': 'Only pending requests can be rejected'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            logger.info(f'Attempting to reject leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
             
-            serializer = LeaveApprovalSerializer(
-                leave_request,
-                data={'status': 'rejected', 'approval_comments': request.data.get('approval_comments', '')},
-                context={'request': request}
-            )
+            if leave_request.status in ['rejected', 'cancelled']:
+                return Response({'error': 'Request is already rejected or cancelled'}, status=status.HTTP_400_BAD_REQUEST)
             
-            if serializer.is_valid():
-                logger.info(f'Serializer is valid, saving rejection for request {pk}')
-                serializer.save()
-                
-                # Update leave balance (remove from pending)
-                logger.info(f'Updating leave balance for rejected request {pk}')
-                self._update_leave_balance(leave_request, 'reject')
-                
-                logger.info(f'Successfully rejected leave request {pk}')
-                return Response({'message': 'Leave request rejected'})
+            # Determine rejection stage based on user role and current status
+            user_role = getattr(user, 'role', None)
+            rejection_stage = None
+            
+            if user_role == 'manager' and leave_request.status == 'pending':
+                rejection_stage = 'manager'
+            elif user_role == 'hr' and leave_request.status in ['pending', 'manager_approved']:
+                rejection_stage = 'hr'
+            elif user_role in ['ceo', 'admin'] and leave_request.status in ['pending', 'manager_approved', 'hr_approved']:
+                rejection_stage = user_role.replace('admin', 'ceo')  # Treat admin as CEO for rejection
+            elif user_role == 'admin':
+                # Admin can reject at any stage
+                rejection_stage = 'admin'
             else:
-                logger.error(f'Serializer validation failed for request {pk}: {serializer.errors}')
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response({
+                    'error': f'Cannot reject this request. Current stage: {leave_request.current_approval_stage}, your role: {user_role}'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Perform rejection
+            leave_request.reject(user, comments, rejection_stage)
+            
+            # Send notifications
+            LeaveNotificationService.notify_rejection(leave_request, user, rejection_stage)
+            
+            # Update leave balance (remove from pending)
+            self._update_leave_balance(leave_request, 'reject')
+            
+            logger.info(f'Successfully rejected leave request {pk} at {rejection_stage} level')
+            return Response({
+                'message': f'Leave request rejected by {rejection_stage}',
+                'current_status': leave_request.status
+            })
                 
         except Exception as e:
             logger.error(f'Error rejecting leave request {pk}: {str(e)}', exc_info=True)
