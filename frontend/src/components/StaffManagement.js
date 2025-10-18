@@ -41,6 +41,7 @@ function StaffManagement() {
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
   const [profileRoleSaving, setProfileRoleSaving] = useState(false);
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
+  const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
     open: false, 
@@ -247,6 +248,44 @@ function StaffManagement() {
       showToast({ type: 'error', message: msg });
     }
   };
+
+  const openLeaveHistory = async (emp) => {
+    if (!emp || !emp.id) {
+      showToast({ type: 'error', message: 'Invalid employee record – missing ID' });
+      console.error('openLeaveHistory called with invalid employee object:', emp);
+      return;
+    }
+    console.log('[StaffManagement] Opening leave history for employee:', emp);
+    setLeaveHistoryModal({ open: true, loading: true, employee: emp, requests: [], searchQuery: '' });
+    try {
+      // Use the manager endpoint to get all leave requests for this employee
+      const res = await api.get(`/leaves/manager/?employee=${emp.id}&ordering=-created_at`);
+      const requests = res.data?.results || res.data || [];
+      console.log('[StaffManagement] Leave history response:', requests);
+      setLeaveHistoryModal({ open: true, loading: false, employee: emp, requests, searchQuery: '' });
+    } catch (e) {
+      const status = e.response?.status;
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load leave history';
+      console.error('[StaffManagement] Failed to load leave history', { status, error: e, response: e.response?.data });
+      setLeaveHistoryModal({ open: true, loading: false, employee: emp, requests: [], searchQuery: '' });
+      showToast({ type: 'error', message: msg });
+    }
+  };
+
+  // Filter leave history requests based on search query
+  const filteredLeaveHistory = useMemo(() => {
+    const query = leaveHistoryModal.searchQuery?.trim().toLowerCase();
+    if (!query) return leaveHistoryModal.requests;
+    
+    return leaveHistoryModal.requests.filter(request => 
+      request.leave_type?.name?.toLowerCase().includes(query) ||
+      request.reason?.toLowerCase().includes(query) ||
+      request.status?.toLowerCase().includes(query) ||
+      request.approval_comments?.toLowerCase().includes(query) ||
+      request.start_date?.includes(query) ||
+      request.end_date?.includes(query)
+    );
+  }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery]);
 
   const saveBenefits = async () => {
     const { employee, rows } = benefitsModal;
@@ -712,6 +751,12 @@ function StaffManagement() {
                               >
                                 Set benefits
                               </button>
+                              <button
+                                onClick={() => openLeaveHistory(emp)}
+                                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-200 text-blue-700 hover:bg-blue-50"
+                              >
+                                View Leave History
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1133,6 +1178,151 @@ function StaffManagement() {
                 disabled={newEmployeeModal.loading}
               >
                 {newEmployeeModal.loading ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave History Modal */}
+      {leaveHistoryModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-4xl max-h-[80vh]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Leave History: {leaveHistoryModal.employee?.name}</h3>
+              <button
+                onClick={() => setLeaveHistoryModal({ open: false, loading: false, employee: null, requests: [], searchQuery: '' })}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Search Bar */}
+            {!leaveHistoryModal.loading && leaveHistoryModal.requests.length > 0 && (
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by leave type, reason, status, or dates..."
+                  value={leaveHistoryModal.searchQuery}
+                  onChange={(e) => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+            
+            {leaveHistoryModal.loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-sm text-gray-500">Loading leave history...</span>
+              </div>
+            ) : (
+              <div className="overflow-y-auto max-h-[60vh]">
+                {leaveHistoryModal.requests.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No leave requests found for this employee.</p>
+                  </div>
+                ) : filteredLeaveHistory.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No leave requests match your search criteria.</p>
+                    <button 
+                      onClick={() => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: '' }))}
+                      className="text-blue-600 hover:text-blue-800 text-sm mt-2"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Summary Stats */}
+                    <div className="bg-gray-50 p-4 rounded-lg border">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div>
+                          <div className="text-2xl font-bold text-gray-900">{leaveHistoryModal.requests.length}</div>
+                          <div className="text-sm text-gray-600">Total Requests</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-green-600">
+                            {leaveHistoryModal.requests.filter(r => r.status === 'approved').length}
+                          </div>
+                          <div className="text-sm text-gray-600">Approved</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-yellow-600">
+                            {leaveHistoryModal.requests.filter(r => ['pending', 'manager_approved', 'hr_approved'].includes(r.status)).length}
+                          </div>
+                          <div className="text-sm text-gray-600">Pending</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-red-600">
+                            {leaveHistoryModal.requests.filter(r => r.status === 'rejected').length}
+                          </div>
+                          <div className="text-sm text-gray-600">Rejected</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Leave Requests List */}
+                    {filteredLeaveHistory.map((request) => (
+                      <div key={request.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h4 className="font-medium text-gray-900">
+                              {request.leave_type?.name || 'Unknown Leave Type'}
+                            </h4>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {request.start_date} to {request.end_date} ({request.total_days} days)
+                            </p>
+                            {request.reason && (
+                              <p className="text-sm text-gray-600 mt-1">
+                                <span className="font-medium">Reason:</span> {request.reason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                              request.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                              request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              request.status === 'manager_approved' ? 'bg-blue-100 text-blue-800' :
+                              request.status === 'hr_approved' ? 'bg-purple-100 text-purple-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {request.status === 'manager_approved' ? 'Manager Approved' :
+                               request.status === 'hr_approved' ? 'HR Approved' :
+                               request.status?.charAt(0).toUpperCase() + request.status?.slice(1) || 'Unknown'}
+                            </span>
+                            {request.created_at && (
+                              <span className="text-xs text-gray-500">
+                                Requested: {new Date(request.created_at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {request.approval_comments && (
+                          <div className="mt-3 p-3 bg-gray-50 rounded border-l-4 border-blue-200">
+                            <p className="text-sm">
+                              <span className="font-medium text-gray-700">Comments:</span>
+                              <span className="text-gray-600 ml-1">{request.approval_comments}</span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setLeaveHistoryModal({ open: false, loading: false, employee: null, requests: [], searchQuery: '' })}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-gray-200 hover:bg-gray-50"
+              >
+                Close
               </button>
             </div>
           </div>
