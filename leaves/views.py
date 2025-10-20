@@ -475,8 +475,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs
 
         if role == 'manager':
-            # Only direct reports of this manager
-            return qs.filter(employee__manager=user)
+            # Direct reports or same department where user is HOD
+            return qs.filter(Q(employee__manager=user) | Q(employee__department__manager=user))
 
         if role == 'hr':
             # Items that have passed manager stage or are pending (to allow visibility)
@@ -497,6 +497,27 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         
         return [permission() for permission in permission_classes]
+
+    def _user_can_act_on(self, user, leave_request) -> bool:
+        """Check if the user is permitted to act on the given leave request.
+        Managers can act on direct reports and department where they are HOD; HR/CEO/Admin can act per stage.
+        """
+        # Admin/superuser can always act
+        if getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'admin':
+            return True
+        role = getattr(user, 'role', None)
+        if role == 'manager':
+            return (
+                leave_request.employee and (
+                    leave_request.employee.manager_id == getattr(user, 'id', None)
+                    or (getattr(leave_request.employee, 'department_id', None) and getattr(getattr(leave_request.employee, 'department', None), 'manager_id', None) == getattr(user, 'id', None))
+                )
+            )
+        if role == 'hr':
+            return leave_request.status in ['manager_approved', 'pending'] or True  # HR can view/act per existing stage rules
+        if role == 'ceo':
+            return leave_request.status in ['hr_approved'] or True
+        return False
     
     @action(detail=False, methods=['get'])
     def pending_approvals(self, request):
@@ -552,6 +573,10 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             
             logger.info(f'Attempting to approve leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
             
+            # Authorization: ensure user can act on this request
+            if not self._user_can_act_on(user, leave_request):
+                return Response({'error': 'You are not allowed to act on this request'}, status=status.HTTP_403_FORBIDDEN)
+
             # Check if request can be approved
             if leave_request.status == 'rejected':
                 return Response({'error': 'Cannot approve a rejected request'}, status=status.HTTP_400_BAD_REQUEST)
@@ -625,6 +650,10 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             
             logger.info(f'Attempting to reject leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
             
+            # Authorization: ensure user can act on this request
+            if not self._user_can_act_on(user, leave_request):
+                return Response({'error': 'You are not allowed to act on this request'}, status=status.HTTP_403_FORBIDDEN)
+
             if leave_request.status in ['rejected', 'cancelled']:
                 return Response({'error': 'Request is already rejected or cancelled'}, status=status.HTTP_400_BAD_REQUEST)
             

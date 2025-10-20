@@ -9,6 +9,11 @@ class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Head of Department (HOD) / Manager for this department
+    manager = models.ForeignKey(
+        'CustomUser', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='departments_managed'
+    )
     
     def __str__(self):
         return self.name
