@@ -94,7 +94,15 @@ function ManagerDashboard() {
         const [pendingRes] = await Promise.all([
           api.get('/leaves/manager/pending_approvals/'),
         ]);
-        setPendingRequests(pendingRes.data.results || pendingRes.data);
+        // API returns an object { requests: [...], count, user_role, approval_stage }
+        const pendingArray = Array.isArray(pendingRes.data)
+          ? pendingRes.data
+          : (pendingRes.data && Array.isArray(pendingRes.data.requests)
+              ? pendingRes.data.requests
+              : (pendingRes.data && Array.isArray(pendingRes.data.results)
+                  ? pendingRes.data.results
+                  : []));
+        setPendingRequests(pendingArray);
         // Don't load leave records initially - only when user searches
       } catch (error) {
         console.error('Error fetching pending requests:', error);

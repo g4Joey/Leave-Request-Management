@@ -457,28 +457,37 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-created_at']
     
     def get_queryset(self):  # type: ignore[override]
-        """Return leave requests that this manager can approve"""
-        user = self.request.user
-        
-        # For now, managers can see all requests
-        # This can be enhanced with proper hierarchy later
-        try:
-            from users.models import CustomUser
-            if isinstance(user, CustomUser):
-                if user.is_superuser or user.role in ['manager', 'hr', 'ceo', 'admin']:
-                    return LeaveRequest.objects.all()
-                else:
-                    return LeaveRequest.objects.none()
-        except Exception:
-            pass
+        """Return leave requests available to the current approver.
 
-        if getattr(user, 'is_superuser', False) or (
-            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'ceo', 'admin']
-        ):
-            return LeaveRequest.objects.all()
-        else:
-            # Regular employees can't access this endpoint
-            return LeaveRequest.objects.none()
+        Rules:
+        - manager: only requests from their direct reports (employee__manager = self.user)
+        - hr: all requests that are at or beyond manager stage
+        - ceo: all requests that are at or beyond HR stage
+        - admin/superuser: all requests
+        - others: none
+        """
+        user = self.request.user
+        qs = LeaveRequest.objects.all()
+        role = getattr(user, 'role', None)
+
+        # Superuser/admin: full access
+        if getattr(user, 'is_superuser', False) or role == 'admin':
+            return qs
+
+        if role == 'manager':
+            # Only direct reports of this manager
+            return qs.filter(employee__manager=user)
+
+        if role == 'hr':
+            # Items that have passed manager stage or are pending (to allow visibility)
+            return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
+
+        if role == 'ceo':
+            # Items that have passed HR stage
+            return qs.filter(status__in=['hr_approved', 'approved', 'rejected'])
+
+        # Everyone else: no access
+        return qs.none()
     
     def get_permissions(self):
         """Custom permissions for different actions"""
