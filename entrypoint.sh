@@ -60,6 +60,14 @@ if [ "${FIX_USER_MISMATCHES:-0}" = "1" ]; then
 	fi
 fi
 
+# Create CEO user if environment variables are provided
+if [ -n "${CEO_EMAIL:-}" ] && [ -n "${CEO_PASSWORD:-}" ]; then
+	echo "Creating CEO user from environment variables..."
+	if ! retry_cmd "create_ceo" python manage.py create_ceo; then
+		echo "Warning: create_ceo failed after retries." >&2
+	fi
+fi
+
 # Optionally run production data setup (idempotent). This is controlled by:
 # - RUN_SEED_ON_DEPLOY=1 OR presence of DJANGO_SUPERUSER_USERNAME, HR_ADMIN_PASSWORD, or SEED_USERS env vars.
 should_seed=0

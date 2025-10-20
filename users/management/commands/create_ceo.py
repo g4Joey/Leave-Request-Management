@@ -1,6 +1,7 @@
 """
 Management command to create a CEO user for the three-tier approval system
 """
+import os
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from users.models import Department
@@ -12,23 +13,38 @@ class Command(BaseCommand):
     help = 'Create a CEO user for the three-tier approval system'
 
     def add_arguments(self, parser):
-        parser.add_argument('--username', type=str, default='ceo', help='Username for the CEO')
-        parser.add_argument('--email', type=str, default='ceo@company.com', help='Email for the CEO')
-        parser.add_argument('--first-name', type=str, default='Chief', help='First name')
-        parser.add_argument('--last-name', type=str, default='Executive Officer', help='Last name')
+        parser.add_argument('--username', type=str, help='Username for the CEO')
+        parser.add_argument('--email', type=str, help='Email for the CEO')
+        parser.add_argument('--first-name', type=str, help='First name')
+        parser.add_argument('--last-name', type=str, help='Last name')
+        parser.add_argument('--password', type=str, help='Password for the CEO')
         parser.add_argument('--employee-id', type=str, default='CEO001', help='Employee ID')
 
     def handle(self, *args, **options):
-        username = options['username']
-        email = options['email']
-        first_name = options['first_name']
-        last_name = options['last_name']
-        employee_id = options['employee_id']
+        # Use environment variables if available, otherwise use provided options or defaults
+        username = options.get('username') or os.getenv('CEO_USERNAME', 'ceo')
+        email = options.get('email') or os.getenv('CEO_EMAIL', 'ceo@company.com')
+        first_name = options.get('first_name') or os.getenv('CEO_FIRST_NAME', 'Chief')
+        last_name = options.get('last_name') or os.getenv('CEO_LAST_NAME', 'Executive Officer')
+        password = options.get('password') or os.getenv('CEO_PASSWORD', 'ChangeMe123!')
+        employee_id = options.get('employee_id') or 'CEO001'
+
+        # Extract username from email if not provided
+        if username == 'ceo' and email != 'ceo@company.com':
+            username = email.split('@')[0]
+
+        self.stdout.write(f'Creating CEO user with email: {email}')
 
         # Check if CEO user already exists
         if User.objects.filter(username=username).exists():
             self.stdout.write(
                 self.style.WARNING(f'CEO user with username "{username}" already exists!')
+            )
+            return
+
+        if User.objects.filter(email=email).exists():
+            self.stdout.write(
+                self.style.WARNING(f'CEO user with email "{email}" already exists!')
             )
             return
 
@@ -50,7 +66,7 @@ class Command(BaseCommand):
         ceo_user = User.objects.create_user(
             username=username,
             email=email,
-            password='ChangeMe123!',  # Default password - should be changed
+            password=password,
             first_name=first_name,
             last_name=last_name,
             employee_id=employee_id,
@@ -67,9 +83,9 @@ class Command(BaseCommand):
                 f'  Username: {username}\n'
                 f'  Email: {email}\n'
                 f'  Employee ID: {employee_id}\n'
-                f'  Default Password: ChangeMe123!\n'
-                f'  Role: {ceo_user.role}\n'
-                f'  Department: {ceo_user.department.name}\n\n'
-                f'IMPORTANT: Please change the default password immediately!'
+                f'  Password: {"Set from environment" if os.getenv("CEO_PASSWORD") else "ChangeMe123!"}\n'
+                f'  Role: {getattr(ceo_user, "role", "ceo")}\n'
+                f'  Department: {getattr(ceo_user.department, "name", "Executive")}\n\n'
+                f'CEO user ready for production use!'
             )
         )
