@@ -43,6 +43,7 @@ function StaffManagement() {
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
+  const [hodModal, setHodModal] = useState({ open: false, loading: false, department: null, selectedManagerId: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
     open: false, 
     loading: false, 
@@ -414,6 +415,39 @@ function StaffManagement() {
     }
   };
 
+  const openHodModal = (department) => {
+    setHodModal({
+      open: true,
+      loading: false,
+      department,
+      selectedManagerId: department.manager?.id || ''
+    });
+  };
+
+  const updateDepartmentHod = async () => {
+    setHodModal(prev => ({ ...prev, loading: true }));
+    try {
+      await api.post(`/users/departments/${hodModal.department.id}/set_manager/`, {
+        manager_id: hodModal.selectedManagerId || null
+      });
+      
+      showToast({ 
+        type: 'success', 
+        message: `Department HOD ${hodModal.selectedManagerId ? 'updated' : 'removed'} successfully!` 
+      });
+      setHodModal({ open: false, loading: false, department: null, selectedManagerId: '' });
+      fetchStaffData();
+    } catch (error) {
+      console.error('Error updating HOD:', error);
+      showToast({ 
+        type: 'error', 
+        message: error.response?.data?.error || 'Failed to update department HOD' 
+      });
+    } finally {
+      setHodModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   const handleImportFile = (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
@@ -626,8 +660,26 @@ function StaffManagement() {
                               <p className="text-sm text-gray-600 mt-1">
                                 {dept.staff_count} staff member{dept.staff_count !== 1 ? 's' : ''}
                               </p>
+                              {dept.manager ? (
+                                <p className="text-sm text-blue-600 mt-1">
+                                  <span className="font-medium">HOD:</span> {dept.manager.name} ({dept.manager.employee_id})
+                                </p>
+                              ) : (
+                                <p className="text-sm text-amber-600 mt-1">
+                                  <span className="font-medium">⚠️ No HOD assigned</span>
+                                </p>
+                              )}
                             </div>
-                            <div className="flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openHodModal(dept);
+                                }}
+                                className="px-3 py-1 text-xs font-medium rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                              >
+                                Set HOD
+                              </button>
                               <svg
                                 className={`h-5 w-5 text-gray-400 transform transition-transform ${
                                   expandedDepts[dept.id] ? 'rotate-90' : ''
@@ -1324,6 +1376,75 @@ function StaffManagement() {
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-gray-200 hover:bg-gray-50"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HOD Management Modal */}
+      {hodModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900">
+                Set HOD for {hodModal.department?.name}
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Select a manager to serve as Head of Department (HOD) for approval of leave requests.
+              </p>
+            </div>
+            
+            <div className="px-6 py-4">
+              {hodModal.loading ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Manager/HOD
+                  </label>
+                  <select
+                    value={hodModal.selectedManagerId}
+                    onChange={(e) => setHodModal(prev => ({ ...prev, selectedManagerId: e.target.value }))}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                  >
+                    <option value="">-- No HOD (Remove current) --</option>
+                    {employees
+                      .filter(emp => emp.role === 'manager' || emp.role === 'hr' || emp.role === 'admin')
+                      .map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name} ({emp.employee_id}) - {emp.role}
+                        </option>
+                      ))}
+                  </select>
+                  
+                  {hodModal.department?.manager && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                      <p className="text-sm text-blue-800">
+                        <span className="font-medium">Current HOD:</span> {hodModal.department.manager.name} ({hodModal.department.manager.employee_id})
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setHodModal({ open: false, loading: false, department: null, selectedManagerId: '' })}
+                disabled={hodModal.loading}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={updateDepartmentHod}
+                disabled={hodModal.loading}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50"
+              >
+                {hodModal.loading ? 'Updating...' : 'Update HOD'}
               </button>
             </div>
           </div>

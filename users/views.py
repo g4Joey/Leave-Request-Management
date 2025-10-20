@@ -204,7 +204,13 @@ class StaffManagementView(APIView):
                 'name': dept.name,
                 'description': dept.description,
                 'staff_count': len(staff_data),
-                'staff': staff_data
+                'staff': staff_data,
+                'manager': {
+                    'id': dept.manager.pk,
+                    'name': dept.manager.get_full_name(),
+                    'employee_id': dept.manager.employee_id,
+                    'email': dept.manager.email
+                } if dept.manager else None
             })
         
         return Response(data)
@@ -236,11 +242,57 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         """Only HR can create, update, or delete departments"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'set_manager']:
             permission_classes = [permissions.IsAuthenticated, IsHRPermission]
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
+    
+    @action(detail=True, methods=['post'])
+    def set_manager(self, request, pk=None):
+        """Set the HOD/Manager for a department"""
+        department = self.get_object()
+        manager_id = request.data.get('manager_id')
+        
+        if manager_id:
+            try:
+                manager = CustomUser.objects.get(pk=manager_id, is_active_employee=True)
+                # Verify the user has manager role or is admin/superuser
+                if manager.role not in ['manager', 'hr', 'admin'] and not manager.is_superuser:
+                    return Response(
+                        {'error': 'Selected user must have manager, hr, or admin role'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                department.manager = manager
+            except CustomUser.DoesNotExist:
+                return Response(
+                    {'error': 'Manager not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            # Remove HOD
+            department.manager = None
+        
+        department.save()
+        
+        # Return updated department info
+        manager_info = None
+        if department.manager:
+            manager_info = {
+                'id': department.manager.pk,
+                'name': department.manager.get_full_name(),
+                'employee_id': department.manager.employee_id,
+                'email': department.manager.email
+            }
+        
+        return Response({
+            'message': 'Department manager updated successfully',
+            'department': {
+                'id': department.pk,
+                'name': department.name,
+                'manager': manager_info
+            }
+        })
 
 
 class IsHRPermission(permissions.BasePermission):
