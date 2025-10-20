@@ -278,6 +278,7 @@ function StaffManagement() {
     if (!query) return leaveHistoryModal.requests;
     
     return leaveHistoryModal.requests.filter(request => 
+      request.leave_type_name?.toLowerCase().includes(query) ||
       request.leave_type?.name?.toLowerCase().includes(query) ||
       request.reason?.toLowerCase().includes(query) ||
       request.status?.toLowerCase().includes(query) ||
@@ -1270,7 +1271,7 @@ function StaffManagement() {
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex-1">
                             <h4 className="font-medium text-gray-900">
-                              {request.leave_type?.name || 'Unknown Leave Type'}
+                              {request.leave_type_name || request.leave_type?.name || 'Unknown Leave Type'}
                             </h4>
                             <p className="text-sm text-gray-600 mt-1">
                               {request.start_date} to {request.end_date} ({request.total_days} days)
