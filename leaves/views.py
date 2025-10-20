@@ -356,8 +356,15 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             # Log the validated data for debugging
             logger.info(f'Leave request data: {serializer.validated_data}')
             
+            # Check if the user is a manager/HOD - if so, bypass manager approval
+            user_role = getattr(user, 'role', None)
+            if user_role == 'manager':
+                # Manager's own request should bypass manager stage and go directly to HR
+                serializer.validated_data['status'] = 'manager_approved'
+                logger.info(f'Manager {user.username} submitting own request - bypassing manager approval stage')
+            
             leave_request = serializer.save(employee=user)
-            logger.info(f'Leave request created successfully: ID={leave_request.id}')
+            logger.info(f'Leave request created successfully: ID={leave_request.id}, status={leave_request.status}')
             
             # Send notification to manager
             LeaveNotificationService.notify_leave_submitted(leave_request)
@@ -475,8 +482,10 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs
 
         if role == 'manager':
-            # Direct reports or same department where user is HOD
-            return qs.filter(Q(employee__manager=user) | Q(employee__department__manager=user))
+            # Direct reports or same department where user is HOD, but EXCLUDE own requests
+            return qs.filter(
+                Q(employee__manager=user) | Q(employee__department__manager=user)
+            ).exclude(employee=user)
 
         if role == 'hr':
             # Items that have passed manager stage or are pending (to allow visibility)
@@ -507,6 +516,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return True
         role = getattr(user, 'role', None)
         if role == 'manager':
+            # Can't act on own requests
+            if leave_request.employee_id == getattr(user, 'id', None):
+                return False
             return (
                 leave_request.employee and (
                     leave_request.employee.manager_id == getattr(user, 'id', None)
