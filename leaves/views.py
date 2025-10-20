@@ -356,12 +356,12 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             # Log the validated data for debugging
             logger.info(f'Leave request data: {serializer.validated_data}')
             
-            # Check if the user is a manager/HOD - if so, bypass manager approval
+            # Check if the user is a manager/HOD - if so, bypass manager approval and go straight to HR
             user_role = getattr(user, 'role', None)
             if user_role == 'manager':
                 # Manager's own request should bypass manager stage and go directly to HR
                 serializer.validated_data['status'] = 'manager_approved'
-                logger.info(f'Manager {user.username} submitting own request - bypassing manager approval stage')
+                logger.info(f'Manager {user.username} submitting own request - bypassing manager approval, going directly to HR')
             
             leave_request = serializer.save(employee=user)
             logger.info(f'Leave request created successfully: ID={leave_request.id}, status={leave_request.status}')
