@@ -570,6 +570,50 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         }
         
         return Response(response_data)
+
+    @action(detail=False, methods=['get'])
+    def ceo_approvals_categorized(self, request):
+        """CEO-specific endpoint that categorizes pending requests by submitter role"""
+        user = request.user
+        user_role = getattr(user, 'role', None)
+        
+        if user_role != 'ceo' and not getattr(user, 'is_superuser', False):
+            return Response({'detail': 'Only CEOs can access this endpoint'}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        # Get all requests pending CEO approval
+        pending_requests = self.get_queryset().filter(status='hr_approved')
+        serializer = self.get_serializer(pending_requests, many=True)
+        
+        # Categorize by submitter role
+        categorized = {
+            'hod_manager': [],
+            'hr': [],
+            'staff': []
+        }
+        
+        for request_data in serializer.data:
+            # Get the employee role from the request
+            submitter_role = request_data.get('employee_role', 'staff')
+            
+            if submitter_role == 'manager':
+                categorized['hod_manager'].append(request_data)
+            elif submitter_role == 'hr':
+                categorized['hr'].append(request_data)
+            else:
+                categorized['staff'].append(request_data)
+        
+        response_data = {
+            'categories': categorized,
+            'total_count': len(serializer.data),
+            'counts': {
+                'hod_manager': len(categorized['hod_manager']),
+                'hr': len(categorized['hr']),
+                'staff': len(categorized['staff'])
+            }
+        }
+        
+        return Response(response_data)
     
     @action(detail=True, methods=['put'])
     def approve(self, request, pk=None):

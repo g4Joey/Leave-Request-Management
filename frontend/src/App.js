@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import LeaveRequest from './components/LeaveRequest';
 import LeaveHistory from './components/LeaveHistory';
 import ManagerDashboard from './components/ManagerDashboard';
+import CEOApprovals from './components/CEOApprovals';
 import StaffManagement from './components/StaffManagement';
 import MyProfile from './components/MyProfile';
 import Navbar from './components/Navbar';
@@ -26,6 +27,12 @@ function ManagerRoute({ children }) {
 function HRRoute({ children }) {
   const { user } = useAuth();
   const allowed = user && (user.role === 'hr' || user.is_superuser);
+  return allowed ? children : <Navigate to="/dashboard" />;
+}
+
+function CEORoute({ children }) {
+  const { user } = useAuth();
+  const allowed = user && (user.role === 'ceo' || user.is_superuser);
   return allowed ? children : <Navigate to="/dashboard" />;
 }
 
@@ -57,6 +64,14 @@ function App() {
                               <ManagerRoute>
                                 <ManagerDashboard />
                               </ManagerRoute>
+                            }
+                          />
+                          <Route
+                            path="/ceo"
+                            element={
+                              <CEORoute>
+                                <CEOApprovals />
+                              </CEORoute>
                             }
                           />
                           <Route

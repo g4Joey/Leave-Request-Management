@@ -16,29 +16,39 @@ function Dashboard() {
         console.log('Token in localStorage:', localStorage.getItem('token') ? 'EXISTS' : 'NOT_FOUND');
         console.log('API base URL:', api.defaults.baseURL);
         
-        const [balancesRes, requestsRes] = await Promise.all([
-          api.get('/leaves/balances/current_year_full/'),
-          api.get('/leaves/requests/?limit=5')
-        ]);
-        
-        console.log('Balances response:', balancesRes);
-        console.log('Requests response:', requestsRes);
-        
-        const balancesData = balancesRes.data.results || balancesRes.data;
-        const requestsData = requestsRes.data.results || requestsRes.data;
-        
-        console.log('Processed balances data:', balancesData);
-        console.log('Balances data type:', typeof balancesData);
-        console.log('Balances data is array:', Array.isArray(balancesData));
-        console.log('Balances data length:', balancesData?.length);
-        
-        console.log('Processed requests data:', requestsData);
-        console.log('Requests data type:', typeof requestsData);
-        console.log('Requests data is array:', Array.isArray(requestsData));
-        console.log('Requests data length:', requestsData?.length);
-        
-        setBalances(balancesData);
-        setRecentRequests(requestsData);
+        // CEO users get different dashboard data
+        if (user?.role === 'ceo') {
+          const requestsRes = await api.get('/leaves/manager/ceo_approvals_categorized/');
+          const categorizedData = requestsRes.data.categories || {};
+          const totalRequests = Object.values(categorizedData).flat();
+          
+          setRecentRequests(totalRequests.slice(0, 5)); // Show recent 5 for overview
+          setBalances([]); // CEOs don't have leave balances
+        } else {
+          const [balancesRes, requestsRes] = await Promise.all([
+            api.get('/leaves/balances/current_year_full/'),
+            api.get('/leaves/requests/?limit=5')
+          ]);
+          
+          console.log('Balances response:', balancesRes);
+          console.log('Requests response:', requestsRes);
+          
+          const balancesData = balancesRes.data.results || balancesRes.data;
+          const requestsData = requestsRes.data.results || requestsRes.data;
+          
+          console.log('Processed balances data:', balancesData);
+          console.log('Balances data type:', typeof balancesData);
+          console.log('Balances data is array:', Array.isArray(balancesData));
+          console.log('Balances data length:', balancesData?.length);
+          
+          console.log('Processed requests data:', requestsData);
+          console.log('Requests data type:', typeof requestsData);
+          console.log('Requests data is array:', Array.isArray(requestsData));
+          console.log('Requests data length:', requestsData?.length);
+          
+          setBalances(balancesData);
+          setRecentRequests(requestsData);
+        }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
         console.error('Error details:', error.response?.data || error.message);
@@ -79,58 +89,63 @@ function Dashboard() {
             {user?.first_name ? `Welcome ${user.first_name}` : 'Welcome to  Merban Leave'}
           </h3>
           <p className="text-sm text-gray-600">
-            Track your leave balances, submit new requests, and view your leave history.
+            {user?.role === 'ceo' 
+              ? 'Review and approve leave requests requiring final CEO authorization.'
+              : 'Track your leave balances, submit new requests, and view your leave history.'
+            }
           </p>
         </div>
       </div>
 
-      {/* Leave Balances */}
-      <div className="bg-white overflow-hidden shadow rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-            Leave Balances
-          </h3>
-          {balances.length > 0 ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {balances.map((balance, index) => (
-                <div key={index} className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">
-                        {balance.leave_type?.name || balance.leave_type_name || 'Leave Type'}
-                      </p>
-                      <p className="text-2xl font-bold text-primary-600">
-                        {balance.remaining_days || 0}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        of {balance.entitled_days || 0} days remaining
-                      </p>
+      {/* Leave Balances - Not shown for CEO */}
+      {user?.role !== 'ceo' && (
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+              Leave Balances
+            </h3>
+            {balances.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {balances.map((balance, index) => (
+                  <div key={index} className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          {balance.leave_type?.name || balance.leave_type_name || 'Leave Type'}
+                        </p>
+                        <p className="text-2xl font-bold text-primary-600">
+                          {balance.remaining_days || 0}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          of {balance.entitled_days || 0} days remaining
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div>
-              <p className="text-gray-500">No leave balances found.</p>
-              <p className="text-xs text-gray-400 mt-2">Debug: balances.length = {balances.length}</p>
-              <p className="text-xs text-gray-400">User: {user?.email || 'Not logged in'}</p>
-              <p className="text-xs text-gray-400">Token: {localStorage.getItem('token') ? 'EXISTS' : 'MISSING'}</p>
-              {process.env.NODE_ENV === 'development' && (
-                <pre className="text-xs text-gray-400 mt-2 bg-gray-100 p-2 rounded">
-                  {JSON.stringify(balances, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
+                ))}
+              </div>
+            ) : (
+              <div>
+                <p className="text-gray-500">No leave balances found.</p>
+                <p className="text-xs text-gray-400 mt-2">Debug: balances.length = {balances.length}</p>
+                <p className="text-xs text-gray-400">User: {user?.email || 'Not logged in'}</p>
+                <p className="text-xs text-gray-400">Token: {localStorage.getItem('token') ? 'EXISTS' : 'MISSING'}</p>
+                {process.env.NODE_ENV === 'development' && (
+                  <pre className="text-xs text-gray-400 mt-2 bg-gray-100 p-2 rounded">
+                    {JSON.stringify(balances, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Recent Leave Requests */}
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-            Recent Leave Requests
+            {user?.role === 'ceo' ? 'Recent Requests Awaiting Your Approval' : 'Recent Leave Requests'}
           </h3>
           {recentRequests.length > 0 ? (
             <div className="flow-root">

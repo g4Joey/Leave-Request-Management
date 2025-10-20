@@ -31,26 +31,30 @@ function Navbar() {
               >
                 Dashboard
               </Link>
-              <Link
-                to="/request"
-                className={`${
-                  isActive('/request')
-                    ? 'border-primary-500 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Request Leave
-              </Link>
-              <Link
-                to="/history"
-                className={`${
-                  isActive('/history')
-                    ? 'border-primary-500 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Leave History
-              </Link>
+              {user?.role !== 'ceo' && (
+                <>
+                  <Link
+                    to="/request"
+                    className={`${
+                      isActive('/request')
+                        ? 'border-primary-500 text-gray-900'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                  >
+                    Request Leave
+                  </Link>
+                  <Link
+                    to="/history"
+                    className={`${
+                      isActive('/history')
+                        ? 'border-primary-500 text-gray-900'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                  >
+                    Leave History
+                  </Link>
+                </>
+              )}
               {user && (
                 <Link
                   to="/profile"
@@ -76,6 +80,22 @@ function Navbar() {
                     } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
                     Manager
+                  </Link>
+                );
+              })()}
+              {(() => {
+                const role = user?.role;
+                const canSeeCEO = !!user && (role === 'ceo' || user.is_superuser === true);
+                return canSeeCEO && (
+                  <Link
+                    to="/ceo"
+                    className={`${
+                      isActive('/ceo')
+                        ? 'border-primary-500 text-gray-900'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                  >
+                    CEO Approvals
                   </Link>
                 );
               })()}

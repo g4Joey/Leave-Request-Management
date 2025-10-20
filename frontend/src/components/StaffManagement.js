@@ -40,6 +40,8 @@ function StaffManagement() {
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
   const [profileRoleSaving, setProfileRoleSaving] = useState(false);
+  const [profileEditFields, setProfileEditFields] = useState({ employee_id: '', hire_date: '' });
+  const [profileFieldsSaving, setProfileFieldsSaving] = useState(false);
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
@@ -138,6 +140,11 @@ function StaffManagement() {
       console.log('[StaffManagement] Normalized profile response:', normalized);
       setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
       setSelectedRole(normalized.role || 'junior_staff');
+      // Initialize editable fields
+      setProfileEditFields({ 
+        employee_id: normalized.employee_id || '', 
+        hire_date: normalized.hire_date || '' 
+      });
     } catch (e) {
       const status = e.response?.status;
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
@@ -229,6 +236,94 @@ function StaffManagement() {
       showToast({ type: 'error', message: msg });
     } finally {
       setProfileRoleSaving(false);
+    }
+  };
+
+  const saveProfileFields = async () => {
+    if (!profileModal?.employee?.id) return;
+    const currentData = profileModal.data || {};
+    const updates = {};
+    
+    // Check if employee_id changed
+    if (profileEditFields.employee_id !== (currentData.employee_id || '')) {
+      const trimmedEmployeeId = profileEditFields.employee_id.trim();
+      if (!trimmedEmployeeId) {
+        showToast({ type: 'error', message: 'Employee ID is required' });
+        return;
+      }
+      updates.employee_id = trimmedEmployeeId;
+    }
+    
+    // Check if hire_date changed
+    if (profileEditFields.hire_date !== (currentData.hire_date || '')) {
+      updates.hire_date = profileEditFields.hire_date;
+    }
+    
+    // If no changes, return early
+    if (Object.keys(updates).length === 0) return;
+    
+    try {
+      setProfileFieldsSaving(true);
+      const res = await api.patch(`/users/${profileModal.employee.id}/`, updates);
+      const updatedUser = res.data || {};
+      showToast({ type: 'success', message: 'Profile updated successfully' });
+      
+      // Update local modal data
+      setProfileModal(prev => ({ 
+        ...prev, 
+        data: prev.data ? { 
+          ...prev.data, 
+          employee_id: updatedUser.employee_id,
+          hire_date: updatedUser.hire_date 
+        } : prev.data 
+      }));
+      
+      // Update the edit fields to match saved data
+      setProfileEditFields({
+        employee_id: updatedUser.employee_id || '',
+        hire_date: updatedUser.hire_date || ''
+      });
+      
+      // Update employees list
+      const employeeId = profileModal.employee.id;
+      setEmployees(prev => prev.map((emp) => (
+        emp.id === employeeId
+          ? { ...emp, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date }
+          : emp
+      )));
+      
+      // Update departments list
+      setDepartments(prev => prev.map((dept) => {
+        if (!Array.isArray(dept.staff)) {
+          return dept;
+        }
+        return {
+          ...dept,
+          staff: dept.staff.map((staffer) => (
+            staffer.id === employeeId
+              ? { ...staffer, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date }
+              : staffer
+          )),
+        };
+      }));
+    } catch (e) {
+      console.error('Profile update error:', e.response?.data);
+      let msg = 'Failed to update profile';
+      
+      // Handle specific validation errors
+      if (e.response?.data?.employee_id) {
+        if (Array.isArray(e.response.data.employee_id)) {
+          msg = e.response.data.employee_id.join(', ');
+        } else {
+          msg = e.response.data.employee_id;
+        }
+      } else {
+        msg = e.response?.data?.detail || e.response?.data?.error || msg;
+      }
+      
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setProfileFieldsSaving(false);
     }
   };
 
@@ -951,17 +1046,57 @@ function StaffManagement() {
               </div>
             )}
             {!profileModal.loading && !profileModal.error && profileModal.data && (
-              <div className="space-y-2 text-sm">
+              <div className="space-y-4 text-sm">
                 {(() => { console.log('[StaffManagement] Rendering profile modal with data:', profileModal.data); return null; })()}
-                <div><span className="font-medium">Employee ID:</span> {profileModal.data.employee_id || '—'}</div>
+                
+                {/* Employee ID - Editable */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={profileEditFields.employee_id}
+                      onChange={(e) => setProfileEditFields(prev => ({ ...prev, employee_id: e.target.value }))}
+                      className="border rounded-md px-2 py-1 text-sm flex-1"
+                      placeholder="Enter employee ID"
+                    />
+                  </div>
+                </div>
+
+                {/* Email - Read only */}
                 <div><span className="font-medium">Email:</span> {profileModal.data.email || '—'}</div>
-                <div><span className="font-medium">Role:</span> {profileModal.data.role || '—'}</div>
+                
+                {/* Department - Read only */}
                 <div><span className="font-medium">Department:</span> {profileModal.data.department_name || '—'}</div>
-                {profileModal.data.hire_date ? (
-                  <div><span className="font-medium">Hire Date:</span> {new Date(profileModal.data.hire_date).toLocaleDateString()}</div>
-                ) : (
-                  <div><span className="font-medium">Hire Date:</span> —</div>
+
+                {/* Hire Date - Editable */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Hire Date</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={profileEditFields.hire_date}
+                      onChange={(e) => setProfileEditFields(prev => ({ ...prev, hire_date: e.target.value }))}
+                      className="border rounded-md px-2 py-1 text-sm flex-1"
+                    />
+                  </div>
+                </div>
+
+                {/* Save Profile Fields Button */}
+                {(profileEditFields.employee_id !== (profileModal.data.employee_id || '') || 
+                  profileEditFields.hire_date !== (profileModal.data.hire_date || '')) && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={saveProfileFields}
+                      disabled={profileFieldsSaving}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-green-600 text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {profileFieldsSaving ? 'Saving...' : 'Save Profile Changes'}
+                    </button>
+                  </div>
                 )}
+
+                {/* Role Management */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
                   <div className="flex items-center gap-2">
@@ -982,7 +1117,7 @@ function StaffManagement() {
                       disabled={profileRoleSaving || (profileModal.data.role || 'junior_staff') === selectedRole}
                       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-sky-600 text-white bg-sky-600 disabled:opacity-50"
                     >
-                      {profileRoleSaving ? 'Saving...' : 'Save'}
+                      {profileRoleSaving ? 'Saving...' : 'Save Role'}
                     </button>
                   </div>
                 </div>
@@ -992,7 +1127,15 @@ function StaffManagement() {
               <div className="text-sm text-gray-500 italic">No profile data available.</div>
             )}
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setProfileModal({ open: false, loading: false, employee: null, data: null })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200">Close</button>
+              <button 
+                onClick={() => {
+                  setProfileModal({ open: false, loading: false, employee: null, data: null });
+                  setProfileEditFields({ employee_id: '', hire_date: '' });
+                }} 
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
