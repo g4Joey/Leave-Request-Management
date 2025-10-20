@@ -151,6 +151,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     manager_comments = serializers.CharField(read_only=True)
     hr_comments = serializers.CharField(read_only=True)
+    ceo_approval_date = serializers.DateTimeField(read_only=True)
     
     class Meta:
         model = LeaveRequest
@@ -158,7 +159,8 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
             'id', 'employee_name', 'employee_email', 'employee_id', 'employee_role', 
             'employee_department', 'leave_type_name', 'start_date', 'end_date', 
             'total_days', 'working_days', 'calendar_days', 'range_with_days',
-            'status', 'status_display', 'reason', 'manager_comments', 'hr_comments', 'created_at'
+            'status', 'status_display', 'reason', 'manager_comments', 'hr_comments', 
+            'ceo_approval_date', 'created_at'
         ]
     
     # total_days is computed in model.save() (working days). Expose as read-only.

@@ -16,13 +16,18 @@ function Dashboard() {
         console.log('Token in localStorage:', localStorage.getItem('token') ? 'EXISTS' : 'NOT_FOUND');
         console.log('API base URL:', api.defaults.baseURL);
         
-        // CEO users get different dashboard data
+        // CEO users get different dashboard data - show recently approved requests
         if (user?.role === 'ceo') {
-          const requestsRes = await api.get('/leaves/manager/ceo_approvals_categorized/');
-          const categorizedData = requestsRes.data.categories || {};
-          const totalRequests = Object.values(categorizedData).flat();
+          // Fetch recently approved requests that the CEO has approved
+          const approvedRequestsRes = await api.get('/leaves/requests/?status=approved&limit=10');
+          const approvedData = approvedRequestsRes.data.results || approvedRequestsRes.data || [];
           
-          setRecentRequests(totalRequests.slice(0, 5)); // Show recent 5 for overview
+          // Filter for requests approved by CEO (final approval)
+          const ceoApprovedRequests = approvedData.filter(request => 
+            request.status === 'approved' && request.ceo_approval_date
+          );
+          
+          setRecentRequests(ceoApprovedRequests.slice(0, 5)); // Show recent 5 approved requests
           setBalances([]); // CEOs don't have leave balances
         } else {
           const [balancesRes, requestsRes] = await Promise.all([
@@ -145,7 +150,7 @@ function Dashboard() {
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-            {user?.role === 'ceo' ? 'Recent Requests Awaiting Your Approval' : 'Recent Leave Requests'}
+            {user?.role === 'ceo' ? 'Recently Approved Requests' : 'Recent Leave Requests'}
           </h3>
           {recentRequests.length > 0 ? (
             <div className="flow-root">
@@ -155,12 +160,25 @@ function Dashboard() {
                     <div className="flex items-center space-x-4">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
-                          {request.leave_type_name || 'Leave Request'}
+                          {user?.role === 'ceo' && request.employee_name 
+                            ? `${request.employee_name} - ${request.leave_type_name || 'Leave Request'}`
+                            : request.leave_type_name || 'Leave Request'
+                          }
                         </p>
                         <p className="text-sm text-gray-500">
                           {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} • {request.total_days} day{request.total_days === 1 ? '' : 's'}
                         </p>
-                        {request.reason && (
+                        {user?.role === 'ceo' && request.employee_department && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Department: {request.employee_department}
+                          </p>
+                        )}
+                        {user?.role === 'ceo' && request.ceo_approval_date && (
+                          <p className="text-xs text-green-600 mt-1">
+                            Approved on: {new Date(request.ceo_approval_date).toLocaleDateString()}
+                          </p>
+                        )}
+                        {request.reason && user?.role !== 'ceo' && (
                           <p className="text-xs text-gray-400 mt-1">
                             {request.reason}
                           </p>
@@ -178,7 +196,12 @@ function Dashboard() {
             </div>
           ) : (
             <div>
-              <p className="text-gray-500">No recent leave requests.</p>
+              <p className="text-gray-500">
+                {user?.role === 'ceo' 
+                  ? 'No recently approved requests to display.' 
+                  : 'No recent leave requests.'
+                }
+              </p>
               <p className="text-xs text-gray-400 mt-2">Debug: recentRequests.length = {recentRequests.length}</p>
               <p className="text-xs text-gray-400">User: {user?.email || 'Not logged in'}</p>
               <p className="text-xs text-gray-400">Token: {localStorage.getItem('token') ? 'EXISTS' : 'MISSING'}</p>
