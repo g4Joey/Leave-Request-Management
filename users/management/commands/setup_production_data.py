@@ -45,6 +45,14 @@ class Command(BaseCommand):
             # Ensure default leave types are present (idempotent)
             call_command('setup_leave_types')
 
+            # Ensure CEO user exists/updated if env provided (idempotent)
+            if os.environ.get('CEO_EMAIL'):
+                self.stdout.write('Ensuring CEO via setup_production_data hook...')
+                try:
+                    call_command('create_ceo')
+                except Exception as ce:
+                    self.stdout.write(self.style.ERROR(f'create_ceo failed during setup_production_data: {ce}'))
+
             # Do not override any existing user passwords in production
             # Only create an HR user if none exists AND explicit credentials are provided via env vars
             existing_hr = CustomUser.objects.filter(role='hr').exists()
