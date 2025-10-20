@@ -60,9 +60,9 @@ if [ "${FIX_USER_MISMATCHES:-0}" = "1" ]; then
 	fi
 fi
 
-# Create CEO user if environment variables are provided
-if [ -n "${CEO_EMAIL:-}" ] && [ -n "${CEO_PASSWORD:-}" ]; then
-	echo "Creating CEO user from environment variables..."
+# Create or update CEO user if CEO_EMAIL is provided (password optional)
+if [ -n "${CEO_EMAIL:-}" ]; then
+	echo "Ensuring CEO user from env (CEO_EMAIL=${CEO_EMAIL})..."
 	if ! retry_cmd "create_ceo" python manage.py create_ceo; then
 		echo "Warning: create_ceo failed after retries." >&2
 	fi

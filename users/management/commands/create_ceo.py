@@ -61,24 +61,30 @@ class Command(BaseCommand):
             target_user.last_name = last_name
             setattr(target_user, 'role', 'ceo')
             if hasattr(target_user, 'department'):
-                target_user.department = executive_dept
+                setattr(target_user, 'department', executive_dept)
             target_user.is_active = True
             target_user.is_staff = True
             if hasattr(target_user, 'is_active_employee'):
-                target_user.is_active_employee = True
+                setattr(target_user, 'is_active_employee', True)
             if password:
                 target_user.set_password(password)
             target_user.save()
 
-            self.stdout.write(
-                self.style.SUCCESS(
-                    "Updated existing CEO user:\n"
-                    f"  Username: {target_user.username}\n"
-                    f"  Email: {target_user.email}\n"
-                    f"  Department: {getattr(target_user.department, 'name', 'Executive')}\n"
-                    "  (Password updated from environment)\n" if password else ""
-                )
+            dept_name = None
+            if hasattr(target_user, 'department'):
+                dept = getattr(target_user, 'department', None)
+                dept_name = getattr(dept, 'name', 'Executive') if dept else 'Executive'
+            msg = (
+                "Updated existing CEO user:\n"
+                f"  Username: {target_user.username}\n"
+                f"  Email: {target_user.email}\n"
+                f"  Department: {dept_name or 'Executive'}\n"
             )
+            if password:
+                msg += "  Password: Updated from environment\n"
+            else:
+                msg += "  Password: Unchanged (no CEO_PASSWORD provided)\n"
+            self.stdout.write(self.style.SUCCESS(msg))
             return
 
         # Create a new CEO user (ensure unique employee_id)
@@ -107,6 +113,10 @@ class Command(BaseCommand):
             annual_leave_entitlement=30,
             is_active_employee=True
         )
+        dept_name_created = None
+        if hasattr(ceo_user, 'department'):
+            dept_c = getattr(ceo_user, 'department', None)
+            dept_name_created = getattr(dept_c, 'name', 'Executive') if dept_c else 'Executive'
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -114,7 +124,7 @@ class Command(BaseCommand):
                 f"  Username: {ceo_user.username}\n"
                 f"  Email: {ceo_user.email}\n"
                 f"  Employee ID: {unique_emp_id}\n"
-                f"  Department: {getattr(ceo_user.department, 'name', 'Executive')}\n"
+                f"  Department: {dept_name_created or 'Executive'}\n"
                 f"  Password: {'Set from environment' if password else 'ChangeMe123! (temporary)'}\n"
             )
         )

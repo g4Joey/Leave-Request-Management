@@ -52,6 +52,13 @@ services:
       else
         echo "Skipping setup_production_data (RUN_SEED_ON_DEPLOY not set to 1)";
       fi
+      # Ensure CEO account exists/updated if CEO_EMAIL is provided (idempotent)
+      if [ -n "$CEO_EMAIL" ]; then
+        echo "Ensuring CEO user exists via create_ceo (CEO_EMAIL=$CEO_EMAIL)";
+        python manage.py create_ceo || { echo "create_ceo command failed"; exit 1; };
+      else
+        echo "Skipping create_ceo (no CEO_EMAIL provided)";
+      fi
       # Always ensure leave data is properly set up for leave requests to work
       python manage.py setup_production_leave_data
       python manage.py verify_db
