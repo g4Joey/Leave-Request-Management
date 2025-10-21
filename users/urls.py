@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileView, DepartmentViewSet, ChangePasswordView
+from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileView, DepartmentViewSet, ChangePasswordView, get_role_choices
 
 router = DefaultRouter()
 """Router configuration:
@@ -20,5 +20,6 @@ urlpatterns = [
     path('me/', MyProfileView.as_view(), name='my-profile'),
     path('me/change-password/', ChangePasswordView.as_view(), name='change-password'),
     path('staff/', StaffManagementView.as_view(), name='staff-management'),
+    path('role-choices/', get_role_choices, name='role-choices'),
     path('', include(router.urls)),
 ]

@@ -111,7 +111,7 @@ function Login() {
                 onClick={() => quickLogin('manager@company.com', 'password123')}
                 className="w-full text-left px-3 py-2 text-sm bg-green-50 border border-green-200 rounded hover:bg-green-100"
               >
-                <strong>Manager:</strong> manager@company.com / password123
+                <strong>HOD:</strong> manager@company.com / password123
               </button>
               <button
                 type="button"

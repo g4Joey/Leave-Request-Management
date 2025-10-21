@@ -16,17 +16,21 @@ class UserSerializer(serializers.ModelSerializer):
     grade_id = serializers.PrimaryKeyRelatedField(
         queryset=EmploymentGrade.objects.filter(is_active=True), source='grade', allow_null=True, required=False, write_only=True
     )
+    role_display = serializers.SerializerMethodField(read_only=True)
 
     def get_grade(self, obj):
         if obj.grade:
             return {'id': obj.grade.id, 'name': obj.grade.name, 'slug': obj.grade.slug}
         return None
+    
+    def get_role_display(self, obj):
+        return obj.get_role_display_name()
 
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'employee_id', 'role', 'department', 'department_id',
+            'employee_id', 'role', 'role_display', 'department', 'department_id',
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser', 'grade', 'grade_id'

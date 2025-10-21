@@ -69,11 +69,10 @@ def create_ceo_user():
 def test_manager_flow():
     """Test the manager leave request flow"""
     print("\n=== Testing Manager Leave Request Flow ===")
-    
-    # Get manager
-    manager = User.objects.filter(username='jmankoe').first()
-    if not manager:
-        print("❌ Manager jmankoe not found!")
+
+    hod = User.objects.filter(username='jmankoe').first()
+    if not hod:
+        print("❌ HOD jmankoe not found!")
         return
     
     # Get leave type
@@ -88,14 +87,14 @@ def test_manager_flow():
     
     # Delete any existing test requests
     LeaveRequest.objects.filter(
-        employee=manager,
+        employee=hod,
         start_date__gte=datetime.now().date(),
         reason__icontains="Manager flow test"
     ).delete()
     
     # Create new request
     test_request = LeaveRequest.objects.create(
-        employee=manager,
+        employee=hod,
         leave_type=leave_type,
         start_date=start_date,
         end_date=end_date,

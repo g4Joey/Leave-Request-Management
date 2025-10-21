@@ -356,7 +356,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             # Log the validated data for debugging
             logger.info(f'Leave request data: {serializer.validated_data}')
             
-            # Check if the user is a manager/HOD - if so, bypass manager approval and go straight to HR
+            # Check if the user is a manager - if so, bypass manager approval and go straight to HR
             user_role = getattr(user, 'role', None)
             if user_role == 'manager':
                 # Manager's own request should bypass manager stage and go directly to HR
@@ -453,7 +453,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
 class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for managers to view and approve leave requests - supports R4
+    ViewSet for Managers to view and approve leave requests - supports R4
     """
     serializer_class = LeaveRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -468,7 +468,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
         Rules:
         - manager: only requests from their direct reports (employee__manager = self.user)
-        - hr: all requests that are at or beyond manager stage
+        - hr: all requests that are at or beyond Manager stage
         - ceo: all requests that are at or beyond HR stage
         - admin/superuser: all requests
         - others: none
@@ -482,13 +482,13 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs
 
         if role == 'manager':
-            # Direct reports or same department where user is HOD, but EXCLUDE own requests
+            # Direct reports or same department where user is Manager, but EXCLUDE own requests
             return qs.filter(
                 Q(employee__manager=user) | Q(employee__department__manager=user)
             ).exclude(employee=user)
 
         if role == 'hr':
-            # Items that have passed manager stage or are pending (to allow visibility)
+            # Items that have passed Manager stage or are pending (to allow visibility)
             return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
@@ -509,7 +509,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
     def _user_can_act_on(self, user, leave_request) -> bool:
         """Check if the user is permitted to act on the given leave request.
-        Managers can act on direct reports and department where they are HOD; HR/CEO/Admin can act per stage.
+        Managers can act on direct reports and department where they are Manager; HR/CEO/Admin can act per stage.
         """
         # Admin/superuser can always act
         if getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'admin':

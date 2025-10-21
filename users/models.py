@@ -77,6 +77,18 @@ class CustomUser(AbstractUser):
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
     
+    def get_role_display_name(self):
+        """Get the display name for the role (maps manager to HOD for UI)"""
+        role_display_map = {
+            'junior_staff': 'Junior Staff',
+            'senior_staff': 'Senior Staff',
+            'manager': 'HOD (Head of Department)',
+            'hr': 'HR',
+            'ceo': 'CEO',
+            'admin': 'Admin',
+        }
+        return role_display_map.get(self.role, dict(self.ROLE_CHOICES).get(self.role, self.role))
+    
     def is_manager(self):
         """Check if user is a manager"""
         return self.role in ['manager', 'hr', 'admin']

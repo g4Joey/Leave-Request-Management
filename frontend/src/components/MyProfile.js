@@ -432,7 +432,7 @@ function MyProfile() {
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                     user?.role === 'junior_staff' ? 'bg-gray-100 text-gray-800' :
                     user?.role === 'senior_staff' ? 'bg-slate-100 text-slate-800' :
-                    user?.role === 'manager' ? 'bg-blue-100 text-blue-800' :
+                    user?.role === 'hod' ? 'bg-blue-100 text-blue-800' :
                     user?.role === 'hr' ? 'bg-green-100 text-green-800' :
                     user?.role === 'admin' ? 'bg-purple-100 text-purple-800' :
                     'bg-gray-100 text-gray-800'

@@ -60,10 +60,10 @@ function StaffManagement() {
     hire_date: ''
   });
 
-  // Remove trailing role words accidentally saved in last names (e.g., "Ato Manager")
+  // Remove trailing role words accidentally saved in last names (e.g., "Ato HOD")
   const cleanName = (name) => {
     if (!name || typeof name !== 'string') return name;
-    return name.replace(/\s+(Manager|Staff|HR|Admin)$/i, '').trim();
+    return name.replace(/\s+(Manager|HOD|Staff|HR|Admin)$/i, '').trim();
   };
 
   const fetchStaffData = useCallback(async () => {
@@ -167,10 +167,21 @@ function StaffManagement() {
       senior_staff: 'bg-slate-100 text-slate-800',
       manager: 'bg-blue-100 text-blue-800',
       hr: 'bg-green-100 text-green-800',
+      ceo: 'bg-indigo-100 text-indigo-800',
       admin: 'bg-purple-100 text-purple-800',
     };
 
-    const displayName = role?.replace('_', ' ')?.replace(/\b\w/g, l => l.toUpperCase()) || 'Staff';
+    // Map role to display name (manager -> HOD)
+    const roleDisplayMap = {
+      junior_staff: 'Junior Staff',
+      senior_staff: 'Senior Staff', 
+      manager: 'HOD',
+      hr: 'HR',
+      admin: 'Admin',
+      ceo: 'CEO'
+    };
+
+    const displayName = roleDisplayMap[role] || role?.replace('_', ' ')?.replace(/\b\w/g, l => l.toUpperCase()) || 'Staff';
     
     return (
       <span
@@ -354,7 +365,7 @@ function StaffManagement() {
     console.log('[StaffManagement] Opening leave history for employee:', emp);
     setLeaveHistoryModal({ open: true, loading: true, employee: emp, requests: [], searchQuery: '' });
     try {
-      // Use the manager endpoint to get all leave requests for this employee
+      // Use the HOD endpoint to get all leave requests for this employee
       const res = await api.get(`/leaves/manager/?employee=${emp.id}&ordering=-created_at`);
       const requests = res.data?.results || res.data || [];
       console.log('[StaffManagement] Leave history response:', requests);
@@ -543,11 +554,11 @@ function StaffManagement() {
     }
   };
 
-  const handleImportFile = (e) => {
+  const handleImportFile = async (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const text = ev.target.result;
         const rows = text.split(/\r?\n/).filter(Boolean);
@@ -559,25 +570,112 @@ function StaffManagement() {
           .shift()
           .split(',')
           .map((h) => h.trim().toLowerCase());
+        
+        // Enhanced field mapping
         const nameIdx = header.indexOf('name');
         const emailIdx = header.indexOf('email');
         const deptIdx = header.indexOf('department');
-        const idStart = employees.length + 1;
+        const roleIdx = header.indexOf('role');
+        const employeeIdIdx = header.indexOf('employee_id');
+        const hireDateIdx = header.indexOf('hire_date');
+        
+        // Validate required fields
+        if (nameIdx === -1 || emailIdx === -1) {
+          showToast({ type: 'error', message: 'CSV must contain at least "name" and "email" columns' });
+          return;
+        }
+        
+        const validRoles = ['junior_staff', 'senior_staff', 'hod', 'hr', 'ceo', 'admin'];
+        
         const parsed = rows.map((r, i) => {
           const cols = r.split(',').map((c) => c.trim());
+          
+          // Extract and validate role
+          const role = cols[roleIdx] || 'junior_staff';
+          const validatedRole = validRoles.includes(role) ? role : 'junior_staff';
+          
+          // Extract employee ID or generate one
+          const employeeId = cols[employeeIdIdx] || `EMP${String(Date.now() + i).substring(-6)}`;
+          
+          // Extract hire date or use current date
+          const hireDate = cols[hireDateIdx] || new Date().toISOString().split('T')[0];
+          
+          // Split name into first and last name
+          const fullName = cols[nameIdx] || '';
+          const nameParts = fullName.trim().split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
+          
+          // Generate username from email
+          const email = cols[emailIdx] || '';
+          const username = email.split('@')[0] || `user${Date.now() + i}`;
+          
+          // Find department ID
+          const deptName = cols[deptIdx] || '';
+          const matchedDept = departments.find(d => 
+            d.name.toLowerCase() === deptName.toLowerCase()
+          );
+          
           return {
-            id: idStart + i,
-            name: cols[nameIdx] || '',
-            email: cols[emailIdx] || '',
-            department: cols[deptIdx] || '',
-            employee_id: '',
-            role: 'staff',
+            username,
+            email,
+            first_name: firstName,
+            last_name: lastName,
+            employee_id: employeeId,
+            role: validatedRole,
+            hire_date: hireDate,
+            department_id: matchedDept?.id || null,
+            password: 'TempPass123!', // Default temporary password
+            is_active_employee: true
           };
         });
-        setEmployees((prev) => [...prev, ...parsed]);
-        showToast({ type: 'success', message: `Imported ${parsed.length} employees` });
+        
+        // Show preview and ask for confirmation
+        showToast({ type: 'info', message: `Parsed ${parsed.length} employees. Starting import...` });
+        
+        // Import employees one by one to the backend
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+        
+        for (let i = 0; i < parsed.length; i++) {
+          const employeeData = parsed[i];
+          try {
+            const response = await api.post('/users/staff/', employeeData);
+            successCount++;
+            console.log(`Successfully imported employee ${i + 1}:`, response.data);
+          } catch (error) {
+            errorCount++;
+            const errorMsg = error.response?.data?.detail || 
+                           error.response?.data?.email?.[0] || 
+                           error.response?.data?.employee_id?.[0] || 
+                           'Unknown error';
+            errors.push(`Row ${i + 1} (${employeeData.email}): ${errorMsg}`);
+            console.error(`Failed to import employee ${i + 1}:`, error.response?.data);
+          }
+        }
+        
+        // Show results
+        if (successCount > 0) {
+          showToast({ 
+            type: 'success', 
+            message: `Successfully imported ${successCount} employees to the system!` 
+          });
+          // Refresh the staff data
+          fetchStaffData();
+        }
+        
+        if (errorCount > 0) {
+          showToast({ 
+            type: 'warning', 
+            message: `${errorCount} employees failed to import. Check console for details.` 
+          });
+          console.error('Import errors:', errors);
+        }
+        
       } catch (err) {
-        showToast({ type: 'error', message: 'Failed to import CSV' });
+        console.error('Import error:', err);
+        showToast({ type: 'error', message: 'Failed to process CSV. Please check the file format.' });
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = null;
       }
@@ -603,7 +701,11 @@ function StaffManagement() {
   };
 
   const downloadTemplateCSV = () => {
-    const csv = 'name,email,department\n';
+    const csv = `name,email,department,role,employee_id,hire_date
+John Doe,john.doe@company.com,IT,senior_staff,EMP001,2023-01-15
+Jane Smith,jane.smith@company.com,HR,hod,HOD001,2022-03-01
+Alice Johnson,alice.johnson@company.com,Finance,junior_staff,EMP002,2024-06-10
+Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -611,7 +713,7 @@ function StaffManagement() {
     a.download = 'employees_template.csv';
     a.click();
     URL.revokeObjectURL(url);
-    showToast({ type: 'info', message: 'Downloaded CSV template' });
+    showToast({ type: 'info', message: 'Downloaded enhanced CSV template with sample data' });
   };
 
   const handleSidebarKeyDown = (e) => {
@@ -947,17 +1049,31 @@ function StaffManagement() {
             {active === 'import' && (
               <section>
                 <h2 className="text-lg font-medium mb-4">Import employees</h2>
-                <p className="text-sm text-gray-600 mb-4">Use a CSV with columns: name,email,department.</p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Import employees using CSV format with enhanced fields:
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                  <h3 className="text-sm font-medium text-blue-900 mb-2">Supported CSV Columns:</h3>
+                  <ul className="text-xs text-blue-800 space-y-1">
+                    <li><strong>Required:</strong> name, email</li>
+                    <li><strong>Optional:</strong> department, role, employee_id, hire_date</li>
+                    <li><strong>Valid roles:</strong> junior_staff, senior_staff, hod, hr, ceo, admin</li>
+                    <li><strong>Date format:</strong> YYYY-MM-DD (e.g., 2023-01-15)</li>
+                  </ul>
+                </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     onClick={downloadTemplateCSV}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200 text-sky-700"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200 text-sky-700 hover:bg-sky-50"
                   >
-                    Download template (CSV)
+                    📄 Download Enhanced Template (CSV)
                   </button>
                   <input ref={fileInputRef} type="file" accept="text/csv" onChange={handleImportFile} />
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Note: This demo import updates only the local view and does not persist to the server.</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 The template includes sample data showing the correct format. 
+                  Employees will be created in the system with temporary password "TempPass123!" (users should change on first login).
+                </p>
               </section>
             )}
 
@@ -1108,7 +1224,7 @@ function StaffManagement() {
                     >
                       <option value="junior_staff">Junior Staff</option>
                       <option value="senior_staff">Senior Staff</option>
-                      <option value="manager">Manager</option>
+                      <option value="manager">Head of Department</option>
                       <option value="hr">HR</option>
                       <option value="admin">Admin</option>
                     </select>
@@ -1304,7 +1420,7 @@ function StaffManagement() {
                     <option value="">Select Role</option>
                     <option value="junior_staff">Junior Staff</option>
                     <option value="senior_staff">Senior Staff</option>
-                    <option value="manager">Manager</option>
+                    <option value="manager">Head of Department</option>
                     <option value="hr">HR</option>
                     <option value="admin">Admin</option>
                   </select>
@@ -1555,7 +1671,7 @@ function StaffManagement() {
                   >
                     <option value="">-- No HOD (Remove current) --</option>
                     {employees
-                      .filter(emp => emp.role === 'manager' || emp.role === 'hr' || emp.role === 'admin')
+                      .filter(emp => emp.role === 'hod' || emp.role === 'hr' || emp.role === 'admin')
                       .map(emp => (
                         <option key={emp.id} value={emp.id}>
                           {emp.name} ({emp.employee_id}) - {emp.role}

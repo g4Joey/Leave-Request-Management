@@ -11,6 +11,7 @@ const normalizeProfile = (profile = {}, token = null) => {
     first_name: profile.first_name,
     last_name: profile.last_name,
     role: (profile.role || '').toLowerCase(),
+    role_display: profile.role_display,
     is_superuser:
       profile.is_superuser === true ||
       profile.is_superuser === 'true' ||

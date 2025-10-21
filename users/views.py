@@ -216,7 +216,7 @@ class StaffManagementView(APIView):
         return Response(data)
     
     def post(self, request):
-        """Create a new employee (HR only)"""
+        """Create a new employee (HR only) with auto-department creation"""
         user = request.user
         role = getattr(user, 'role', None)
         if not (getattr(user, 'is_superuser', False) or (role in ['hr', 'admin'])):
@@ -225,9 +225,23 @@ class StaffManagementView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        serializer = UserSerializer(data=request.data)
+        # Handle department auto-creation if needed
+        data = request.data.copy()
+        department_name = data.get('department_name')
+        if department_name and not data.get('department_id'):
+            # Try to find existing department
+            department = Department.objects.filter(name__iexact=department_name).first()
+            if not department:
+                # Create new department
+                department = Department.objects.create(
+                    name=department_name,
+                    description=f"Auto-created during employee import"
+                )
+            data['department_id'] = department.id
+        
+        serializer = UserSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
+            user_instance = serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -250,7 +264,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def set_manager(self, request, pk=None):
-        """Set the HOD/Manager for a department"""
+        """Set the Manager for a department"""
         department = self.get_object()
         manager_id = request.data.get('manager_id')
         
@@ -270,7 +284,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
         else:
-            # Remove HOD
+            # Remove Manager
             department.manager = None
         
         department.save()
@@ -293,6 +307,25 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                 'manager': manager_info
             }
         })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_role_choices(request):
+    """Get available role choices with display names"""
+    from .models import CustomUser
+    
+    role_choices = []
+    for role_value, role_label in CustomUser.ROLE_CHOICES:
+        # Create a temporary user instance to get display name
+        temp_user = CustomUser(role=role_value)
+        role_choices.append({
+            'value': role_value,
+            'label': role_label,  # Original label
+            'display': temp_user.get_role_display_name()  # Custom display name
+        })
+    
+    return Response(role_choices)
 
 
 class IsHRPermission(permissions.BasePermission):

@@ -79,7 +79,7 @@ function LeaveHistory() {
                 )}
                 {request.manager_comments && (
                   <div className="mt-2 text-sm text-gray-600">
-                    <strong>Manager Comments:</strong> {request.manager_comments}
+                    <strong>HOD Comments:</strong> {request.manager_comments}
                   </div>
                 )}
                 <div className="mt-2 text-xs text-gray-400">

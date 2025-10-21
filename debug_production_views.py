@@ -257,7 +257,7 @@ def debug_production_stats(request):
     employees = CustomUser.objects.filter(is_active=True, is_active_employee=True)
     balances = LeaveBalance.objects.filter(year=current_year)
     leave_types = LeaveType.objects.filter(is_active=True)
-    managers = CustomUser.objects.filter(role='manager')
+    hods = CustomUser.objects.filter(role='hod')
     
     # Sample balances
     sample_balances = []
@@ -282,10 +282,10 @@ def debug_production_stats(request):
             'active_employees': employees.count(),
             'leave_balances': balances.count(),
             'active_leave_types': leave_types.count(),
-            'managers': managers.count(),
+            'hods': hods.count(),
         },
         'employees': [{'username': emp.username, 'role': emp.role} for emp in employees],
         'leave_types': [{'name': lt.name, 'is_active': lt.is_active} for lt in leave_types],
-        'managers': [{'username': mgr.username} for mgr in managers],
+    'hods': [{'username': hod.username} for hod in hods],
         'sample_balances': sample_balances
     })
