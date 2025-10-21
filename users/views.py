@@ -7,8 +7,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
 from typing import cast
-from .models import CustomUser, Department
-from .serializers import UserSerializer, DepartmentSerializer
+from .models import CustomUser, Department, Affiliate
+from .serializers import UserSerializer, DepartmentSerializer, AffiliateSerializer
 
 User = get_user_model()
 
@@ -157,7 +157,7 @@ class StaffManagementView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        departments = Department.objects.all()
+        departments = Department.objects.select_related('affiliate', 'hod').all()
         data = []
         
         import os
@@ -203,14 +203,19 @@ class StaffManagementView(APIView):
                 'id': dept.pk,
                 'name': dept.name,
                 'description': dept.description,
+                'affiliate': (
+                    {'id': dept.affiliate_id, 'name': dept.affiliate.name}
+                    if getattr(dept, 'affiliate', None) else None
+                ),
                 'staff_count': len(staff_data),
                 'staff': staff_data,
+                # Keep key name 'manager' for backward-compatible API, but source from HOD field
                 'manager': {
-                    'id': dept.manager.pk,
-                    'name': dept.manager.get_full_name(),
-                    'employee_id': dept.manager.employee_id,
-                    'email': dept.manager.email
-                } if dept.manager else None
+                    'id': dept.hod.pk,
+                    'name': dept.hod.get_full_name(),
+                    'employee_id': dept.hod.employee_id,
+                    'email': dept.hod.email
+                } if getattr(dept, 'hod', None) else None
             })
         
         return Response(data)
@@ -228,13 +233,28 @@ class StaffManagementView(APIView):
         # Handle department auto-creation if needed
         data = request.data.copy()
         department_name = data.get('department_name')
+        affiliate_id = data.get('affiliate_id')
+        affiliate_name = data.get('affiliate_name')
+
+        affiliate_obj = None
+        if affiliate_id:
+            affiliate_obj = Affiliate.objects.filter(pk=affiliate_id, is_active=True).first()
+        elif affiliate_name:
+            affiliate_obj, _ = Affiliate.objects.get_or_create(name=affiliate_name.strip(), defaults={'description': ''})
+        else:
+            # Default all legacy imports to Merban Capital if it exists
+            affiliate_obj = Affiliate.objects.filter(name__iexact='Merban Capital').first()
         if department_name and not data.get('department_id'):
             # Try to find existing department
-            department = Department.objects.filter(name__iexact=department_name).first()
+            department_qs = Department.objects.filter(name__iexact=department_name)
+            if affiliate_obj:
+                department_qs = department_qs.filter(affiliate=affiliate_obj)
+            department = department_qs.first()
             if not department:
                 # Create new department
                 department = Department.objects.create(
                     name=department_name,
+                    affiliate=affiliate_obj,
                     description=f"Auto-created during employee import"
                 )
             data['department_id'] = department.id
@@ -264,7 +284,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def set_manager(self, request, pk=None):
-        """Set the Manager for a department"""
+        """Set the HOD (Manager) for a department. Endpoint name kept for compatibility."""
         department = self.get_object()
         manager_id = request.data.get('manager_id')
         
@@ -277,7 +297,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                         {'error': 'Selected user must have manager, hr, or admin role'}, 
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                department.manager = manager
+                department.hod = manager
             except CustomUser.DoesNotExist:
                 return Response(
                     {'error': 'Manager not found'}, 
@@ -285,18 +305,18 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                 )
         else:
             # Remove Manager
-            department.manager = None
+            department.hod = None
         
         department.save()
         
         # Return updated department info
         manager_info = None
-        if department.manager:
+        if getattr(department, 'hod', None):
             manager_info = {
-                'id': department.manager.pk,
-                'name': department.manager.get_full_name(),
-                'employee_id': department.manager.employee_id,
-                'email': department.manager.email
+                'id': department.hod.pk,
+                'name': department.hod.get_full_name(),
+                'employee_id': department.hod.employee_id,
+                'email': department.hod.email
             }
         
         return Response({
@@ -304,9 +324,24 @@ class DepartmentViewSet(viewsets.ModelViewSet):
             'department': {
                 'id': department.pk,
                 'name': department.name,
+                'affiliate': {'id': department.affiliate_id, 'name': department.affiliate.name} if department.affiliate_id else None,
                 'manager': manager_info
             }
         })
+
+
+class AffiliateViewSet(viewsets.ModelViewSet):
+    """Minimal Affiliate CRUD for HR"""
+    queryset = Affiliate.objects.filter(is_active=True)
+    serializer_class = AffiliateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated, IsHRPermission]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
 
 
 @api_view(['GET'])

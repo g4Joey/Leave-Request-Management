@@ -1,14 +1,43 @@
 from rest_framework import serializers
-from .models import Department, CustomUser as User, EmploymentGrade
+from .models import Department, CustomUser as User, EmploymentGrade, Affiliate
+
+
+class AffiliateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Affiliate
+        fields = ['id', 'name', 'description', 'is_active']
 
 class DepartmentSerializer(serializers.ModelSerializer):
+    affiliate = AffiliateSerializer(read_only=True)
+    affiliate_id = serializers.PrimaryKeyRelatedField(
+        queryset=Affiliate.objects.filter(is_active=True), source='affiliate', write_only=True, required=False, allow_null=True
+    )
+    manager = serializers.SerializerMethodField(read_only=True)  # backward-compat alias of HOD
+
     class Meta:
         model = Department
-        fields = ['id', 'name', 'description']
+        fields = [
+            'id', 'name', 'description',
+            'affiliate', 'affiliate_id',
+            'approval_flow',
+            'manager',  # alias for hod for existing UI
+        ]
+
+    def get_manager(self, obj):
+        hod = getattr(obj, 'hod', None)
+        if not hod:
+            return None
+        return {
+            'id': hod.pk,
+            'name': hod.get_full_name(),
+            'employee_id': hod.employee_id,
+            'email': hod.email,
+        }
 
 class UserSerializer(serializers.ModelSerializer):
     department = DepartmentSerializer(read_only=True)
     department_id = serializers.IntegerField(write_only=True, required=False)
+    affiliate = serializers.SerializerMethodField(read_only=True)
     password = serializers.CharField(write_only=True, required=False)
     is_superuser = serializers.BooleanField(read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
@@ -23,6 +52,13 @@ class UserSerializer(serializers.ModelSerializer):
             return {'id': obj.grade.id, 'name': obj.grade.name, 'slug': obj.grade.slug}
         return None
     
+    def get_affiliate(self, obj):
+        dept = getattr(obj, 'department', None)
+        if dept and getattr(dept, 'affiliate', None):
+            a = dept.affiliate
+            return {'id': a.id, 'name': a.name}
+        return None
+    
     def get_role_display(self, obj):
         return obj.get_role_display_name()
 
@@ -31,6 +67,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'employee_id', 'role', 'role_display', 'department', 'department_id',
+            'affiliate',
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser', 'grade', 'grade_id'

@@ -2,24 +2,58 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
-class Department(models.Model):
+class Affiliate(models.Model):
     """
-    Department model for organizing users
+    Affiliate model for organizing departments under different business entities
     """
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    # Head of Department (HOD) / Manager for this department
-    manager = models.ForeignKey(
-        'CustomUser', on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='departments_managed'
-    )
+    is_active = models.BooleanField(default=True)
     
     def __str__(self):
         return self.name
     
     class Meta:
         ordering = ['name']
+
+
+class Department(models.Model):
+    """
+    Department model for organizing users within affiliates
+    """
+    APPROVAL_FLOW_CHOICES = [
+        ('hod_only', 'HOD Only'),
+        ('hod_hr', 'HOD → HR'),
+        ('hod_hr_ceo', 'HOD → HR → CEO'),
+        ('hod_ceo', 'HOD → CEO'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    affiliate = models.ForeignKey(Affiliate, on_delete=models.CASCADE, related_name='departments')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Head of Department (HOD) / Manager for this department
+    hod = models.ForeignKey(
+        'CustomUser', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='departments_headed'
+    )
+    
+    # Approval flow configuration for this department
+    approval_flow = models.CharField(
+        max_length=20, 
+        choices=APPROVAL_FLOW_CHOICES, 
+        default='hod_hr',
+        help_text='Defines the approval workflow for leave requests in this department'
+    )
+    
+    def __str__(self):
+        return f"{self.affiliate.name} - {self.name}"
+    
+    class Meta:
+        ordering = ['affiliate__name', 'name']
+        unique_together = ['affiliate', 'name']  # Same department name allowed across different affiliates
 
 
 class CustomUser(AbstractUser):
@@ -88,6 +122,14 @@ class CustomUser(AbstractUser):
             'admin': 'Admin',
         }
         return role_display_map.get(self.role, dict(self.ROLE_CHOICES).get(self.role, self.role))
+    
+    def is_hod(self):
+        """Check if user is Head of Department for any department"""
+        return self.departments_headed.exists()
+    
+    def get_headed_departments(self):
+        """Get departments this user heads"""
+        return self.departments_headed.all()
     
     def is_manager(self):
         """Check if user is a manager"""
