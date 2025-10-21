@@ -71,10 +71,21 @@ function StaffManagement() {
   const fetchStaffData = useCallback(async () => {
     try {
       const response = await api.get('/users/staff/');
-    const depts = response.data.results || response.data || [];
-      setDepartments(depts);
+      const payload = response?.data;
+      // Normalize departments data to an array
+      const depts = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : []));
+
+      // Coerce shapes defensively
+      const safeDepts = (depts || []).map((d) => ({
+        ...d,
+        staff: Array.isArray(d?.staff) ? d.staff : [],
+      }));
+
+      setDepartments(safeDepts);
       // Flatten employees for the Employees tab
-      const flattened = depts.flatMap((d) =>
+      const flattened = safeDepts.flatMap((d) =>
         (d.staff || []).map((s) => {
 
           return {
