@@ -16,13 +16,19 @@ function Dashboard() {
         console.log('Token in localStorage:', localStorage.getItem('token') ? 'EXISTS' : 'NOT_FOUND');
         console.log('API base URL:', api.defaults.baseURL);
         
-        // CEO users get different dashboard data - show pending requests awaiting approval
+        // CEO users get different dashboard data - show recently approved/rejected requests
         if (user?.role === 'ceo') {
-          const requestsRes = await api.get('/leaves/manager/ceo_approvals_categorized/');
-          const categorizedData = requestsRes.data.categories || {};
-          const totalRequests = Object.values(categorizedData).flat();
+          // Fetch requests that CEO has already approved or rejected
+          const actedRequestsRes = await api.get('/leaves/requests/?limit=15');
+          const allRequests = actedRequestsRes.data.results || actedRequestsRes.data || [];
           
-          setRecentRequests(totalRequests.slice(0, 5)); // Show recent 5 for overview
+          // Filter for requests that CEO has already acted upon (approved or rejected)
+          const ceoActedRequests = allRequests.filter(request => 
+            (request.status === 'approved' && request.ceo_approval_date) ||
+            (request.status === 'rejected' && request.ceo_approval_date)
+          );
+          
+          setRecentRequests(ceoActedRequests.slice(0, 5)); // Show recent 5 acted-upon requests
           setBalances([]); // CEOs don't have leave balances
         } else {
           const [balancesRes, requestsRes] = await Promise.all([
@@ -90,7 +96,7 @@ function Dashboard() {
           </h3>
           <p className="text-sm text-gray-600">
             {user?.role === 'ceo' 
-              ? 'Review and approve leave requests requiring final CEO authorization.'
+              ? 'View your recently processed leave requests and approval decisions.'
               : 'Track your leave balances, submit new requests, and view your leave history.'
             }
           </p>
@@ -145,7 +151,7 @@ function Dashboard() {
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-            {user?.role === 'ceo' ? 'Recent Requests Awaiting Your Approval' : 'Recent Leave Requests'}
+            {user?.role === 'ceo' ? 'Recently Processed Requests' : 'Recent Leave Requests'}
           </h3>
           {recentRequests.length > 0 ? (
             <div className="flow-root">
@@ -168,7 +174,12 @@ function Dashboard() {
                             Department: {request.employee_department}
                           </p>
                         )}
-                        {request.reason && (
+                        {user?.role === 'ceo' && request.ceo_approval_date && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            Processed on: {new Date(request.ceo_approval_date).toLocaleDateString()}
+                          </p>
+                        )}
+                        {request.reason && user?.role !== 'ceo' && (
                           <p className="text-xs text-gray-400 mt-1">
                             {request.reason}
                           </p>
@@ -188,7 +199,7 @@ function Dashboard() {
             <div>
               <p className="text-gray-500">
                 {user?.role === 'ceo' 
-                  ? 'No pending requests awaiting your approval.' 
+                  ? 'No recently processed requests to display.' 
                   : 'No recent leave requests.'
                 }
               </p>

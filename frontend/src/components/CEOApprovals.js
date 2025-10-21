@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import { Dialog } from '@headlessui/react';
 import { useToast } from '../contexts/ToastContext';
 
 function CEOApprovals() {
@@ -10,33 +11,24 @@ function CEOApprovals() {
     staff: []
   });
   const [loading, setLoading] = useState(true);
-
+  const [loadingActionById, setLoadingActionById] = useState({});
+  const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
   const [activeTab, setActiveTab] = useState('hod_manager');
 
   const fetchCEORequests = useCallback(async () => {
     try {
       setLoading(true);
-      // Get processed requests that CEO has already acted upon
-      const response = await api.get('/leaves/requests/?limit=50');
-      const allRequests = response.data.results || response.data || [];
+      // Get categorized pending requests for CEO approval
+      const response = await api.get('/leaves/manager/ceo_approvals_categorized/');
       
-      // Filter for requests that CEO has already processed
-      const processedRequests = allRequests.filter(request => 
-        (request.status === 'approved' && request.ceo_approval_date) ||
-        (request.status === 'rejected' && request.ceo_approval_date)
-      );
-      
-      // Categorize by employee role
-      const categorized = {
-        hod_manager: processedRequests.filter(req => req.employee_role === 'manager'),
-        hr: processedRequests.filter(req => req.employee_role === 'hr'),
-        staff: processedRequests.filter(req => ['junior_staff', 'senior_staff'].includes(req.employee_role))
-      };
-      
-      setRequests(categorized);
+      setRequests(response.data.categories || {
+        hod_manager: [],
+        hr: [],
+        staff: []
+      });
     } catch (error) {
       console.error('Error fetching CEO requests:', error);
-      showToast({ type: 'error', message: 'Failed to load processed requests' });
+      showToast({ type: 'error', message: 'Failed to load approval requests' });
     } finally {
       setLoading(false);
     }
@@ -46,7 +38,50 @@ function CEOApprovals() {
     fetchCEORequests();
   }, [fetchCEORequests]);
 
+  const handleAction = async (requestId, action, comments = '') => {
+    setLoadingActionById(prev => ({ ...prev, [requestId]: action }));
 
+    try {
+      await api.put(`/leaves/manager/${requestId}/${action}/`, {
+        approval_comments: comments || ''
+      });
+      
+      // Remove from all categories and refresh
+      setRequests(prev => ({
+        hod_manager: prev.hod_manager.filter(req => req.id !== requestId),
+        hr: prev.hr.filter(req => req.id !== requestId),
+        staff: prev.staff.filter(req => req.id !== requestId)
+      }));
+      
+      showToast({ 
+        type: 'success', 
+        message: `Request ${action}ed successfully as CEO.` 
+      });
+    } catch (error) {
+      console.error(`Error ${action}ing request:`, error);
+      const detail = error?.response?.data?.error || error?.response?.data?.detail || '';
+      showToast({ 
+        type: 'error', 
+        message: `Failed to ${action} request${detail ? `: ${detail}` : ''}` 
+      });
+    } finally {
+      setLoadingActionById(prev => ({ ...prev, [requestId]: undefined }));
+    }
+  };
+
+  const handleReject = (requestId) => {
+    setRejectModal({ open: true, requestId, reason: '' });
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModal.reason.trim()) {
+      showToast({ type: 'error', message: 'Please provide a reason for rejection' });
+      return;
+    }
+    
+    await handleAction(rejectModal.requestId, 'reject', rejectModal.reason);
+    setRejectModal({ open: false, requestId: null, reason: '' });
+  };
 
   const getEmployeeName = (request) => {
     return request?.employee_name || request?.employee_email || 'Unknown Employee';
@@ -69,6 +104,8 @@ function CEOApprovals() {
   };
 
   const RequestCard = ({ request, categoryType }) => {
+    const isApproving = loadingActionById[request.id] === 'approve';
+    const isRejecting = loadingActionById[request.id] === 'reject';
     const duration = calculateDuration(request.start_date, request.end_date);
 
     return (
@@ -136,22 +173,45 @@ function CEOApprovals() {
             </div>
           )}
 
-          {/* Status and processing info */}
-          <div className="flex justify-between items-center pt-4 border-t border-gray-100">
-            <div className="flex items-center space-x-4">
-              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                request.status === 'approved' 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                {request.status === 'approved' ? 'Approved by CEO' : 'Rejected by CEO'}
-              </span>
-              {request.ceo_approval_date && (
-                <span className="text-xs text-gray-500">
-                  Processed: {formatDate(request.ceo_approval_date)}
-                </span>
+          <div className="flex space-x-3 pt-4">
+            <button
+              onClick={() => handleAction(request.id, 'approve')}
+              disabled={isApproving || isRejecting}
+              className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors
+                       flex items-center justify-center"
+            >
+              {isApproving ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Approving...
+                </>
+              ) : (
+                'Final Approve'
               )}
-            </div>
+            </button>
+            <button
+              onClick={() => handleReject(request.id)}
+              disabled={isApproving || isRejecting}
+              className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors
+                       flex items-center justify-center"
+            >
+              {isRejecting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Rejecting...
+                </>
+              ) : (
+                'Reject'
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -187,7 +247,7 @@ function CEOApprovals() {
     }
   ];
 
-  const totalProcessed = requests.hod_manager.length + requests.hr.length + requests.staff.length;
+  const totalPending = requests.hod_manager.length + requests.hr.length + requests.staff.length;
 
   return (
     <div className="space-y-6">
@@ -195,14 +255,14 @@ function CEOApprovals() {
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">
-            CEO Dashboard
+            CEO Approvals Portal
           </h3>
           <p className="text-sm text-gray-600">
-            View your recently processed leave requests and approval decisions.
+            Review and approve leave requests requiring final CEO authorization.
           </p>
           <div className="mt-4">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-              {totalProcessed} Processed Request{totalProcessed !== 1 ? 's' : ''}
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+              {totalPending} Pending Final Approval{totalPending !== 1 ? 's' : ''}
             </span>
           </div>
         </div>
@@ -271,7 +331,50 @@ function CEOApprovals() {
         </div>
       </div>
 
-
+      {/* Reject Modal */}
+      <Dialog open={rejectModal.open} onClose={() => setRejectModal({ open: false, requestId: null, reason: '' })}>
+        <div className="fixed inset-0 bg-black bg-opacity-25" />
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+              <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
+                Reject Leave Request
+              </Dialog.Title>
+              <div className="mt-2">
+                <p className="text-sm text-gray-500">
+                  Please provide a reason for rejecting this leave request.
+                </p>
+              </div>
+              <div className="mt-4">
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  rows={4}
+                  placeholder="Enter rejection reason..."
+                  value={rejectModal.reason}
+                  onChange={(e) => setRejectModal(prev => ({ ...prev, reason: e.target.value }))}
+                />
+              </div>
+              <div className="mt-4 flex space-x-3">
+                <button
+                  type="button"
+                  className="flex-1 inline-flex justify-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                  onClick={confirmReject}
+                  disabled={!rejectModal.reason.trim()}
+                >
+                  Confirm Rejection
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                  onClick={() => setRejectModal({ open: false, requestId: null, reason: '' })}
+                >
+                  Cancel
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
