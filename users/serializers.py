@@ -1,8 +1,18 @@
 from rest_framework import serializers
-from .models import Department, CustomUser as User, EmploymentGrade
+from .models import Department, CustomUser as User, EmploymentGrade, Affiliate
+
+
+class AffiliateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Affiliate
+        fields = ['id', 'name', 'description']
 
 class DepartmentSerializer(serializers.ModelSerializer):
     manager = serializers.SerializerMethodField(read_only=True)  # backward-compat alias of HOD
+    affiliate = serializers.SerializerMethodField(read_only=True)
+    affiliate_id = serializers.PrimaryKeyRelatedField(
+        queryset=Affiliate.objects.all(), source='affiliate', required=False, allow_null=True, write_only=True
+    )
 
     class Meta:
         model = Department
@@ -10,6 +20,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
             'id', 'name', 'description',
             'approval_flow',
             'manager',  # alias for hod for existing UI
+            'affiliate', 'affiliate_id',
         ]
 
     def get_manager(self, obj):
@@ -21,6 +32,15 @@ class DepartmentSerializer(serializers.ModelSerializer):
             'name': hod.get_full_name(),
             'employee_id': hod.employee_id,
             'email': hod.email,
+        }
+
+    def get_affiliate(self, obj):
+        aff = getattr(obj, 'affiliate', None)
+        if not aff:
+            return None
+        return {
+            'id': aff.pk,
+            'name': aff.name,
         }
 
 class UserSerializer(serializers.ModelSerializer):

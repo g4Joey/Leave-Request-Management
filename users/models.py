@@ -2,6 +2,19 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
+class Affiliate(models.Model):
+    """Company affiliate entity (e.g., Merban Capital, SDSL, SBL)."""
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self) -> str:  # pragma: no cover - simple
+        return self.name
+
+
 class Department(models.Model):
     """
     Department model for organizing users within the company
@@ -16,6 +29,11 @@ class Department(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Optional affiliate link (HR can manage departments under an affiliate)
+    affiliate = models.ForeignKey(
+        Affiliate, on_delete=models.CASCADE, null=True, blank=True, related_name='departments'
+    )
     
     # Head of Department (HOD) / Manager for this department
     hod = models.ForeignKey(

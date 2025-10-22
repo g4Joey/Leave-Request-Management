@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +18,7 @@ const BASE_SIDEBAR_ITEMS = [
 ];
 
 function StaffManagement() {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const { user } = useAuth();
   const canManageGradeEntitlements = useMemo(() => {
@@ -33,6 +35,7 @@ function StaffManagement() {
     return items;
   }, [canManageGradeEntitlements]);
   const [departments, setDepartments] = useState([]);
+  const [affiliates, setAffiliates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
   const [active, setActive] = useState('departments');
@@ -117,6 +120,21 @@ function StaffManagement() {
   useEffect(() => {
     fetchStaffData();
   }, [fetchStaffData]);
+
+  // Fetch affiliates for the Affiliates tab (HR only)
+  useEffect(() => {
+    const loadAffiliates = async () => {
+      try {
+        const res = await api.get('/users/affiliates/');
+        const list = Array.isArray(res.data?.results) ? res.data.results : (res.data || []);
+        setAffiliates(list);
+      } catch (e) {
+        // Non-fatal; keep silent to avoid noise on non-HR sessions
+        console.warn('Failed to load affiliates', e.response?.data || e.message);
+      }
+    };
+    loadAffiliates();
+  }, []);
 
 
 
@@ -857,19 +875,23 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
             {active === 'affiliates' && (
               <section>
                 <h2 className="text-lg font-medium mb-4">Affiliates</h2>
-                <p className="text-sm text-gray-600 mb-4">This is a simple reference list for HR.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[
-                    { id: 'merban', name: 'Merban Capital' },
-                    { id: 'sdsl', name: 'SDSL' },
-                    { id: 'sbl', name: 'SBL' },
-                  ].map((aff) => (
-                    <div key={aff.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-                      <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
-                      <p className="text-sm text-gray-600 mt-1">Affiliate</p>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-sm text-gray-600 mb-4">Click an affiliate to manage its departments.</p>
+                {affiliates.length === 0 ? (
+                  <div className="text-sm text-gray-500">No affiliates yet.</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {affiliates.map((aff) => (
+                      <button
+                        key={aff.id}
+                        onClick={() => navigate(`/staff/affiliates/${aff.id}`)}
+                        className="text-left border border-gray-200 rounded-lg p-4 bg-white hover:bg-gray-50 focus:outline-none"
+                      >
+                        <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
+                        <p className="text-sm text-gray-600 mt-1">Affiliate</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </section>
             )}
             {active === 'departments' && (

@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileView, DepartmentViewSet, ChangePasswordView, get_role_choices, role_summary
+from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileView, DepartmentViewSet, ChangePasswordView, get_role_choices, role_summary, AffiliateViewSet
 
 router = DefaultRouter()
 """Router configuration:
@@ -14,6 +14,7 @@ Previously this was registered as 'users', producing paths like
 """
 router.register(r'', UserViewSet, basename='user')
 router.register(r'departments', DepartmentViewSet, basename='department')
+router.register(r'affiliates', AffiliateViewSet, basename='affiliate')
 
 urlpatterns = [
     path('profile/', UserProfileView.as_view(), name='user-profile'),

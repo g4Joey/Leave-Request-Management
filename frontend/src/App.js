@@ -8,6 +8,7 @@ import LeaveHistory from './components/LeaveHistory';
 import ManagerDashboard from './components/ManagerDashboard';
 import CEOApprovals from './components/CEOApprovals';
 import StaffManagement from './components/StaffManagement';
+import AffiliatePage from './components/AffiliatePage';
 import MyProfile from './components/MyProfile';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './contexts/ToastContext';
@@ -79,6 +80,14 @@ function App() {
                             element={
                               <HRRoute>
                                 <StaffManagement />
+                              </HRRoute>
+                            }
+                          />
+                          <Route
+                            path="/staff/affiliates/:id"
+                            element={
+                              <HRRoute>
+                                <AffiliatePage />
                               </HRRoute>
                             }
                           />

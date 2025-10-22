@@ -9,8 +9,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
 from typing import cast
-from .models import CustomUser, Department
-from .serializers import UserSerializer, DepartmentSerializer
+from .models import CustomUser, Department, Affiliate
+from .serializers import UserSerializer, DepartmentSerializer, AffiliateSerializer
 
 User = get_user_model()
 
@@ -332,6 +332,16 @@ class DepartmentViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
     
+    def get_queryset(self):
+        qs = super().get_queryset()
+        affiliate_id = self.request.query_params.get('affiliate_id')
+        if affiliate_id:
+            try:
+                qs = qs.filter(affiliate_id=int(affiliate_id))
+            except (TypeError, ValueError):
+                qs = qs.none()
+        return qs
+    
     @action(detail=True, methods=['post'])
     def set_manager(self, request, pk=None):
         """Set the HOD (Manager) for a department. Endpoint name kept for compatibility."""
@@ -380,6 +390,29 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 
 
 ## Affiliate endpoints removed
+
+
+class AffiliateViewSet(viewsets.ModelViewSet):
+    queryset = Affiliate.objects.all().order_by('name')
+    serializer_class = AffiliateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated, IsHRPermission]
+        else:
+            permission_classes = [permissions.IsAuthenticated, IsHRPermission]
+        return [permission() for permission in permission_classes]
+
+    def list(self, request, *args, **kwargs):
+        # Auto-seed initial affiliates if none exist
+        if Affiliate.objects.count() == 0:
+            Affiliate.objects.bulk_create([
+                Affiliate(name='Merban Capital'),
+                Affiliate(name='SDSL'),
+                Affiliate(name='SBL'),
+            ])
+        return super().list(request, *args, **kwargs)
 
 
 @api_view(['GET'])
