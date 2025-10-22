@@ -5,7 +5,9 @@ import { useAuth } from '../contexts/AuthContext';
 import RoleManagement from './RoleManagement';
 
 // Base sidebar items (grade-entitlements will be conditionally included for privileged roles)
+// Added Affiliates tab to the top per request
 const BASE_SIDEBAR_ITEMS = [
+  { id: 'affiliates', label: 'Affiliates' },
   { id: 'departments', label: 'Departments' },
   { id: 'employees', label: 'Employees' },
   { id: 'leave-types', label: 'Leave Types' },
@@ -852,6 +854,24 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
           </div>
 
           <div className="bg-white shadow rounded-md p-4 sm:p-6">
+            {active === 'affiliates' && (
+              <section>
+                <h2 className="text-lg font-medium mb-4">Affiliates</h2>
+                <p className="text-sm text-gray-600 mb-4">This is a simple reference list for HR.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[
+                    { id: 'merban', name: 'Merban Capital' },
+                    { id: 'sdsl', name: 'SDSL' },
+                    { id: 'sbl', name: 'SBL' },
+                  ].map((aff) => (
+                    <div key={aff.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
+                      <p className="text-sm text-gray-600 mt-1">Affiliate</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             {active === 'departments' && (
               <section>
                 <h2 className="text-lg font-medium mb-4">Departments</h2>
