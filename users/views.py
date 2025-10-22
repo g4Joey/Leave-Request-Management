@@ -2,6 +2,7 @@ from django.shortcuts import render
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
+from .models import CustomUser, Department, Affiliate
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
@@ -56,6 +57,54 @@ class UserProfileView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def role_summary(request):
+    """HR-only: Return counts and user lists per role, plus HOD assignments.
+    This helps diagnose role/visibility mismatches in production.
+    """
+    # Enforce HR/Admin permission
+    user = request.user
+    role = getattr(user, 'role', None)
+    if not (getattr(user, 'is_superuser', False) or (role in ['hr', 'admin'])):
+        return Response({"error": "Only HR can view role summary"}, status=status.HTTP_403_FORBIDDEN)
+
+    # Build role summary
+    items = {}
+    # Use distinct roles present in DB to avoid relying on static choices
+    distinct_roles = list(CustomUser.objects.values_list('role', flat=True).distinct())
+    for r in distinct_roles:
+        users_qs = CustomUser.objects.filter(role=r, is_active=True).select_related('department').order_by('last_name', 'first_name')
+        items[r or ''] = {
+            'count': users_qs.count(),
+            'users': [
+                {
+                    'id': u.pk,
+                    'name': u.get_full_name(),
+                    'email': u.email,
+                    'department': u.department.name if getattr(u, 'department', None) else None,
+                }
+                for u in users_qs
+            ]
+        }
+
+    # Department HOD assignments snapshot
+    hods = []
+    for dept in Department.objects.select_related('hod').order_by('name'):
+        if getattr(dept, 'hod', None):
+            hods.append({
+                'department': dept.name,
+                'hod': {
+                    'id': dept.hod.pk,
+                    'name': dept.hod.get_full_name(),
+                    'email': dept.hod.email,
+                }
+            })
+
+    return Response({
+        'roles': items,
+        'hod_assignments': hods,
+    })
 class MyProfileView(APIView):
     """Current user's profile management with image upload support"""
     permission_classes = [permissions.IsAuthenticated]
