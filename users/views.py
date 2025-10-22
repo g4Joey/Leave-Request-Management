@@ -157,7 +157,7 @@ class StaffManagementView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        departments = Department.objects.select_related('affiliate', 'hod').all()
+        departments = Department.objects.select_related('hod').all()
         data = []
         
         import os
@@ -203,10 +203,6 @@ class StaffManagementView(APIView):
                 'id': dept.pk,
                 'name': dept.name,
                 'description': dept.description,
-                'affiliate': (
-                    {'id': dept.affiliate_id, 'name': dept.affiliate.name}
-                    if getattr(dept, 'affiliate', None) else None
-                ),
                 'staff_count': len(staff_data),
                 'staff': staff_data,
                 # Keep key name 'manager' for backward-compatible API, but source from HOD field
