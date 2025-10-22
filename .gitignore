@@ -1,3 +1,23 @@
+# Ignore large build/deploy artifacts
+*.tar
+*.zip
+.tmp-*
+
+# Ignore embedded repo to avoid submodule issues
+generic_export/
+
+# Node and frontend artifacts
+frontend/build/
+staticfiles/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Media/uploads
+media/
+local/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

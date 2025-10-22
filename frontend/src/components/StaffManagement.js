@@ -50,6 +50,7 @@ function StaffManagement() {
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
+  const [newAffiliateModal, setNewAffiliateModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [hodModal, setHodModal] = useState({ open: false, loading: false, department: null, selectedManagerId: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
     open: false, 
@@ -122,19 +123,21 @@ function StaffManagement() {
   }, [fetchStaffData]);
 
   // Fetch affiliates for the Affiliates tab (HR only)
-  useEffect(() => {
-    const loadAffiliates = async () => {
-      try {
-        const res = await api.get('/users/affiliates/');
-        const list = Array.isArray(res.data?.results) ? res.data.results : (res.data || []);
-        setAffiliates(list);
-      } catch (e) {
-        // Non-fatal; keep silent to avoid noise on non-HR sessions
-        console.warn('Failed to load affiliates', e.response?.data || e.message);
-      }
-    };
-    loadAffiliates();
+  const fetchAffiliates = useCallback(async () => {
+    try {
+      const res = await api.get('/users/affiliates/');
+      const list = Array.isArray(res.data?.results) ? res.data.results : (res.data || []);
+      setAffiliates(list);
+    } catch (e) {
+      // Non-fatal; keep silent to avoid noise on non-HR sessions
+      console.warn('Failed to load affiliates', e.response?.data || e.message);
+      setAffiliates([]);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchAffiliates();
+  }, [fetchAffiliates]);
 
 
 
@@ -463,6 +466,10 @@ function StaffManagement() {
     setNewDepartmentModal({ open: true, loading: false, name: '', description: '' });
   };
 
+  const openNewAffiliateModal = () => {
+    setNewAffiliateModal({ open: true, loading: false, name: '', description: '' });
+  };
+
   const createDepartment = async () => {
     const { name, description } = newDepartmentModal;
     if (!name.trim()) {
@@ -480,6 +487,28 @@ function StaffManagement() {
       const msg = error.response?.data?.name?.[0] || error.response?.data?.detail || 'Failed to create department';
       showToast({ type: 'error', message: msg });
       setNewDepartmentModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const createAffiliate = async () => {
+    const { name, description } = newAffiliateModal;
+    if (!name.trim()) {
+      showToast({ type: 'warning', message: 'Affiliate name is required' });
+      return;
+    }
+    try {
+      setNewAffiliateModal((prev) => ({ ...prev, loading: true }));
+      const payload = { name: name.trim() };
+      if (description && description.trim()) payload.description = description.trim();
+      const res = await api.post('/users/affiliates/', payload);
+      showToast({ type: 'success', message: `Affiliate "${res.data?.name || name}" created successfully` });
+      setNewAffiliateModal({ open: false, loading: false, name: '', description: '' });
+      // Refresh list
+      fetchAffiliates();
+    } catch (error) {
+      const msg = error.response?.data?.name?.[0] || error.response?.data?.detail || 'Failed to create affiliate';
+      showToast({ type: 'error', message: msg });
+      setNewAffiliateModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -866,6 +895,14 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
                 >
                   New employee
+                </button>
+              )}
+              {active === 'affiliates' && canManageGradeEntitlements && (
+                <button
+                  onClick={openNewAffiliateModal}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                >
+                  New affiliate
                 </button>
               )}
             </div>
@@ -1551,6 +1588,55 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                 disabled={newEmployeeModal.loading}
               >
                 {newEmployeeModal.loading ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Affiliate Modal */}
+      {newAffiliateModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-4">Create New Affiliate</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Affiliate Name *</label>
+                <input
+                  type="text"
+                  value={newAffiliateModal.name}
+                  onChange={(e) => setNewAffiliateModal((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  placeholder="e.g. MERBAN CAPITAL"
+                  disabled={newAffiliateModal.loading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newAffiliateModal.description}
+                  onChange={(e) => setNewAffiliateModal((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  rows="3"
+                  placeholder="Optional description"
+                  disabled={newAffiliateModal.loading}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setNewAffiliateModal({ open: false, loading: false, name: '', description: '' })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={newAffiliateModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createAffiliate}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700"
+                disabled={newAffiliateModal.loading}
+              >
+                {newAffiliateModal.loading ? 'Creating...' : 'Create'}
               </button>
             </div>
           </div>
