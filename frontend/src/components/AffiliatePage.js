@@ -11,7 +11,7 @@ export default function AffiliatePage() {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [newDept, setNewDept] = useState({ name: '', description: '' });
+  const [newDeptModal, setNewDeptModal] = useState({ open: false, name: '', description: '' });
 
   const load = async () => {
     try {
@@ -37,18 +37,18 @@ export default function AffiliatePage() {
   }, [id]);
 
   const createDepartment = async () => {
-    if (!newDept.name.trim()) {
+    if (!newDeptModal.name.trim()) {
       showToast({ type: 'warning', message: 'Department name is required' });
       return;
     }
     try {
       setCreating(true);
       await api.post('/users/departments/', {
-        name: newDept.name.trim(),
-        description: newDept.description || '',
+        name: newDeptModal.name.trim(),
+        description: newDeptModal.description || '',
         affiliate_id: Number(id),
       });
-      setNewDept({ name: '', description: '' });
+      setNewDeptModal({ open: false, name: '', description: '' });
       await load();
       showToast({ type: 'success', message: 'Department created' });
     } catch (e) {
@@ -86,29 +86,12 @@ export default function AffiliatePage() {
           <h1 className="text-2xl font-semibold mt-1">{affiliate.name}</h1>
         </div>
         <div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newDept.name}
-              onChange={(e) => setNewDept((p) => ({ ...p, name: e.target.value }))}
-              placeholder="New department name"
-              className="border px-3 py-2 rounded-md"
-            />
-            <input
-              type="text"
-              value={newDept.description}
-              onChange={(e) => setNewDept((p) => ({ ...p, description: e.target.value }))}
-              placeholder="Description (optional)"
-              className="border px-3 py-2 rounded-md"
-            />
-            <button
-              onClick={createDepartment}
-              disabled={creating}
-              className="px-3 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700 disabled:opacity-50"
-            >
-              {creating ? 'Creating...' : 'New Department'}
-            </button>
-          </div>
+          <button
+            onClick={() => setNewDeptModal({ open: true, name: '', description: '' })}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-gray-200"
+          >
+            New department
+          </button>
         </div>
       </div>
 
@@ -133,6 +116,54 @@ export default function AffiliatePage() {
           </ul>
         )}
       </div>
+
+      {newDeptModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-4">Create New Department</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
+                <input
+                  type="text"
+                  value={newDeptModal.name}
+                  onChange={(e) => setNewDeptModal((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  placeholder="e.g. Engineering"
+                  disabled={creating}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newDeptModal.description}
+                  onChange={(e) => setNewDeptModal((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  rows="3"
+                  placeholder="Optional description"
+                  disabled={creating}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setNewDeptModal({ open: false, name: '', description: '' })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={creating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createDepartment}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700"
+                disabled={creating}
+              >
+                {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
