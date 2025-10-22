@@ -4,17 +4,22 @@ from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileV
 
 router = DefaultRouter()
 """Router configuration:
-Register the user viewset at the root so that including this urls.py at
-path('api/users/', ...) yields endpoints:
-    /api/users/            -> user list
-    /api/users/<pk>/       -> user detail
+Order matters. Register specific prefixes FIRST (affiliates, departments)
+before the catch-all '' user routes. Otherwise, the '' detail route would
+match '/api/users/affiliates/' as a user detail (pk='affiliates'), causing
+404/405 errors and breaking POST to create affiliates.
 
-Previously this was registered as 'users', producing paths like
-    /api/users/users/<pk>/ which broke frontend calls to /api/users/<pk>/.
+Including this urls.py at path('api/users/', ...) yields endpoints:
+    /api/users/affiliates/        -> affiliates list/create
+    /api/users/affiliates/<pk>/   -> affiliate detail
+    /api/users/departments/       -> departments list/create
+    /api/users/departments/<pk>/  -> department detail
+    /api/users/                   -> user list
+    /api/users/<pk>/              -> user detail
 """
-router.register(r'', UserViewSet, basename='user')
-router.register(r'departments', DepartmentViewSet, basename='department')
 router.register(r'affiliates', AffiliateViewSet, basename='affiliate')
+router.register(r'departments', DepartmentViewSet, basename='department')
+router.register(r'', UserViewSet, basename='user')
 
 urlpatterns = [
     path('profile/', UserProfileView.as_view(), name='user-profile'),
