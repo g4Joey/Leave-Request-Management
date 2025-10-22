@@ -218,7 +218,13 @@ class StaffManagementView(APIView):
                 } if getattr(dept, 'hod', None) else None
             })
         
-        return Response(data)
+        # Also return affiliates for frontend filtering
+        affiliates = Affiliate.objects.filter(is_active=True).values('id', 'name')
+        
+        return Response({
+            'departments': data,
+            'affiliates': list(affiliates)
+        })
     
     def post(self, request):
         """Create a new employee (HR only) with auto-department creation"""

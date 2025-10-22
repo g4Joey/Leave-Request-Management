@@ -31,6 +31,7 @@ function StaffManagement() {
     return items;
   }, [canManageGradeEntitlements]);
   const [departments, setDepartments] = useState([]);
+  const [affiliates, setAffiliates] = useState([]);
   const [expandedAffiliates, setExpandedAffiliates] = useState({});
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
@@ -72,10 +73,13 @@ function StaffManagement() {
     try {
       const response = await api.get('/users/staff/');
       const payload = response?.data;
-      // Normalize departments data to an array
-      const depts = Array.isArray(payload)
-        ? payload
-        : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : []));
+      
+      // Handle new response structure with departments/affiliates keys, or fallback to array format
+      const depts = payload?.departments 
+        ? payload.departments 
+        : (Array.isArray(payload)
+          ? payload
+          : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : [])));
 
       // Coerce shapes defensively
       const safeDepts = (depts || []).map((d) => ({
@@ -84,6 +88,13 @@ function StaffManagement() {
       }));
 
       setDepartments(safeDepts);
+      
+      // Set affiliates from response or extract from departments
+      const affiliatesList = payload?.affiliates 
+        ? payload.affiliates 
+        : [...new Map(safeDepts.filter(d => d.affiliate).map(d => [d.affiliate.id, d.affiliate])).values()];
+      setAffiliates(affiliatesList);
+      
       // Flatten employees for the Employees tab
       const flattened = safeDepts.flatMap((d) =>
         (d.staff || []).map((s) => {
@@ -208,9 +219,13 @@ function StaffManagement() {
   }, [departments]);
 
   const affiliateOptions = useMemo(() => {
+    // Use affiliates from API response when available, fallback to extracting from departments
+    if (affiliates && affiliates.length > 0) {
+      return affiliates.map(a => a.name).sort();
+    }
     const set = new Set((departments || []).map(d => (d.affiliate?.name || 'Unassigned')));
     return Array.from(set).sort();
-  }, [departments]);
+  }, [departments, affiliates]);
 
   const getRoleBadge = (role) => {
     const roleColors = {
