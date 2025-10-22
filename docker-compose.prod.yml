@@ -1,0 +1,41 @@
+version: '3.8'
+
+# Production Docker Compose - uses external RDS and S3
+services:
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: leave-request-app:latest
+    command: /entrypoint.sh
+    ports:
+      - "80:8000"
+    env_file:
+      - .env.production
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  static_volume:
+  media_volume:

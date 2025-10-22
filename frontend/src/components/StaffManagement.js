@@ -6,7 +6,6 @@ import RoleManagement from './RoleManagement';
 
 // Base sidebar items (grade-entitlements will be conditionally included for privileged roles)
 const BASE_SIDEBAR_ITEMS = [
-  { id: 'affiliates', label: 'Affiliates' },
   { id: 'departments', label: 'Departments' },
   { id: 'employees', label: 'Employees' },
   { id: 'leave-types', label: 'Leave Types' },
@@ -32,10 +31,9 @@ function StaffManagement() {
     return items;
   }, [canManageGradeEntitlements]);
   const [departments, setDepartments] = useState([]);
-  const [affiliates, setAffiliates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
-  const [active, setActive] = useState('affiliates');
+  const [active, setActive] = useState('departments');
   const [employees, setEmployees] = useState([]);
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
@@ -102,9 +100,7 @@ function StaffManagement() {
       );
       setEmployees(flattened);
 
-      // Fetch affiliates separately
-      const affiliatesResponse = await api.get('/users/affiliates/');
-      setAffiliates(affiliatesResponse?.data || []);
+  // Affiliates removed
     } catch (error) {
       console.error('Error fetching staff data:', error);
       showToast({
@@ -593,10 +589,9 @@ function StaffManagement() {
           .map((h) => h.trim().toLowerCase());
         
         // Enhanced field mapping
-        const nameIdx = header.indexOf('name');
-        const emailIdx = header.indexOf('email');
-  const deptIdx = header.indexOf('department');
-  const affiliateIdx = header.indexOf('affiliate');
+    const nameIdx = header.indexOf('name');
+    const emailIdx = header.indexOf('email');
+    const deptIdx = header.indexOf('department');
         const roleIdx = header.indexOf('role');
         const employeeIdIdx = header.indexOf('employee_id');
         const hireDateIdx = header.indexOf('hire_date');
@@ -607,7 +602,7 @@ function StaffManagement() {
           return;
         }
         
-        const validRoles = ['junior_staff', 'senior_staff', 'hod', 'hr', 'ceo', 'admin'];
+  const validRoles = ['junior_staff', 'senior_staff', 'hod', 'hr', 'ceo', 'admin'];
         
         const parsed = rows.map((r, i) => {
           const cols = r.split(',').map((c) => c.trim());
@@ -634,14 +629,7 @@ function StaffManagement() {
           
           // Find department ID
           const deptName = cols[deptIdx] || '';
-          const affiliateName = affiliateIdx !== -1 ? (cols[affiliateIdx] || '') : '';
-          const matchedDept = departments.find(d => {
-            const nameMatch = (d.name || '').toLowerCase() === deptName.toLowerCase();
-            if (!nameMatch) return false;
-            if (!affiliateName) return true;
-            const dAffiliate = d.affiliate?.name || '';
-            return dAffiliate.toLowerCase() === affiliateName.toLowerCase();
-          });
+          const matchedDept = departments.find(d => (d.name || '').toLowerCase() === deptName.toLowerCase());
           
           return {
             username,
@@ -652,7 +640,6 @@ function StaffManagement() {
             role: validatedRole,
             hire_date: hireDate,
             department_id: matchedDept?.id || null,
-            affiliate_name: affiliateName || undefined,
             password: 'TempPass123!', // Default temporary password
             is_active_employee: true
           };
@@ -713,9 +700,9 @@ function StaffManagement() {
 
   const handleExportCSV = () => {
     const csv = [
-      'name,email,affiliate,department,employee_id,role',
+      'name,email,department,employee_id,role',
       ...employees.map(
-        (e) => `${e.name || ''},${e.email || ''},${e.affiliate || ''},${e.department || ''},${e.employee_id || ''},${e.role || ''}`
+        (e) => `${e.name || ''},${e.email || ''},${e.department || ''},${e.employee_id || ''},${e.role || ''}`
       ),
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -729,11 +716,11 @@ function StaffManagement() {
   };
 
   const downloadTemplateCSV = () => {
-    const csv = `name,email,affiliate,department,role,employee_id,hire_date
-John Doe,john.doe@company.com,Merban Capital,IT,senior_staff,EMP001,2023-01-15
-Jane Smith,jane.smith@company.com,SDSL,HR,hod,HOD001,2022-03-01
-Alice Johnson,alice.johnson@company.com,SBL,Finance,junior_staff,EMP002,2024-06-10
-Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-22`;
+  const csv = `name,email,department,role,employee_id,hire_date
+John Doe,john.doe@company.com,IT,senior_staff,EMP001,2023-01-15
+Jane Smith,jane.smith@company.com,HR,hod,HOD001,2022-03-01
+Alice Johnson,alice.johnson@company.com,Finance,junior_staff,EMP002,2024-06-10
+Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1047,37 +1034,7 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
               </section>
             )}
 
-            {active === 'affiliates' && (
-              <section>
-                <h2 className="text-lg font-medium mb-4">Affiliates</h2>
-                {affiliates.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {affiliates.map((affiliate) => (
-                      <div key={affiliate.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white p-6">
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">{affiliate.name}</h3>
-                        {affiliate.description && (
-                          <p className="text-sm text-gray-600 mb-3">{affiliate.description}</p>
-                        )}
-                        <div className="flex items-center justify-between">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            affiliate.is_active 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {affiliate.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                          <span className="text-sm text-gray-500">
-                            ID: {affiliate.id}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="py-8 text-center text-gray-500">No affiliates found.</div>
-                )}
-              </section>
-            )}
+            {/* Affiliates section removed */}
 
             {active === 'leave-types' && (
               <section>
@@ -1733,10 +1690,11 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
                   >
                     <option value="">-- No HOD (Remove current) --</option>
                     {employees
-                      .filter(emp => emp.role === 'hod' || emp.role === 'hr' || emp.role === 'admin')
+                      .filter(emp => emp.department === hodModal.department?.name)
+                      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                       .map(emp => (
                         <option key={emp.id} value={emp.id}>
-                          {emp.name} ({emp.employee_id}) - {emp.role}
+                          {emp.name} ({emp.employee_id})
                         </option>
                       ))}
                   </select>

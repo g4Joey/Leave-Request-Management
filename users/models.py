@@ -2,25 +2,9 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
-class Affiliate(models.Model):
-    """
-    Affiliate model for organizing departments under different business entities
-    """
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    is_active = models.BooleanField(default=True)
-    
-    def __str__(self):
-        return self.name
-    
-    class Meta:
-        ordering = ['name']
-
-
 class Department(models.Model):
     """
-    Department model for organizing users within affiliates
+    Department model for organizing users within the company
     """
     APPROVAL_FLOW_CHOICES = [
         ('hod_only', 'HOD Only'),
@@ -31,7 +15,6 @@ class Department(models.Model):
     
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    affiliate = models.ForeignKey(Affiliate, on_delete=models.CASCADE, related_name='departments')
     created_at = models.DateTimeField(auto_now_add=True)
     
     # Head of Department (HOD) / Manager for this department
@@ -49,11 +32,10 @@ class Department(models.Model):
     )
     
     def __str__(self):
-        return f"{self.affiliate.name} - {self.name}"
+        return self.name
     
     class Meta:
-        ordering = ['affiliate__name', 'name']
-        unique_together = ['affiliate', 'name']  # Same department name allowed across different affiliates
+        ordering = ['name']
 
 
 class CustomUser(AbstractUser):

@@ -2,14 +2,14 @@ from django.shortcuts import render
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
-from .models import CustomUser, Department, Affiliate
+from .models import CustomUser, Department
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
 from typing import cast
-from .models import CustomUser, Department, Affiliate
-from .serializers import UserSerializer, DepartmentSerializer, AffiliateSerializer
+from .models import CustomUser, Department
+from .serializers import UserSerializer, DepartmentSerializer
 
 User = get_user_model()
 
@@ -285,28 +285,14 @@ class StaffManagementView(APIView):
         # Handle department auto-creation if needed
         data = request.data.copy()
         department_name = data.get('department_name')
-        affiliate_id = data.get('affiliate_id')
-        affiliate_name = data.get('affiliate_name')
-
-        affiliate_obj = None
-        if affiliate_id:
-            affiliate_obj = Affiliate.objects.filter(pk=affiliate_id, is_active=True).first()
-        elif affiliate_name:
-            affiliate_obj, _ = Affiliate.objects.get_or_create(name=affiliate_name.strip(), defaults={'description': ''})
-        else:
-            # Default all legacy imports to Merban Capital if it exists
-            affiliate_obj = Affiliate.objects.filter(name__iexact='Merban Capital').first()
         if department_name and not data.get('department_id'):
             # Try to find existing department
             department_qs = Department.objects.filter(name__iexact=department_name)
-            if affiliate_obj:
-                department_qs = department_qs.filter(affiliate=affiliate_obj)
             department = department_qs.first()
             if not department:
                 # Create new department
                 department = Department.objects.create(
                     name=department_name,
-                    affiliate=affiliate_obj,
                     description=f"Auto-created during employee import"
                 )
             data['department_id'] = department.id
@@ -376,24 +362,12 @@ class DepartmentViewSet(viewsets.ModelViewSet):
             'department': {
                 'id': department.pk,
                 'name': department.name,
-                'affiliate': {'id': department.affiliate_id, 'name': department.affiliate.name} if department.affiliate_id else None,
                 'manager': manager_info
             }
         })
 
 
-class AffiliateViewSet(viewsets.ModelViewSet):
-    """Minimal Affiliate CRUD for HR"""
-    queryset = Affiliate.objects.filter(is_active=True)
-    serializer_class = AffiliateSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            permission_classes = [permissions.IsAuthenticated, IsHRPermission]
-        else:
-            permission_classes = [permissions.IsAuthenticated]
-        return [permission() for permission in permission_classes]
+## Affiliate endpoints removed
 
 
 @api_view(['GET'])

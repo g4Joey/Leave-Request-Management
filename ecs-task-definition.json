@@ -1,0 +1,70 @@
+{
+  "family": "leave-request-app-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::YOUR-ACCOUNT-ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::YOUR-ACCOUNT-ID:role/ecsTaskRole", 
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "YOUR-ACCOUNT-ID.dkr.ecr.us-east-1.amazonaws.com/leave-request-app:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "DJANGO_SETTINGS_MODULE",
+          "value": "leave_management.settings_aws"
+        },
+        {
+          "name": "PORT", 
+          "value": "8000"
+        },
+        {
+          "name": "RUN_SEED_ON_DEPLOY",
+          "value": "1"
+        },
+        {
+          "name": "SETUP_FRESH_DATABASE", 
+          "value": "1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR-ACCOUNT-ID:secret:leave-app/django-secret"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR-ACCOUNT-ID:secret:leave-app/database-url"
+        },
+        {
+          "name": "SEED_USERS",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR-ACCOUNT-ID:secret:leave-app/seed-users"
+        },
+        {
+          "name": "CEO_EMAIL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR-ACCOUNT-ID:secret:leave-app/ceo-email"
+        },
+        {
+          "name": "CEO_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR-ACCOUNT-ID:secret:leave-app/ceo-password"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/leave-request-app",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

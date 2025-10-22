@@ -1,0 +1,68 @@
+{
+  "family": "leave-request-app-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::647132523767:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::647132523767:role/ecsTaskRole", 
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "647132523767.dkr.ecr.eu-north-1.amazonaws.com/leave-request-app:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "DJANGO_SETTINGS_MODULE",
+          "value": "leave_management.settings_aws"
+        },
+        {
+          "name": "PORT", 
+          "value": "8000"
+        },
+        {
+          "name": "RUN_SEED_ON_DEPLOY",
+          "value": "1"
+        },
+        {
+          "name": "SETUP_FRESH_DATABASE", 
+          "value": "1"
+        },
+        {
+          "name": "SECRET_KEY",
+          "value": "django-insecure-p@ssw0rd_ch@ng3_th1s_1n_pr0duct10n_l0ng_r@nd0m_k3y"
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": "mysql://g4Joey:RqDaBdWTyNXqMvGIH63E@database-1.cxa60qms0gff.eu-north-1.rds.amazonaws.com:3306/database-1"
+        },
+        {
+          "name": "SEED_USERS",
+          "value": "[{\"username\":\"jmankoe\",\"first_name\":\"Ato\",\"last_name\":\"Mankoe\",\"email\":\"jmankoe@umbcapital.com\",\"role\":\"manager\",\"department\":\"IT\",\"password\":\"Atokwamena\"},{\"username\":\"aakorfu\",\"first_name\":\"Augustine\",\"last_name\":\"Akorfu\",\"email\":\"aakorfu@umbcapital.com\",\"role\":\"staff\",\"department\":\"IT\",\"password\":\"AustineAkorfu\"},{\"username\":\"gsafo\",\"first_name\":\"George\",\"last_name\":\"Safo\",\"email\":\"gsafo@umbcapital.com\",\"role\":\"staff\",\"department\":\"IT\",\"password\":\"Georgesafo\"}]"
+        },
+        {
+          "name": "CEO_EMAIL",
+          "value": "ceo@yourcompany.com"
+        },
+        {
+          "name": "CEO_PASSWORD",
+          "value": "YourSecureCEOPassword123!"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/leave-request-app",
+          "awslogs-region": "eu-north-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
