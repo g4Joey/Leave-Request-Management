@@ -6,6 +6,7 @@ import RoleManagement from './RoleManagement';
 
 // Base sidebar items (grade-entitlements will be conditionally included for privileged roles)
 const BASE_SIDEBAR_ITEMS = [
+  { id: 'affiliates', label: 'Affiliates' },
   { id: 'departments', label: 'Departments' },
   { id: 'employees', label: 'Employees' },
   { id: 'leave-types', label: 'Leave Types' },
@@ -32,13 +33,11 @@ function StaffManagement() {
   }, [canManageGradeEntitlements]);
   const [departments, setDepartments] = useState([]);
   const [affiliates, setAffiliates] = useState([]);
-  const [expandedAffiliates, setExpandedAffiliates] = useState({});
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
-  const [active, setActive] = useState('departments');
+  const [active, setActive] = useState('affiliates');
   const [employees, setEmployees] = useState([]);
   const [employeeQuery, setEmployeeQuery] = useState('');
-  const [employeeAffiliateFilter, setEmployeeAffiliateFilter] = useState('');
   const fileInputRef = useRef(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
@@ -71,15 +70,14 @@ function StaffManagement() {
 
   const fetchStaffData = useCallback(async () => {
     try {
+      // Fetch departments/employees
       const response = await api.get('/users/staff/');
       const payload = response?.data;
       
-      // Handle new response structure with departments/affiliates keys, or fallback to array format
-      const depts = payload?.departments 
-        ? payload.departments 
-        : (Array.isArray(payload)
-          ? payload
-          : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : [])));
+      // Handle simple array format (original structure)
+      const depts = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : []));
 
       // Coerce shapes defensively
       const safeDepts = (depts || []).map((d) => ({
@@ -89,30 +87,24 @@ function StaffManagement() {
 
       setDepartments(safeDepts);
       
-      // Set affiliates from response or extract from departments
-      const affiliatesList = payload?.affiliates 
-        ? payload.affiliates 
-        : [...new Map(safeDepts.filter(d => d.affiliate).map(d => [d.affiliate.id, d.affiliate])).values()];
-      setAffiliates(affiliatesList);
-      
       // Flatten employees for the Employees tab
       const flattened = safeDepts.flatMap((d) =>
-        (d.staff || []).map((s) => {
-
-          return {
-            id: s.id,
-            name: cleanName(s.name),
-            email: s.email,
-            department: d.name,
-            affiliate: d.affiliate?.name || '',
-            employee_id: s.employee_id,
-            role: s.role,
-            manager: s.manager,
-            hire_date: s.hire_date,
-          };
-        })
+        (d.staff || []).map((s) => ({
+          id: s.id,
+          name: cleanName(s.name),
+          email: s.email,
+          department: d.name,
+          employee_id: s.employee_id,
+          role: s.role,
+          manager: s.manager,
+          hire_date: s.hire_date,
+        }))
       );
       setEmployees(flattened);
+
+      // Fetch affiliates separately
+      const affiliatesResponse = await api.get('/users/affiliates/');
+      setAffiliates(affiliatesResponse?.data || []);
     } catch (error) {
       console.error('Error fetching staff data:', error);
       showToast({
@@ -128,15 +120,7 @@ function StaffManagement() {
     fetchStaffData();
   }, [fetchStaffData]);
 
-  // Expand all affiliates by default on first load or when departments change
-  useEffect(() => {
-    const initial = {};
-    (departments || []).forEach(d => {
-      const key = (d.affiliate?.name || 'Unassigned').trim();
-      initial[key] = true;
-    });
-    setExpandedAffiliates(prev => ({ ...initial, ...prev }));
-  }, [departments]);
+
 
   // Force refresh data when component becomes visible
   useEffect(() => {
@@ -196,36 +180,7 @@ function StaffManagement() {
     }));
   };
 
-  const toggleAffiliate = (affiliateKey) => {
-    setExpandedAffiliates((prev) => ({
-      ...prev,
-      [affiliateKey]: !prev[affiliateKey],
-    }));
-  };
 
-  // Group departments by affiliate for collapsible Affiliate -> Departments -> Staff
-  const groupedByAffiliate = useMemo(() => {
-    const groups = {};
-    (departments || []).forEach((d) => {
-      const name = (d.affiliate?.name || 'Unassigned').trim();
-      if (!groups[name]) groups[name] = [];
-      groups[name].push(d);
-    });
-    // sort departments within affiliate
-    Object.keys(groups).forEach((k) => {
-      groups[k].sort((a, b) => a.name.localeCompare(b.name));
-    });
-    return groups;
-  }, [departments]);
-
-  const affiliateOptions = useMemo(() => {
-    // Use affiliates from API response when available, fallback to extracting from departments
-    if (affiliates && affiliates.length > 0) {
-      return affiliates.map(a => a.name).sort();
-    }
-    const set = new Set((departments || []).map(d => (d.affiliate?.name || 'Unassigned')));
-    return Array.from(set).sort();
-  }, [departments, affiliates]);
 
   const getRoleBadge = (role) => {
     const roleColors = {
@@ -262,19 +217,15 @@ function StaffManagement() {
 
   const filteredEmployees = useMemo(() => {
     const q = employeeQuery.trim().toLowerCase();
-    let list = employees;
-    if (employeeAffiliateFilter) {
-      list = list.filter(e => (e.affiliate || 'Unassigned') === employeeAffiliateFilter);
-    }
-    if (!q) return list;
-    return list.filter(
+    if (!q) return employees;
+    return employees.filter(
       (e) =>
         e.name?.toLowerCase().includes(q) ||
         e.email?.toLowerCase().includes(q) ||
         e.department?.toLowerCase().includes(q) ||
         e.employee_id?.toLowerCase().includes(q)
     );
-  }, [employeeQuery, employeeAffiliateFilter, employees]);
+  }, [employeeQuery, employees]);
 
   const [selectedRole, setSelectedRole] = useState('');
 
@@ -916,114 +867,103 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
           <div className="bg-white shadow rounded-md p-4 sm:p-6">
             {active === 'departments' && (
               <section>
-                <h2 className="text-lg font-medium mb-4">Affiliates → Departments → Staff</h2>
-                {Object.keys(groupedByAffiliate).length > 0 ? (
-                  <div className="space-y-4">
-                    {Object.entries(groupedByAffiliate).map(([affiliateName, depts]) => (
-                      <div key={affiliateName} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <h2 className="text-lg font-medium mb-4">Departments</h2>
+                {departments.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {departments.map((dept) => (
+                      <div key={dept.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
                         <button
-                          onClick={() => toggleAffiliate(affiliateName)}
-                          className="w-full px-4 py-3 text-left hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors"
+                          onClick={() => toggleDepartment(dept.id)}
+                          className="w-full px-4 py-4 text-left hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors"
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-base font-semibold text-gray-900">{affiliateName}</h3>
-                              <span className="text-xs text-gray-500">{depts.length} dept{depts.length !== 1 ? 's' : ''}</span>
+                            <div>
+                              <h4 className="text-lg font-medium text-gray-900">{dept.name}</h4>
+                              {dept.description && (
+                                <p className="text-sm text-gray-500 mt-1">{dept.description}</p>
+                              )}
+                              <p className="text-sm text-gray-600 mt-1">
+                                {dept.staff_count} staff member{dept.staff_count !== 1 ? 's' : ''}
+                              </p>
+                              {dept.manager ? (
+                                <p className="text-sm text-blue-600 mt-1">
+                                  <span className="font-medium">HOD:</span> {dept.manager.name} ({dept.manager.employee_id})
+                                </p>
+                              ) : (
+                                <p className="text-sm text-amber-600 mt-1">
+                                  <span className="font-medium">⚠️ No HOD assigned</span>
+                                </p>
+                              )}
                             </div>
-                            <svg
-                              className={`h-5 w-5 text-gray-400 transform transition-transform ${expandedAffiliates[affiliateName] ? 'rotate-90' : ''}`}
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                            >
-                              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                            </svg>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openHodModal(dept);
+                                }}
+                                className="px-3 py-1 text-xs font-medium rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                              >
+                                Set HOD
+                              </button>
+                              <div className="flex-shrink-0">
+                                <svg
+                                  className={`h-5 w-5 text-gray-400 transform transition-transform ${
+                                    expandedDepts[dept.id] ? 'rotate-90' : ''
+                                  }`}
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </div>
+                            </div>
                           </div>
                         </button>
 
-                        {expandedAffiliates[affiliateName] && (
+                        {expandedDepts[dept.id] && (
                           <div className="px-4 pb-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                              {depts.map((dept) => (
-                                <div key={dept.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-                                  <button
-                                    onClick={() => toggleDepartment(dept.id)}
-                                    className="w-full px-4 py-3 text-left hover:bg-gray-50 focus:outline-none focus:bg-gray-50 transition-colors"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div>
-                                        <h4 className="text-lg font-medium text-gray-900">{dept.name}</h4>
-                                        {dept.description && (
-                                          <p className="text-sm text-gray-500 mt-1">{dept.description}</p>
-                                        )}
-                                        <p className="text-sm text-gray-600 mt-1">
-                                          {dept.staff_count} staff member{dept.staff_count !== 1 ? 's' : ''}
-                                        </p>
-                                        {dept.manager ? (
-                                          <p className="text-sm text-blue-600 mt-1">
-                                            <span className="font-medium">HOD:</span> {dept.manager.name} ({dept.manager.employee_id})
-                                          </p>
-                                        ) : (
-                                          <p className="text-sm text-amber-600 mt-1">
-                                            <span className="font-medium">⚠️ No HOD assigned</span>
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openHodModal(dept);
-                                          }}
-                                          className="px-3 py-1 text-xs font-medium rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
-                                        >
-                                          Set HOD
-                                        </button>
-                                        <svg
-                                          className={`h-5 w-5 text-gray-400 transform transition-transform ${expandedDepts[dept.id] ? 'rotate-90' : ''}`}
-                                          viewBox="0 0 20 20"
-                                          fill="currentColor"
-                                        >
-                                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                      </div>
-                                    </div>
-                                  </button>
-
-                                  {expandedDepts[dept.id] && (
-                                    <div className="px-4 pb-4">
-                                      {dept.staff.length > 0 ? (
-                                        <div className="space-y-3">
-                                          {dept.staff.map((staff) => (
-                                            <div key={staff.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                              <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                  <div className="flex items-center gap-3">
-                                                    <h5 className="text-sm font-semibold text-gray-900">{cleanName(staff.name)}</h5>
-                                                    {getRoleBadge(staff.role)}
-                                                  </div>
-                                                  <div className="mt-2 space-y-1">
-                                                    <p className="text-sm text-gray-600"><span className="font-medium">Employee ID:</span> {staff.employee_id}</p>
-                                                    <p className="text-sm text-gray-600"><span className="font-medium">Email:</span> {staff.email}</p>
-                                                    {staff.hire_date && (
-                                                      <p className="text-sm text-gray-600"><span className="font-medium">Hire Date:</span> {new Date(staff.hire_date).toLocaleDateString()}</p>
-                                                    )}
-                                                    {staff.manager && (
-                                                      <p className="text-sm text-gray-600"><span className="font-medium">Approver:</span> {cleanName(staff.manager.name)} ({staff.manager.employee_id})</p>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))}
+                            {dept.staff.length > 0 ? (
+                              <div className="space-y-3">
+                                {dept.staff.map((staff) => (
+                                  <div key={staff.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-3">
+                                          <h5 className="text-sm font-semibold text-gray-900">{cleanName(staff.name)}</h5>
+                                          {getRoleBadge(staff.role)}
                                         </div>
-                                      ) : (
-                                        <div className="text-sm text-gray-500 italic">No staff members in this department.</div>
-                                      )}
+                                        <div className="mt-2 space-y-1">
+                                          <p className="text-sm text-gray-600">
+                                            <span className="font-medium">Employee ID:</span> {staff.employee_id}
+                                          </p>
+                                          <p className="text-sm text-gray-600">
+                                            <span className="font-medium">Email:</span> {staff.email}
+                                          </p>
+                                          {staff.hire_date && (
+                                            <p className="text-sm text-gray-600">
+                                              <span className="font-medium">Hire Date:</span>{' '}
+                                              {new Date(staff.hire_date).toLocaleDateString()}
+                                            </p>
+                                          )}
+                                          {staff.manager && (
+                                            <p className="text-sm text-gray-600">
+                                              <span className="font-medium">Approver:</span>{' '}
+                                              {cleanName(staff.manager.name)} ({staff.manager.employee_id})
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-500 italic">No staff members in this department.</div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1040,17 +980,6 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-medium">Employees</h2>
                   <div className="flex items-center gap-2">
-                    <select
-                      value={employeeAffiliateFilter}
-                      onChange={(e) => setEmployeeAffiliateFilter(e.target.value)}
-                      className="border px-3 py-2 rounded-md"
-                      aria-label="Filter by affiliate"
-                    >
-                      <option value="">All Affiliates</option>
-                      {affiliateOptions.map(name => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
                     <input
                       type="search"
                       value={employeeQuery}
@@ -1068,10 +997,10 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
                       <tr>
                         <th className="px-3 py-2">Name</th>
                         <th className="px-3 py-2">Email</th>
-                        <th className="px-3 py-2">Affiliate</th>
                         <th className="px-3 py-2">Department</th>
                         <th className="px-3 py-2">Employee ID</th>
                         <th className="px-3 py-2">Role</th>
+                        <th className="px-3 py-2">Grade</th>
                         <th className="px-3 py-2">Actions</th>
                       </tr>
                     </thead>
@@ -1080,7 +1009,6 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
                         <tr key={emp.id} className="border-t">
                           <td className="px-3 py-2">{emp.name}</td>
                           <td className="px-3 py-2">{emp.email}</td>
-                          <td className="px-3 py-2">{emp.affiliate || '—'}</td>
                           <td className="px-3 py-2">{emp.department}</td>
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>
@@ -1116,6 +1044,38 @@ Bob Wilson,bob.wilson@company.com,Merban Capital,IT,senior_staff,EMP003,2023-08-
                     </tbody>
                   </table>
                 </div>
+              </section>
+            )}
+
+            {active === 'affiliates' && (
+              <section>
+                <h2 className="text-lg font-medium mb-4">Affiliates</h2>
+                {affiliates.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {affiliates.map((affiliate) => (
+                      <div key={affiliate.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white p-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">{affiliate.name}</h3>
+                        {affiliate.description && (
+                          <p className="text-sm text-gray-600 mb-3">{affiliate.description}</p>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            affiliate.is_active 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {affiliate.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                          <span className="text-sm text-gray-500">
+                            ID: {affiliate.id}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-gray-500">No affiliates found.</div>
+                )}
               </section>
             )}
 
