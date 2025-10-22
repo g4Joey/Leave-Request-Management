@@ -151,7 +151,8 @@ class StaffManagementView(APIView):
         # Cast to CustomUser to access role attribute
         user = request.user
         role = getattr(user, 'role', None)
-        if not (getattr(user, 'is_superuser', False) or (role in ['hr', 'admin'])):
+        # Allow HR/Admin full access; allow CEO read-only access to view staff
+        if not (getattr(user, 'is_superuser', False) or (role in ['hr', 'admin', 'ceo'])):
             return Response(
                 {"error": "Only HR can access staff information"}, 
                 status=status.HTTP_403_FORBIDDEN
@@ -162,8 +163,16 @@ class StaffManagementView(APIView):
         
         import os
         show_demo = os.environ.get('SHOW_DEMO_USERS') == '1'
+        from django.db.models import Q
+
         for dept in departments:
-            staff_qs = CustomUser.objects.filter(department=dept, is_active_employee=True)
+            # Be permissive: include users who are either explicitly active employees
+            # or have the general is_active flag to avoid empty results in older datasets
+            staff_qs = CustomUser.objects.filter(
+                department=dept
+            ).filter(
+                Q(is_active_employee=True) | Q(is_active=True)
+            )
             if not show_demo:
                 staff_qs = staff_qs.exclude(is_demo=True)
             staff_members = staff_qs
