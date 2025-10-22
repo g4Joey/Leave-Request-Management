@@ -408,7 +408,7 @@ class AffiliateViewSet(viewsets.ModelViewSet):
         # Auto-seed initial affiliates if none exist
         if Affiliate.objects.count() == 0:
             Affiliate.objects.bulk_create([
-                Affiliate(name='Merban Capital'),
+                Affiliate(name='MERBAN CAPITAL'),
                 Affiliate(name='SDSL'),
                 Affiliate(name='SBL'),
             ])
