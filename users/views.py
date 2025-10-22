@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from .models import CustomUser, Department
 from rest_framework.views import APIView
+from django.conf import settings
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
@@ -211,15 +212,26 @@ class StaffManagementView(APIView):
         data = []
         
         import os
-        show_demo = os.environ.get('SHOW_DEMO_USERS') == '1'
+        # Control demo user visibility:
+        # - SHOW_DEMO_USERS=1 forces inclusion
+        # - EXCLUDE_DEMO_USERS=1 forces exclusion
+        # - Otherwise: default behavior excludes demo when DEBUG is False (production), includes in DEBUG
+        show_demo_env = os.environ.get('SHOW_DEMO_USERS')
+        exclude_demo_env = os.environ.get('EXCLUDE_DEMO_USERS')
+        if show_demo_env == '1':
+            exclude_demo = False
+        elif exclude_demo_env == '1':
+            exclude_demo = True
+        else:
+            # Default: hide demo users in production
+            exclude_demo = not bool(getattr(settings, 'DEBUG', False))
         for dept in departments:
             # Use a simple, reliable filter to avoid missing users on legacy datasets
             staff_qs = CustomUser.objects.filter(
                 department=dept,
                 is_active=True,
             )
-            # Exclude demo users only if explicitly configured to do so
-            exclude_demo = os.environ.get('EXCLUDE_DEMO_USERS') == '1'
+            # Apply demo exclusion policy decided above
             if exclude_demo:
                 staff_qs = staff_qs.exclude(is_demo=True)
             staff_members = staff_qs
