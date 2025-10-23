@@ -51,6 +51,8 @@ function StaffManagement() {
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [newAffiliateModal, setNewAffiliateModal] = useState({ open: false, loading: false, name: '', description: '' });
+  const [deleteEmployeeModal, setDeleteEmployeeModal] = useState({ open: false, selected: {}, processing: false });
+  const [deleteAffiliateModal, setDeleteAffiliateModal] = useState({ open: false, selected: {}, processing: false });
   const [hodModal, setHodModal] = useState({ open: false, loading: false, department: null, selectedManagerId: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ 
     open: false, 
@@ -897,12 +899,28 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                   New employee
                 </button>
               )}
+              {active === 'employees' && (
+                <button
+                  onClick={() => setDeleteEmployeeModal({ open: true, selected: {}, processing: false })}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-red-600 text-red-600"
+                >
+                  Delete employees
+                </button>
+              )}
               {active === 'affiliates' && canManageGradeEntitlements && (
                 <button
                   onClick={openNewAffiliateModal}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
                 >
                   New affiliate
+                </button>
+              )}
+              {active === 'affiliates' && canManageGradeEntitlements && (
+                <button
+                  onClick={() => setDeleteAffiliateModal({ open: true, selected: {}, processing: false })}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-red-600 text-red-600"
+                >
+                  Delete affiliates
                 </button>
               )}
             </div>
@@ -1637,6 +1655,188 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                 disabled={newAffiliateModal.loading}
               >
                 {newAffiliateModal.loading ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Employees Modal */}
+      {deleteEmployeeModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold mb-4">Delete Employees</h3>
+            {employees.length === 0 ? (
+              <div className="text-sm text-gray-500">There are no employees to delete.</div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    className="text-sm text-sky-600 hover:underline"
+                    onClick={() => {
+                      const all = {};
+                      employees.forEach(e => { all[e.id] = true; });
+                      setDeleteEmployeeModal(prev => ({ ...prev, selected: all }));
+                    }}
+                  >
+                    Select all
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    Selected: {Object.values(deleteEmployeeModal.selected).filter(Boolean).length}
+                  </div>
+                </div>
+                <div className="max-h-64 overflow-y-auto border rounded">
+                  {employees.map((emp) => (
+                    <label key={emp.id} className="flex items-start gap-3 p-3 border-b last:border-b-0">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={!!deleteEmployeeModal.selected[emp.id]}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setDeleteEmployeeModal(prev => ({
+                            ...prev,
+                            selected: { ...prev.selected, [emp.id]: checked },
+                          }));
+                        }}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">{emp.name} <span className="text-gray-500">({emp.employee_id})</span></div>
+                        <div className="text-sm text-gray-600">{emp.email} · {emp.department}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setDeleteEmployeeModal({ open: false, selected: {}, processing: false })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={deleteEmployeeModal.processing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const ids = Object.keys(deleteEmployeeModal.selected).filter((k) => deleteEmployeeModal.selected[k]).map(Number);
+                  if (ids.length === 0) {
+                    showToast({ type: 'warning', message: 'Select at least one employee to delete' });
+                    return;
+                  }
+                  try {
+                    setDeleteEmployeeModal(prev => ({ ...prev, processing: true }));
+                    const results = await Promise.allSettled(ids.map((empId) => api.delete(`/users/${empId}/`)));
+                    const failed = results.filter(r => r.status === 'rejected');
+                    if (failed.length > 0) {
+                      showToast({ type: 'warning', message: `Deleted ${ids.length - failed.length} of ${ids.length} employees (some failed)` });
+                    } else {
+                      showToast({ type: 'success', message: `Deleted ${ids.length} employee${ids.length === 1 ? '' : 's'}` });
+                    }
+                    await fetchStaffData();
+                    setDeleteEmployeeModal({ open: false, selected: {}, processing: false });
+                  } catch (e) {
+                    const msg = e.response?.data?.detail || 'Failed to delete employees';
+                    showToast({ type: 'error', message: msg });
+                    setDeleteEmployeeModal(prev => ({ ...prev, processing: false }));
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-red-600 text-white bg-red-600 hover:bg-red-700"
+                disabled={deleteEmployeeModal.processing || Object.values(deleteEmployeeModal.selected).every(v => !v)}
+              >
+                {deleteEmployeeModal.processing ? 'Deleting...' : 'Delete selected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Affiliates Modal */}
+      {deleteAffiliateModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold mb-4">Delete Affiliates</h3>
+            {affiliates.length === 0 ? (
+              <div className="text-sm text-gray-500">There are no affiliates to delete.</div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    className="text-sm text-sky-600 hover:underline"
+                    onClick={() => {
+                      const all = {};
+                      affiliates.forEach(a => { all[a.id] = true; });
+                      setDeleteAffiliateModal(prev => ({ ...prev, selected: all }));
+                    }}
+                  >
+                    Select all
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    Selected: {Object.values(deleteAffiliateModal.selected).filter(Boolean).length}
+                  </div>
+                </div>
+                <div className="max-h-64 overflow-y-auto border rounded">
+                  {affiliates.map((a) => (
+                    <label key={a.id} className="flex items-start gap-3 p-3 border-b last:border-b-0">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={!!deleteAffiliateModal.selected[a.id]}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setDeleteAffiliateModal(prev => ({
+                            ...prev,
+                            selected: { ...prev.selected, [a.id]: checked },
+                          }));
+                        }}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">{a.name}</div>
+                        {a.description && <div className="text-sm text-gray-600">{a.description}</div>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setDeleteAffiliateModal({ open: false, selected: {}, processing: false })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={deleteAffiliateModal.processing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const ids = Object.keys(deleteAffiliateModal.selected).filter((k) => deleteAffiliateModal.selected[k]).map(Number);
+                  if (ids.length === 0) {
+                    showToast({ type: 'warning', message: 'Select at least one affiliate to delete' });
+                    return;
+                  }
+                  try {
+                    setDeleteAffiliateModal(prev => ({ ...prev, processing: true }));
+                    const results = await Promise.allSettled(ids.map((affId) => api.delete(`/users/affiliates/${affId}/`)));
+                    const failed = results.filter(r => r.status === 'rejected');
+                    if (failed.length > 0) {
+                      showToast({ type: 'warning', message: `Deleted ${ids.length - failed.length} of ${ids.length} affiliates (some failed)` });
+                    } else {
+                      showToast({ type: 'success', message: `Deleted ${ids.length} affiliate${ids.length === 1 ? '' : 's'}` });
+                    }
+                    await fetchAffiliates();
+                    // Departments may have been cascaded; refresh staff data too
+                    await fetchStaffData();
+                    setDeleteAffiliateModal({ open: false, selected: {}, processing: false });
+                  } catch (e) {
+                    const msg = e.response?.data?.detail || 'Failed to delete affiliates';
+                    showToast({ type: 'error', message: msg });
+                    setDeleteAffiliateModal(prev => ({ ...prev, processing: false }));
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-red-600 text-white bg-red-600 hover:bg-red-700"
+                disabled={deleteAffiliateModal.processing || Object.values(deleteAffiliateModal.selected).every(v => !v)}
+              >
+                {deleteAffiliateModal.processing ? 'Deleting...' : 'Delete selected'}
               </button>
             </div>
           </div>
