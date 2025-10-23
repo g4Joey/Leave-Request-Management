@@ -35,18 +35,33 @@ class Command(BaseCommand):
             
             created_departments = {}
             for dept_name, dept_desc in departments_data:
-                dept, created = Department.objects.get_or_create(
-                    name=dept_name,
-                    defaults={'description': dept_desc}
-                )
-                created_departments[dept_name] = dept
-                if created:
-                    self.stdout.write(f'Created department: {dept_name}')
-                else:
+                # Be defensive: legacy datasets may contain duplicate department names.
+                # Prefer the oldest one and normalize by moving users, then deleting extras.
+                existing_qs = Department.objects.filter(name__iexact=dept_name).order_by('id')
+                if existing_qs.exists():
+                    dept = existing_qs.first()
+                    dupes = list(existing_qs[1:])
+                    if dupes:
+                        # Rehome any users referencing duplicate departments, then delete dupes
+                        moved_total = 0
+                        for d in dupes:
+                            moved = CustomUser.objects.filter(department=d).update(department=dept)
+                            moved_total += moved
+                            try:
+                                d.delete()
+                            except Exception as e:
+                                self.stdout.write(self.style.WARNING(f'Could not delete duplicate department "{d.name}" (id={d.id}): {e}'))
+                        if moved_total:
+                            self.stdout.write(f'Merged {len(dupes)} duplicate department(s) into "{dept_name}" and reassigned {moved_total} user(s).')
                     self.stdout.write(f'Department already exists: {dept_name}')
+                else:
+                    dept = Department.objects.create(name=dept_name, description=dept_desc)
+                    self.stdout.write(f'Created department: {dept_name}')
+
+                created_departments[dept_name] = dept
                 # Keep department description up-to-date (idempotent)
-                if dept.description != dept_desc:
-                    Department.objects.filter(pk=dept.pk).update(description=dept_desc)
+                if dept and getattr(dept, 'description', None) != dept_desc:
+                    Department.objects.filter(pk=getattr(dept, 'pk')).update(description=dept_desc)
                     self.stdout.write(f'Updated description for department: {dept_name}')
             
             # If an old combined department exists, migrate/rename to IT
