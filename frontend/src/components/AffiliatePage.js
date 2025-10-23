@@ -12,6 +12,7 @@ export default function AffiliatePage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newDeptModal, setNewDeptModal] = useState({ open: false, name: '', description: '' });
+  const [deleteModal, setDeleteModal] = useState({ open: false, selected: {}, processing: false });
 
   const load = async () => {
     try {
@@ -86,12 +87,22 @@ export default function AffiliatePage() {
           <h1 className="text-2xl font-semibold mt-1">{affiliate.name}</h1>
         </div>
         <div>
-          <button
-            onClick={() => setNewDeptModal({ open: true, name: '', description: '' })}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-gray-200"
-          >
-            New department
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setNewDeptModal({ open: true, name: '', description: '' })}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-gray-200"
+            >
+              New department
+            </button>
+            <button
+              onClick={() => setDeleteModal({ open: true, selected: {}, processing: false })}
+              disabled={departments.length === 0}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-red-600 text-red-600 disabled:opacity-50"
+              title={departments.length === 0 ? 'No departments to delete' : 'Delete departments'}
+            >
+              Delete departments
+            </button>
+          </div>
         </div>
       </div>
 
@@ -159,6 +170,95 @@ export default function AffiliatePage() {
                 disabled={creating}
               >
                 {creating ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold mb-4">Delete Departments</h3>
+            {departments.length === 0 ? (
+              <div className="text-sm text-gray-500">There are no departments to delete.</div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    className="text-sm text-sky-600 hover:underline"
+                    onClick={() => {
+                      const all = {};
+                      departments.forEach(d => { all[d.id] = true; });
+                      setDeleteModal(prev => ({ ...prev, selected: all }));
+                    }}
+                  >
+                    Select all
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    Selected: {Object.values(deleteModal.selected).filter(Boolean).length}
+                  </div>
+                </div>
+                <div className="max-h-64 overflow-y-auto border rounded">
+                  {departments.map((d) => (
+                    <label key={d.id} className="flex items-start gap-3 p-3 border-b last:border-b-0">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={!!deleteModal.selected[d.id]}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setDeleteModal(prev => ({
+                            ...prev,
+                            selected: { ...prev.selected, [d.id]: checked },
+                          }));
+                        }}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">{d.name}</div>
+                        {d.description && <div className="text-sm text-gray-600">{d.description}</div>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setDeleteModal({ open: false, selected: {}, processing: false })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={deleteModal.processing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const ids = Object.keys(deleteModal.selected).filter((k) => deleteModal.selected[k]).map(Number);
+                  if (ids.length === 0) {
+                    showToast({ type: 'warning', message: 'Select at least one department to delete' });
+                    return;
+                  }
+                  try {
+                    setDeleteModal(prev => ({ ...prev, processing: true }));
+                    const results = await Promise.allSettled(ids.map((deptId) => api.delete(`/users/departments/${deptId}/`)));
+                    const failed = results.filter(r => r.status === 'rejected');
+                    if (failed.length > 0) {
+                      showToast({ type: 'warning', message: `Deleted ${ids.length - failed.length} of ${ids.length} departments (some failed)` });
+                    } else {
+                      showToast({ type: 'success', message: `Deleted ${ids.length} department${ids.length === 1 ? '' : 's'}` });
+                    }
+                    await load();
+                    setDeleteModal({ open: false, selected: {}, processing: false });
+                  } catch (e) {
+                    const msg = e.response?.data?.detail || 'Failed to delete departments';
+                    showToast({ type: 'error', message: msg });
+                    setDeleteModal(prev => ({ ...prev, processing: false }));
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-red-600 text-white bg-red-600 hover:bg-red-700"
+                disabled={deleteModal.processing || Object.values(deleteModal.selected).every(v => !v)}
+              >
+                {deleteModal.processing ? 'Deleting...' : 'Delete selected'}
               </button>
             </div>
           </div>
