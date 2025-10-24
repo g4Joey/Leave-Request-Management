@@ -250,16 +250,22 @@ class Command(BaseCommand):
             # Try project-specific command if present; fall back to generic rename command.
             try:
                 self.stdout.write('Ensuring Merban Capital department naming...')
+                # Prefer normalization (strip suffix, merge duplicates, set affiliate)
                 try:
-                    call_command('update_merban_departments')
-                    self.stdout.write(self.style.SUCCESS('update_merban_departments applied.'))
-                except Exception as e1:
-                    self.stdout.write(self.style.WARNING(f'update_merban_departments not applied: {e1}'))
+                    call_command('normalize_merban_departments')
+                    self.stdout.write(self.style.SUCCESS('normalize_merban_departments applied.'))
+                except Exception as e0:
+                    self.stdout.write(self.style.WARNING(f'normalize_merban_departments not applied: {e0}'))
                     try:
-                        call_command('rename_merban_departments')
-                        self.stdout.write(self.style.SUCCESS('rename_merban_departments applied.'))
-                    except Exception as e2:
-                        self.stdout.write(self.style.WARNING(f'rename_merban_departments not applied: {e2}'))
+                        call_command('update_merban_departments')
+                        self.stdout.write(self.style.SUCCESS('update_merban_departments applied.'))
+                    except Exception as e1:
+                        self.stdout.write(self.style.WARNING(f'update_merban_departments not applied: {e1}'))
+                        try:
+                            call_command('rename_merban_departments')
+                            self.stdout.write(self.style.SUCCESS('rename_merban_departments applied.'))
+                        except Exception as e2:
+                            self.stdout.write(self.style.WARNING(f'rename_merban_departments not applied: {e2}'))
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f'Merban departments normalization skipped: {e}'))
         except Exception as e:

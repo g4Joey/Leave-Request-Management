@@ -9,6 +9,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
 from typing import cast
+from django.core.management import call_command
+import io
 from .models import CustomUser, Department, Affiliate
 from .serializers import UserSerializer, DepartmentSerializer, AffiliateSerializer
 
@@ -442,3 +444,18 @@ class IsHRPermission(permissions.BasePermission):
         user = request.user
         role = getattr(user, 'role', None)
         return bool(getattr(user, 'is_superuser', False) or (role in ['hr', 'admin']))
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated, IsHRPermission])
+def normalize_merban(request):
+    """Admin-only: Run normalization to strip suffixes, merge duplicates, and link Merban departments.
+    Returns the command output for visibility.
+    """
+    buf = io.StringIO()
+    try:
+        call_command('normalize_merban_departments', stdout=buf)
+        out = buf.getvalue()
+        return Response({"status": "ok", "output": out})
+    except Exception as e:
+        return Response({"status": "error", "error": str(e), "output": buf.getvalue()}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
