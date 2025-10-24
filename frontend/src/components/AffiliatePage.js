@@ -18,13 +18,13 @@ export default function AffiliatePage() {
 
   // Desired display order for departments (case-insensitive match)
   const desiredOrder = [
-    'Finance&Accounts',
-    'Government securities',
-    'pensions&Provident',
-    'private wealth & mutual fund',
-    'Hr & admin',
+    'Finance & Accounts',
+    'Government Securities',
+    'Pensions & Provident Funds',
+    'Private Wealth & Mutual Fund',
+    'HR & Admin',
     'Client Service/Marketing',
-    'corporate finance',
+    'Corporate Finance',
     'IT',
     'Compliance',
     'Audit',
