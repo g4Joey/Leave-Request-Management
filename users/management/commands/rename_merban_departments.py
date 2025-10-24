@@ -20,14 +20,14 @@ class Command(BaseCommand):
             
             # Department renaming map: old_name -> new_name
             renamings = {
-                'Accounts & Compliance': 'Finance & Accounts (Merban Capital)',
-                'Government Securities': 'Government Securities (Merban Capital)',
-                'Pensions': 'Pensions & Provident Funds (Merban Capital)',
-                'IT': 'IT (Merban Capital)',
-                'IHL': 'Client Service/Marketing (Merban Capital)',
-                'Client Service': 'HR & Admin (Merban Capital)',
-                'Stockbrokers': 'Private Wealth & Mutual Fund (Merban Capital)',
-                'SDSL': 'Corporate Finance (Merban Capital)',  # Department name, not affiliate
+                'Accounts & Compliance': 'Finance & Accounts ',
+                'Government Securities': 'Government Securities',
+                'Pensions': 'Pensions & Provident Funds',
+                'IT': 'IT',
+                'IHL': 'Client Service/Marketing',
+                'Client Service': 'HR & Admin',
+                'Stockbrokers': 'Private Wealth & Mutual Fund',
+                'SDSL': 'Corporate Finance',  # Department name, not affiliate
             }
             
             # Rename existing departments
