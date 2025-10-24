@@ -266,6 +266,12 @@ class Command(BaseCommand):
                             self.stdout.write(self.style.SUCCESS('rename_merban_departments applied.'))
                         except Exception as e2:
                             self.stdout.write(self.style.WARNING(f'rename_merban_departments not applied: {e2}'))
+                # Ensure Executive department per affiliate and affiliate CEOs (SDSL, SBL)
+                try:
+                    call_command('ensure_executive_and_ceos')
+                    self.stdout.write(self.style.SUCCESS('ensure_executive_and_ceos applied.'))
+                except Exception as e3:
+                    self.stdout.write(self.style.WARNING(f'ensure_executive_and_ceos not applied: {e3}'))
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f'Merban departments normalization skipped: {e}'))
         except Exception as e:
