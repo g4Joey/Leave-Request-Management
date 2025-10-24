@@ -9,7 +9,8 @@ import RoleManagement from './RoleManagement';
 // Added Affiliates tab to the top per request
 const BASE_SIDEBAR_ITEMS = [
   { id: 'affiliates', label: 'Affiliates' },
-  { id: 'departments', label: 'Departments' },
+  // Departments tab hidden per request; departments are managed under Affiliates now
+  // { id: 'departments', label: 'Departments' },
   { id: 'employees', label: 'Employees' },
   { id: 'leave-types', label: 'Leave Types' },
   { id: 'leave-policies', label: 'Leave Policies' },
@@ -38,7 +39,8 @@ function StaffManagement() {
   const [affiliates, setAffiliates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
-  const [active, setActive] = useState('departments');
+  // Default to Affiliates since the standalone Departments tab is hidden
+  const [active, setActive] = useState('affiliates');
   const [employees, setEmployees] = useState([]);
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
