@@ -145,7 +145,9 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
     employee_department_affiliate = serializers.SerializerMethodField()
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
-    manager_approval_comments = serializers.CharField(source='manager_approval_comments', read_only=True)
+    # DRF will raise an AssertionError if `source` is identical to the field name.
+    # Keep this as a plain read-only CharField to avoid redundant `source=` usage.
+    manager_approval_comments = serializers.CharField(read_only=True)
     total_days = serializers.IntegerField(read_only=True, help_text="Working days (weekdays)")
     working_days = serializers.IntegerField(read_only=True)
     calendar_days = serializers.IntegerField(read_only=True)
