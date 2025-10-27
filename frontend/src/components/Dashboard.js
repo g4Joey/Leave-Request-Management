@@ -18,17 +18,10 @@ function Dashboard() {
         
         // CEO users get different dashboard data - show recently approved/rejected requests
         if (user?.role === 'ceo') {
-          // Fetch requests that CEO has already approved or rejected
-          const actedRequestsRes = await api.get('/leaves/requests/?limit=15');
-          const allRequests = actedRequestsRes.data.results || actedRequestsRes.data || [];
-          
-          // Filter for requests that CEO has already acted upon (approved or rejected)
-          const ceoActedRequests = allRequests.filter(request => 
-            (request.status === 'approved' && request.ceo_approval_date) ||
-            (request.status === 'rejected' && request.ceo_approval_date)
-          );
-          
-          setRecentRequests(ceoActedRequests.slice(0, 5)); // Show recent 5 acted-upon requests
+          // Use dedicated endpoint that returns items the CEO acted on
+          const actedRequestsRes = await api.get('/leaves/manager/recent_activity/?limit=15');
+          const acted = actedRequestsRes.data.results || actedRequestsRes.data || [];
+          setRecentRequests(Array.isArray(acted) ? acted.slice(0, 5) : []);
           setBalances([]); // CEOs don't have leave balances
         } else {
           const [balancesRes, requestsRes] = await Promise.all([

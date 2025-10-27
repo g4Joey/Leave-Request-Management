@@ -634,6 +634,48 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         }
         
         return Response(response_data)
+
+    @action(detail=False, methods=['get'])
+    def recent_activity(self, request):
+        """Return the most recent requests the current approver acted on.
+
+        - manager: requests they approved/rejected at manager stage
+        - hr: requests they approved/rejected at HR stage
+        - ceo: requests they approved/rejected at CEO stage
+        - admin/superuser: treat as CEO
+
+        Query param: limit (default 15)
+        """
+        user = request.user
+        role = getattr(user, 'role', None)
+        try:
+            limit = int(request.query_params.get('limit', 15))
+        except Exception:
+            limit = 15
+
+        # Build queryset based on role and action fields captured in model
+        qs = LeaveRequest.objects.all()
+
+        if getattr(user, 'is_superuser', False) or role == 'admin':
+            # Treat admin like CEO for activity view
+            acted_qs = qs.filter(ceo_approved_by=user).order_by('-ceo_approval_date', '-updated_at')
+        elif role == 'ceo':
+            acted_qs = qs.filter(ceo_approved_by=user).order_by('-ceo_approval_date', '-updated_at')
+        elif role == 'hr':
+            acted_qs = qs.filter(hr_approved_by=user).order_by('-hr_approval_date', '-updated_at')
+        elif role == 'manager':
+            acted_qs = qs.filter(manager_approved_by=user).order_by('-manager_approval_date', '-updated_at')
+        else:
+            acted_qs = qs.none()
+
+        acted_qs = acted_qs[:limit]
+
+        # Use list serializer for compact dashboard-friendly payload
+        data = LeaveRequestListSerializer(acted_qs, many=True).data
+        return Response({
+            'count': len(data),
+            'results': data,
+        })
     
     @action(detail=True, methods=['put'])
     def cancel(self, request, pk=None):
