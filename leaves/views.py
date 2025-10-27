@@ -170,6 +170,13 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         Get current user's leave benefits for the current year, including all active leave types.
         Returns zeros for types without an existing balance. Useful for dashboard display.
         """
+        import logging
+        logger = logging.getLogger('leaves')
+        try:
+            auth_present = 'HTTP_AUTHORIZATION' in request.META
+            logger.info(f"current_year_full called - user={getattr(request, 'user', None)} auth_present={auth_present}")
+        except Exception:
+            logger.exception('Error logging current_year_full call')
         user = request.user
         current_year = timezone.now().year
         types = list(LeaveType.objects.filter(is_active=True))
