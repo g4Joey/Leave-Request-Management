@@ -840,8 +840,14 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def approval_counts(self, request):
         """Get counts of pending approvals for the current user's role"""
+        import logging
+        logger = logging.getLogger('leaves')
         user = request.user
         user_role = getattr(user, 'role', None)
+        try:
+            logger.info(f"approval_counts called by user={getattr(user, 'username', None)} role={user_role} path={request.path}")
+        except Exception:
+            logger.exception('Failed to log approval_counts call')
         
         counts = {
             'manager_approvals': 0,
@@ -849,7 +855,6 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             'ceo_approvals': 0,
             'total': 0
         }
-        
         try:
             if user_role == 'manager':
                 counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
@@ -858,36 +863,37 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             elif user_role == 'ceo':
                 # Use same logic as pending_approvals endpoint
                 from .services import ApprovalWorkflowService
-                
+
                 hr_approved_requests = self.get_queryset().filter(status='hr_approved')
                 manager_approved_requests = self.get_queryset().filter(status='manager_approved')
-                
+
                 ceo_count = 0
-                
+
                 # Check hr_approved requests (standard workflow)
-                for request in hr_approved_requests:
-                    handler = ApprovalWorkflowService.get_handler(request)
+                for req in hr_approved_requests:
+                    handler = ApprovalWorkflowService.get_handler(req)
                     if handler.can_approve(user, 'hr_approved'):
                         ceo_count += 1
-                
+
                 # Check manager_approved requests (SDSL workflow)
-                for request in manager_approved_requests:
-                    handler = ApprovalWorkflowService.get_handler(request)
+                for req in manager_approved_requests:
+                    handler = ApprovalWorkflowService.get_handler(req)
                     if handler.can_approve(user, 'manager_approved'):
                         ceo_count += 1
-                
+
                 counts['ceo_approvals'] = ceo_count
             elif user_role == 'admin':
                 counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
                 counts['hr_approvals'] = self.get_queryset().filter(status='manager_approved').count()
                 counts['ceo_approvals'] = self.get_queryset().filter(status='hr_approved').count()
-        
+
             counts['total'] = counts['manager_approvals'] + counts['hr_approvals'] + counts['ceo_approvals']
-            
+
         except Exception as e:
-            # Return zeros if there's an error
-            pass
-        
+            logger.error(f'Error computing approval_counts for user={getattr(user, "username", None)}: {str(e)}', exc_info=True)
+            # Return zeros (safe default) and a debug message so the frontend can display gracefully
+            return Response({**counts, 'error': 'unable to compute counts'})
+
         return Response(counts)
 
     @action(detail=False, methods=['post'], url_path='system_reset')
@@ -904,29 +910,33 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                           status=status.HTTP_403_FORBIDDEN)
         
         # Require confirmation parameter
-        confirm = request.data.get('confirm_reset', '').lower()
+        # Accept multiple names for compatibility with older frontend requests
+        confirm_raw = (request.data.get('confirm_reset') or request.data.get('confirmation') or request.data.get('confirm') or '')
+        confirm = str(confirm_raw).strip().lower()
+        import logging
+        logger = logging.getLogger('leaves')
+        logger.info(f'system_reset called by {getattr(user, "username", None)}; received_confirmation={confirm_raw}')
+
         if confirm != 'yes, reset everything':
             return Response({
                 'error': 'System reset requires confirmation',
-                'required_confirmation': 'yes, reset everything'
+                'required_confirmation': 'yes, reset everything',
+                'received': confirm_raw
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Count records before deletion for reporting
-            leave_requests_count = LeaveRequest.objects.count()
-            balances_count = LeaveBalance.objects.count()
-            
-            # Delete all leave requests
-            LeaveRequest.objects.all().delete()
-            
-            # Reset all leave balances to default state
-            # This will remove used_days and pending_days but keep entitled_days
-            LeaveBalance.objects.all().update(used_days=0, pending_days=0)
-            
-            import logging
-            logger = logging.getLogger('leaves')
+            from django.db import transaction
+            # Count records before deletion and perform deletion inside a transaction
+            with transaction.atomic():
+                leave_requests_count = LeaveRequest.objects.count()
+                balances_count = LeaveBalance.objects.count()
+
+                LeaveRequest.objects.all().delete()
+                # Reset all leave balances to default state (keep entitled_days)
+                LeaveBalance.objects.all().update(used_days=0, pending_days=0)
+
             logger.info(f'System reset performed by {user.username}: {leave_requests_count} requests deleted, {balances_count} balances reset')
-            
+
             return Response({
                 'message': 'System reset completed successfully',
                 'deleted_requests': leave_requests_count,
