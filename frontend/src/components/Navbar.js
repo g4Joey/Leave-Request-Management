@@ -1,12 +1,23 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
+import { useApprovalCounts } from '../hooks/useApprovalCounts';
 
 function Navbar() {
   const { logout, user } = useAuth();
   const location = useLocation();
+  const { counts } = useApprovalCounts();
 
   const isActive = (path) => location.pathname === path;
+
+  const BadgeCount = ({ count }) => {
+    if (!count || count === 0) return null;
+    return (
+      <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[16px] h-4 flex items-center justify-center">
+        {count > 99 ? '99+' : count}
+      </span>
+    );
+  };
   
 
 
@@ -79,7 +90,8 @@ function Navbar() {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
-                    Approvals
+                    HR Approvals
+                    <BadgeCount count={counts.hr_approvals} />
                   </Link>
                 );
               })()}
@@ -96,6 +108,7 @@ function Navbar() {
                     } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
                     Manager Approvals
+                    <BadgeCount count={counts.manager_approvals} />
                   </Link>
                 );
               })()}
@@ -112,6 +125,7 @@ function Navbar() {
                     } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
                     CEO Approvals
+                    <BadgeCount count={counts.ceo_approvals} />
                   </Link>
                 );
               })()}
@@ -128,6 +142,22 @@ function Navbar() {
                     } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
                     Staff
+                  </Link>
+                );
+              })()}
+              {(() => {
+                const role = user?.role;
+                const canSeeAdmin = !!user && (role === 'admin' || user.is_superuser === true);
+                return canSeeAdmin && (
+                  <Link
+                    to="/admin/system-reset"
+                    className={`${
+                      isActive('/admin/system-reset')
+                        ? 'border-primary-500 text-gray-900'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                  >
+                    Admin Reset
                   </Link>
                 );
               })()}

@@ -143,7 +143,9 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     employee_role = serializers.CharField(source='employee.role', read_only=True)
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
+    employee_department_affiliate = serializers.SerializerMethodField()
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
+    manager_approval_comments = serializers.CharField(source='manager_approval_comments', read_only=True)
     total_days = serializers.IntegerField(read_only=True, help_text="Working days (weekdays)")
     working_days = serializers.IntegerField(read_only=True)
     calendar_days = serializers.IntegerField(read_only=True)
@@ -153,13 +155,19 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     hr_comments = serializers.CharField(read_only=True)
     ceo_approval_date = serializers.DateTimeField(read_only=True)
     
+    def get_employee_department_affiliate(self, obj):
+        """Get the affiliate name for the employee's department"""
+        if obj.employee and obj.employee.department and obj.employee.department.affiliate:
+            return obj.employee.department.affiliate.name
+        return 'Other'
+    
     class Meta:
         model = LeaveRequest
         fields = [
             'id', 'employee_name', 'employee_email', 'employee_id', 'employee_role', 
-            'employee_department', 'leave_type_name', 'start_date', 'end_date', 
-            'total_days', 'working_days', 'calendar_days', 'range_with_days',
-            'status', 'status_display', 'reason', 'manager_comments', 'hr_comments', 
+            'employee_department', 'employee_department_affiliate', 'leave_type_name', 
+            'start_date', 'end_date', 'total_days', 'working_days', 'calendar_days', 'range_with_days',
+            'status', 'status_display', 'reason', 'manager_approval_comments', 'manager_comments', 'hr_comments', 
             'ceo_approval_date', 'created_at'
         ]
     

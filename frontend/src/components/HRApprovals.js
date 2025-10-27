@@ -8,6 +8,7 @@ function HRApprovals() {
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [actionModal, setActionModal] = useState({ open: false, action: '', comments: '' });
+  const [groupedApprovals, setGroupedApprovals] = useState({});
 
   useEffect(() => {
     fetchPendingApprovals();
@@ -17,12 +18,34 @@ function HRApprovals() {
     try {
       setLoading(true);
       const response = await api.get('/leaves/manager/pending_approvals/');
-      setPendingApprovals(response.data.requests || []);
+      const requests = response.data.requests || [];
+      setPendingApprovals(requests);
+      
+      // Group requests by affiliate
+      const grouped = requests.reduce((acc, request) => {
+        const affiliate = getEmployeeAffiliate(request);
+        if (!acc[affiliate]) {
+          acc[affiliate] = [];
+        }
+        acc[affiliate].push(request);
+        return acc;
+      }, {});
+      
+      setGroupedApprovals(grouped);
     } catch (error) {
       console.error('Error fetching pending approvals:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const getEmployeeAffiliate = (request) => {
+    // Extract affiliate information from request
+    if (request.employee_department_affiliate) {
+      return request.employee_department_affiliate;
+    }
+    // Default grouping
+    return 'Other';
   };
 
   const handleAction = async (requestId, action, comments = '') => {
@@ -66,20 +89,7 @@ function HRApprovals() {
     );
   };
 
-  const getEmployeeAffiliateInfo = (request) => {
-    const dept = request.employee_department;
-    if (dept) {
-      // Infer affiliate from department context or add affiliate info to API response
-      if (dept.includes('Merban') || ['Finance & Accounts', 'Government Securities', 'Pensions & Provident Fund'].includes(dept)) {
-        return 'Merban Capital';
-      } else if (dept.includes('SDSL')) {
-        return 'SDSL';
-      } else if (dept.includes('SBL')) {
-        return 'SBL';
-      }
-    }
-    return 'Unknown';
-  };
+
 
   if (loading) {
     return (
@@ -105,69 +115,80 @@ function HRApprovals() {
               <p className="text-gray-500">All leave requests are currently processed.</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {pendingApprovals.map((request) => (
-                <div key={request.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-medium text-gray-900">
-                        {request.employee_name || 'Employee'}
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        {request.employee_department} • {getEmployeeAffiliateInfo(request)}
-                      </p>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Employee ID: {request.employee_id || 'N/A'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      {getStatusBadge(request.status)}
-                    </div>
+            <div className="space-y-8">
+              {Object.entries(groupedApprovals).map(([affiliate, requests]) => (
+                <div key={affiliate} className="space-y-4">
+                  <div className="border-l-4 border-primary-500 pl-4">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-1">{affiliate}</h2>
+                    <p className="text-sm text-gray-600">{requests.length} request{requests.length !== 1 ? 's' : ''} pending approval</p>
                   </div>
+                  
+                  <div className="space-y-4">
+                    {requests.map((request) => (
+                      <div key={request.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow bg-white">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <h3 className="text-lg font-medium text-gray-900">
+                              {request.employee_name || 'Employee'}
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              {request.employee_department} • {getEmployeeAffiliate(request)}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Employee ID: {request.employee_id || 'N/A'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            {getStatusBadge(request.status)}
+                          </div>
+                        </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Leave Type</label>
-                      <p className="mt-1 text-sm text-gray-900">{request.leave_type_name}</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Duration</label>
-                      <p className="mt-1 text-sm text-gray-900">
-                        {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
-                        <span className="ml-2 text-gray-500">({request.total_days} days)</span>
-                      </p>
-                    </div>
-                  </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Leave Type</label>
+                            <p className="mt-1 text-sm text-gray-900">{request.leave_type_name}</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Duration</label>
+                            <p className="mt-1 text-sm text-gray-900">
+                              {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
+                              <span className="ml-2 text-gray-500">({request.total_days} days)</span>
+                            </p>
+                          </div>
+                        </div>
 
-                  {request.reason && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700">Reason</label>
-                      <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">{request.reason}</p>
-                    </div>
-                  )}
+                        {request.reason && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700">Reason</label>
+                            <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">{request.reason}</p>
+                          </div>
+                        )}
 
-                  {request.manager_approval_comments && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700">Manager's Comments</label>
-                      <p className="mt-1 text-sm text-gray-900 bg-green-50 p-3 rounded-md border-l-4 border-green-400">
-                        {request.manager_approval_comments}
-                      </p>
-                    </div>
-                  )}
+                        {request.manager_approval_comments && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700">Manager's Comments</label>
+                            <p className="mt-1 text-sm text-gray-900 bg-green-50 p-3 rounded-md border-l-4 border-green-400">
+                              {request.manager_approval_comments}
+                            </p>
+                          </div>
+                        )}
 
-                  <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
-                    <button
-                      onClick={() => openActionModal(request, 'reject')}
-                      className="px-4 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => openActionModal(request, 'approve')}
-                      className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      Approve
-                    </button>
+                        <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                          <button
+                            onClick={() => openActionModal(request, 'reject')}
+                            className="px-4 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => openActionModal(request, 'approve')}
+                            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

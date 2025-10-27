@@ -11,6 +11,7 @@ import HRApprovals from './components/HRApprovals';
 import StaffManagement from './components/StaffManagement';
 import AffiliatePage from './components/AffiliatePage';
 import MyProfile from './components/MyProfile';
+import AdminSystemReset from './components/AdminSystemReset';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './contexts/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -35,6 +36,12 @@ function HRRoute({ children }) {
 function CEORoute({ children }) {
   const { user } = useAuth();
   const allowed = user && (user.role === 'ceo' || user.is_superuser);
+  return allowed ? children : <Navigate to="/dashboard" />;
+}
+
+function AdminRoute({ children }) {
+  const { user } = useAuth();
+  const allowed = user && (user.role === 'admin' || user.is_superuser);
   return allowed ? children : <Navigate to="/dashboard" />;
 }
 
@@ -98,6 +105,14 @@ function App() {
                               <HRRoute>
                                 <AffiliatePage />
                               </HRRoute>
+                            }
+                          />
+                          <Route
+                            path="/admin/system-reset"
+                            element={
+                              <AdminRoute>
+                                <AdminSystemReset />
+                              </AdminRoute>
                             }
                           />
                         </Routes>

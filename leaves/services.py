@@ -98,8 +98,17 @@ class ApprovalHandler(ABC):
         # Admin can always approve
         if getattr(user, 'is_superuser', False) or user_role == 'admin':
             return True
+        
+        # Basic role check
+        if user_role != required_role:
+            return False
             
-        return user_role == required_role
+        # For CEO approval, ensure it's the correct CEO for the employee's affiliate
+        if required_role == 'ceo' and current_status == 'hr_approved':
+            expected_ceo = ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
+            return user == expected_ceo
+            
+        return True
     
     def get_next_status(self, current_status: str) -> str:
         """Get next status after approval."""
@@ -155,6 +164,31 @@ class SDSLApprovalHandler(ApprovalHandler):
             'manager_approved': 'ceo',  # SDSL CEO approves after manager
             'hr_approved': 'hr'         # HR gives final approval
         }
+    
+    def can_approve(self, user: CustomUser, current_status: str) -> bool:
+        """Override: SDSL CEO approves at manager_approved stage."""
+        flow = self.get_approval_flow()
+        required_role = flow.get(current_status)
+        user_role = getattr(user, 'role', None)
+        
+        # Admin can always approve
+        if getattr(user, 'is_superuser', False) or user_role == 'admin':
+            return True
+        
+        # Basic role check
+        if user_role != required_role:
+            return False
+            
+        # For SDSL CEO approval at manager_approved stage
+        if required_role == 'ceo' and current_status == 'manager_approved':
+            # Must be SDSL CEO (Kofi Ameyaw)
+            try:
+                expected_ceo = User.objects.get(email='sdslceo@umbcapital.com', role='ceo', is_active=True)
+                return user == expected_ceo
+            except User.DoesNotExist:
+                return False
+                
+        return True
     
     def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
         if current_status == 'pending':

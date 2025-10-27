@@ -545,8 +545,28 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # HR sees requests approved by manager
             pending_requests = self.get_queryset().filter(status='manager_approved')
         elif user_role == 'ceo':
-            # CEO sees requests approved by HR
-            pending_requests = self.get_queryset().filter(status='hr_approved')
+            # CEO sees requests that require their approval - filtered by affiliate and workflow
+            from .services import ApprovalWorkflowService
+            
+            # Check both hr_approved (standard workflow) and manager_approved (SDSL workflow)
+            hr_approved_requests = self.get_queryset().filter(status='hr_approved')
+            manager_approved_requests = self.get_queryset().filter(status='manager_approved')
+            
+            filtered_request_ids = []
+            
+            # Check hr_approved requests (standard workflow)
+            for request in hr_approved_requests:
+                handler = ApprovalWorkflowService.get_handler(request)
+                if handler.can_approve(user, 'hr_approved'):
+                    filtered_request_ids.append(request.id)
+            
+            # Check manager_approved requests (SDSL workflow)
+            for request in manager_approved_requests:
+                handler = ApprovalWorkflowService.get_handler(request)
+                if handler.can_approve(user, 'manager_approved'):
+                    filtered_request_ids.append(request.id)
+            
+            pending_requests = self.get_queryset().filter(id__in=filtered_request_ids)
         elif user_role == 'admin':
             # Admin sees all pending requests
             pending_requests = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved'])
@@ -767,6 +787,112 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as e:
             logger.error(f'Error rejecting leave request {pk}: {str(e)}', exc_info=True)
             return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def approval_counts(self, request):
+        """Get counts of pending approvals for the current user's role"""
+        user = request.user
+        user_role = getattr(user, 'role', None)
+        
+        counts = {
+            'manager_approvals': 0,
+            'hr_approvals': 0, 
+            'ceo_approvals': 0,
+            'total': 0
+        }
+        
+        try:
+            if user_role == 'manager':
+                counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
+            elif user_role == 'hr':
+                counts['hr_approvals'] = self.get_queryset().filter(status='manager_approved').count()
+            elif user_role == 'ceo':
+                # Use same logic as pending_approvals endpoint
+                from .services import ApprovalWorkflowService
+                
+                hr_approved_requests = self.get_queryset().filter(status='hr_approved')
+                manager_approved_requests = self.get_queryset().filter(status='manager_approved')
+                
+                ceo_count = 0
+                
+                # Check hr_approved requests (standard workflow)
+                for request in hr_approved_requests:
+                    handler = ApprovalWorkflowService.get_handler(request)
+                    if handler.can_approve(user, 'hr_approved'):
+                        ceo_count += 1
+                
+                # Check manager_approved requests (SDSL workflow)
+                for request in manager_approved_requests:
+                    handler = ApprovalWorkflowService.get_handler(request)
+                    if handler.can_approve(user, 'manager_approved'):
+                        ceo_count += 1
+                
+                counts['ceo_approvals'] = ceo_count
+            elif user_role == 'admin':
+                counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
+                counts['hr_approvals'] = self.get_queryset().filter(status='manager_approved').count()
+                counts['ceo_approvals'] = self.get_queryset().filter(status='hr_approved').count()
+        
+            counts['total'] = counts['manager_approvals'] + counts['hr_approvals'] + counts['ceo_approvals']
+            
+        except Exception as e:
+            # Return zeros if there's an error
+            pass
+        
+        return Response(counts)
+
+    @action(detail=False, methods=['post'])
+    def system_reset(self, request):
+        """
+        Admin-only feature to reset all leave requests and balances for testing.
+        WARNING: This will delete ALL leave requests and reset ALL leave balances!
+        """
+        user = request.user
+        
+        # Only allow admin/superuser access
+        if not (getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'admin'):
+            return Response({'error': 'Only administrators can perform system reset'}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        # Require confirmation parameter
+        confirm = request.data.get('confirm_reset', '').lower()
+        if confirm != 'yes, reset everything':
+            return Response({
+                'error': 'System reset requires confirmation',
+                'required_confirmation': 'yes, reset everything'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Count records before deletion for reporting
+            leave_requests_count = LeaveRequest.objects.count()
+            balances_count = LeaveBalance.objects.count()
+            
+            # Delete all leave requests
+            LeaveRequest.objects.all().delete()
+            
+            # Reset all leave balances to default state
+            # This will remove used_days and pending_days but keep entitled_days
+            LeaveBalance.objects.all().update(used_days=0, pending_days=0)
+            
+            import logging
+            logger = logging.getLogger('leaves')
+            logger.info(f'System reset performed by {user.username}: {leave_requests_count} requests deleted, {balances_count} balances reset')
+            
+            return Response({
+                'message': 'System reset completed successfully',
+                'deleted_requests': leave_requests_count,
+                'reset_balances': balances_count,
+                'performed_by': user.get_full_name() or user.username,
+                'timestamp': timezone.now().isoformat()
+            })
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger('leaves')
+            logger.error(f'Error during system reset by {user.username}: {str(e)}', exc_info=True)
+            return Response({
+                'error': f'System reset failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def _update_leave_balance(self, leave_request, action):
         """Update leave balance based on approval/rejection"""
