@@ -66,9 +66,39 @@ class LeaveNotificationService:
                     leave_request=leave_request
                 )
             
-            logger.info(f'Notified employee and HR of manager approval for leave request {leave_request.id}')
+            logger.info(f'Notified employee and CEO of final approval for leave request {leave_request.id}')
         except Exception as e:
-            logger.error(f'Error sending manager approval notification: {str(e)}', exc_info=True)
+            logger.error(f'Error sending CEO approval notification: {str(e)}', exc_info=True)
+    
+    @staticmethod
+    def notify_leave_cancelled(leave_request, cancelled_by):
+        """Notify relevant parties when leave is cancelled"""
+        try:
+            # If cancelled by someone other than the employee, notify the employee
+            if cancelled_by != leave_request.employee:
+                Notification.objects.create(
+                    recipient=leave_request.employee,
+                    sender=cancelled_by,
+                    notification_type='leave_cancelled',
+                    title='Leave Request Cancelled',
+                    message=f'Your leave request for {leave_request.leave_type.name} from {leave_request.start_date} to {leave_request.end_date} has been cancelled by {cancelled_by.get_full_name()}.',
+                    leave_request=leave_request
+                )
+            
+            # Notify manager if they exist and didn't cancel it themselves
+            if leave_request.employee.manager and cancelled_by != leave_request.employee.manager:
+                Notification.objects.create(
+                    recipient=leave_request.employee.manager,
+                    sender=cancelled_by,
+                    notification_type='leave_cancelled',
+                    title='Leave Request Cancelled',
+                    message=f'The leave request from {leave_request.employee.get_full_name()} for {leave_request.leave_type.name} from {leave_request.start_date} to {leave_request.end_date} has been cancelled.',
+                    leave_request=leave_request
+                )
+            
+            logger.info(f'Notified relevant parties of leave cancellation for request {leave_request.id}')
+        except Exception as e:
+            logger.error(f'Error sending leave cancellation notification: {str(e)}', exc_info=True)
     
     @staticmethod
     def notify_hr_approval(leave_request, approved_by):

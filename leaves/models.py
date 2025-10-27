@@ -188,6 +188,31 @@ class LeaveRequest(models.Model):
         self.approval_comments = f"REJECTED: {comments}"
         self.save()
     
+    def cancel(self, cancelled_by, comments=""):
+        """Cancel a leave request (only allowed before first approval)"""
+        if self.status != 'pending':
+            raise ValidationError("Can only cancel pending leave requests")
+        
+        # Only the employee who submitted or HR/Admin can cancel
+        if (cancelled_by != self.employee and 
+            not getattr(cancelled_by, 'role', None) in ['hr', 'admin'] and
+            not getattr(cancelled_by, 'is_superuser', False)):
+            raise ValidationError("Only the requester or HR/Admin can cancel this request")
+        
+        self.status = 'cancelled'
+        self.approval_comments = f"Cancelled by {cancelled_by.get_full_name()}: {comments}"
+        self.approved_by = cancelled_by
+        self.approval_date = timezone.now()
+        self.save()
+    
+    def can_be_cancelled(self, user):
+        """Check if this request can be cancelled by the given user"""
+        if self.status != 'pending':
+            return False
+        return (user == self.employee or 
+                getattr(user, 'role', None) in ['hr', 'admin'] or
+                getattr(user, 'is_superuser', False))
+
     def approve(self, approved_by, comments=""):
         """Legacy approve method - redirects to appropriate approval stage"""
         if hasattr(approved_by, 'role'):

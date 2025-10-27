@@ -7,6 +7,7 @@ import LeaveRequest from './components/LeaveRequest';
 import LeaveHistory from './components/LeaveHistory';
 import ManagerDashboard from './components/ManagerDashboard';
 import CEOApprovals from './components/CEOApprovals';
+import HRApprovals from './components/HRApprovals';
 import StaffManagement from './components/StaffManagement';
 import AffiliatePage from './components/AffiliatePage';
 import MyProfile from './components/MyProfile';
@@ -80,6 +81,14 @@ function App() {
                             element={
                               <HRRoute>
                                 <StaffManagement />
+                              </HRRoute>
+                            }
+                          />
+                          <Route
+                            path="/hr-approvals"
+                            element={
+                              <HRRoute>
+                                <HRApprovals />
                               </HRRoute>
                             }
                           />

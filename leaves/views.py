@@ -616,10 +616,50 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(response_data)
     
     @action(detail=True, methods=['put'])
-    def approve(self, request, pk=None):
-        """Multi-stage approval system: Manager → HR → CEO"""
+    def cancel(self, request, pk=None):
+        """Cancel a leave request (only allowed for pending requests by employee or HR/Admin)"""
         import logging
         from notifications.services import LeaveNotificationService
+        logger = logging.getLogger('leaves')
+        
+        try:
+            leave_request = self.get_object()
+            user = request.user
+            comments = request.data.get('comments', '')
+            
+            logger.info(f'Attempting to cancel leave request {pk} by user {user.username}')
+            
+            # Check if cancellation is allowed
+            if not leave_request.can_be_cancelled(user):
+                return Response({
+                    'error': 'Cannot cancel this request. Only pending requests can be cancelled by the requester or HR/Admin.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Cancel the request
+            leave_request.cancel(user, comments)
+            
+            # Send notification
+            LeaveNotificationService.notify_leave_cancelled(leave_request, user)
+            
+            # Update leave balance
+            self._update_leave_balance(leave_request, 'cancel')
+            
+            logger.info(f'Leave request {pk} cancelled by {user.username}')
+            return Response({
+                'message': 'Leave request cancelled successfully',
+                'status': leave_request.status
+            })
+            
+        except Exception as e:
+            logger.error(f'Error cancelling leave request {pk}: {str(e)}', exc_info=True)
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['put'])
+    def approve(self, request, pk=None):
+        """Multi-stage approval system with affiliate-based routing"""
+        import logging
+        from notifications.services import LeaveNotificationService
+        from .services import ApprovalWorkflowService
         logger = logging.getLogger('leaves')
         
         try:
@@ -639,52 +679,30 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             elif leave_request.status == 'approved':
                 return Response({'error': 'Request is already fully approved'}, status=status.HTTP_400_BAD_REQUEST)
             
-            # Determine approval action based on user role and current status
-            user_role = getattr(user, 'role', None)
-            
-            if user_role == 'manager' and leave_request.status == 'pending':
-                # Manager approval - move to HR stage
-                leave_request.manager_approve(user, comments)
-                LeaveNotificationService.notify_manager_approval(leave_request, user)
-                message = 'Leave request approved by manager and forwarded to HR'
-                logger.info(f'Manager approved leave request {pk}')
+            # Use new workflow service for approval
+            try:
+                ApprovalWorkflowService.approve_request(leave_request, user, comments)
                 
-            elif user_role == 'hr' and leave_request.status == 'manager_approved':
-                # HR approval - move to CEO stage
-                leave_request.hr_approve(user, comments)
-                LeaveNotificationService.notify_hr_approval(leave_request, user)
-                message = 'Leave request approved by HR and forwarded to CEO'
-                logger.info(f'HR approved leave request {pk}')
-                
-            elif user_role in ['ceo', 'admin'] and leave_request.status == 'hr_approved':
-                # CEO final approval
-                leave_request.ceo_approve(user, comments)
-                LeaveNotificationService.notify_ceo_approval(leave_request, user)
-                # Update leave balance only on final approval
-                self._update_leave_balance(leave_request, 'approve')
-                message = 'Leave request given final approval by CEO'
-                logger.info(f'CEO gave final approval for leave request {pk}')
-                
-            elif user_role == 'admin':
-                # Admin can approve at any stage (override)
-                if leave_request.status == 'pending':
-                    leave_request.manager_approve(user, f"ADMIN OVERRIDE: {comments}")
+                # Send appropriate notifications
                 if leave_request.status == 'manager_approved':
-                    leave_request.hr_approve(user, f"ADMIN OVERRIDE: {comments}")
-                if leave_request.status == 'hr_approved':
-                    leave_request.ceo_approve(user, f"ADMIN OVERRIDE: {comments}")
+                    LeaveNotificationService.notify_manager_approval(leave_request, user)
+                    message = 'Leave request approved by manager'
+                elif leave_request.status == 'hr_approved':
+                    LeaveNotificationService.notify_hr_approval(leave_request, user)
+                    message = 'Leave request approved by HR'
+                elif leave_request.status == 'approved':
+                    LeaveNotificationService.notify_ceo_approval(leave_request, user)
+                    # Update leave balance only on final approval
                     self._update_leave_balance(leave_request, 'approve')
-                LeaveNotificationService.notify_ceo_approval(leave_request, user)
-                message = 'Leave request approved by admin (full override)'
-                logger.info(f'Admin gave full approval override for leave request {pk}')
+                    message = 'Leave request given final approval'
+                else:
+                    message = 'Leave request approved'
                 
-            else:
-                # Invalid approval attempt
-                current_stage = leave_request.current_approval_stage
-                required_role = leave_request.next_approver_role
-                return Response({
-                    'error': f'Cannot approve this request. Current stage: {current_stage}, requires: {required_role}, your role: {user_role}'
-                }, status=status.HTTP_403_FORBIDDEN)
+                logger.info(f'Leave request {pk} approved by {user.username}, new status: {leave_request.status}')
+                
+            except ValueError as ve:
+                logger.warning(f'Approval validation failed for request {pk}: {str(ve)}')
+                return Response({'error': str(ve)}, status=status.HTTP_403_FORBIDDEN)
             
             return Response({'message': message, 'current_status': leave_request.status})
                 
