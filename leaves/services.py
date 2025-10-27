@@ -35,30 +35,16 @@ class ApprovalRoutingService:
         if not affiliate:
             return cls._get_default_ceo()
         
-        # Map affiliate to CEO
-        affiliate_ceo_map = {
-            'MERBAN CAPITAL': 'ceo@company.com',  # Benjamin Ackah
-            'SDSL': 'sdslceo@umbcapital.com',     # Kofi Ameyaw  
-            'SBL': 'sblceo@umbcapital.com',       # Winslow Sackey
-        }
-        
-        ceo_email = affiliate_ceo_map.get(affiliate.name)
-        if ceo_email:
-            try:
-                return User.objects.get(email=ceo_email, role='ceo', is_active=True)
-            except User.DoesNotExist:
-                pass
-        
-        return cls._get_default_ceo()
+        # Prefer dynamic lookup: a user with role 'ceo' whose department belongs to this affiliate
+        try:
+            return User.objects.filter(role='ceo', is_active=True, department__affiliate=affiliate).first() or cls._get_default_ceo()
+        except Exception:
+            return cls._get_default_ceo()
     
     @classmethod
     def _get_default_ceo(cls) -> Optional[CustomUser]:
-        """Get Benjamin Ackah as the default CEO."""
-        try:
-            return User.objects.get(email='ceo@company.com', role='ceo', is_active=True)
-        except User.DoesNotExist:
-            # Fallback to any CEO
-            return User.objects.filter(role='ceo', is_active=True).first()
+        """Fallback CEO: any active CEO user (first)."""
+        return User.objects.filter(role='ceo', is_active=True).first()
     
     @classmethod
     def get_employee_affiliate_name(cls, employee: CustomUser) -> str:
@@ -128,6 +114,23 @@ class StandardApprovalHandler(ApprovalHandler):
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
+        """Dynamic flow based on requester role.
+        - Staff (default): manager -> hr -> ceo
+        - Manager/HOD: hr -> ceo (skip manager)
+        - HR: ceo (Merban) only (skip manager and hr)
+        """
+        emp = self.leave_request.employee
+        role = getattr(emp, 'role', None)
+        if role in ['manager', 'hod']:
+            return {
+                'pending': 'hr',
+                'hr_approved': 'ceo'
+            }
+        if role == 'hr':
+            return {
+                'pending': 'ceo'
+            }
+        # Default staff flow
         return {
             'pending': 'manager',
             'manager_approved': 'hr',
@@ -136,8 +139,23 @@ class StandardApprovalHandler(ApprovalHandler):
     
     def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
         if current_status == 'pending':
-            # Get manager from department or direct manager
             emp = self.leave_request.employee
+            role = getattr(emp, 'role', None)
+            # Manager/HOD requests go to HR directly
+            if role in ['manager', 'hod']:
+                return User.objects.filter(role='hr', is_active=True).first()
+            # HR requests go to Merban CEO directly
+            if role == 'hr':
+                # Find Merban affiliate CEO
+                try:
+                    from users.models import Affiliate
+                    merban = Affiliate.objects.filter(name__iexact='MERBAN CAPITAL').first()
+                    if merban:
+                        return User.objects.filter(role='ceo', is_active=True, department__affiliate=merban).first()
+                except Exception:
+                    pass
+                return ApprovalRoutingService._get_default_ceo()
+            # Default: staff -> manager
             if hasattr(emp, 'manager') and emp.manager:
                 return emp.manager
             elif hasattr(emp, 'department') and emp.department and hasattr(emp.department, 'hod'):
@@ -159,6 +177,22 @@ class SDSLApprovalHandler(ApprovalHandler):
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
+        """Dynamic SDSL flow.
+        - Staff: manager -> ceo(SDSL) -> hr(final)
+        - Manager/HOD: ceo(SDSL) -> hr(final)
+        - HR: ceo(SDSL) -> approved (HR final after CEO already represented by hr_approved->approved)
+        """
+        emp = self.leave_request.employee
+        role = getattr(emp, 'role', None)
+        if role in ['manager', 'hod']:
+            return {
+                'pending': 'ceo',   # SDSL CEO first
+                'hr_approved': 'hr'
+            }
+        if role == 'hr':
+            return {
+                'pending': 'ceo'    # Direct to SDSL CEO, then HR will finalize in approve pipeline
+            }
         return {
             'pending': 'manager',
             'manager_approved': 'ceo',  # SDSL CEO approves after manager
@@ -192,19 +226,24 @@ class SDSLApprovalHandler(ApprovalHandler):
     
     def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
         if current_status == 'pending':
-            # Get manager
             emp = self.leave_request.employee
+            role = getattr(emp, 'role', None)
+            # Manager/HOD and HR requests go straight to SDSL CEO
+            if role in ['manager', 'hod', 'hr']:
+                try:
+                    # CEO for SDSL by affiliate
+                    return User.objects.filter(role='ceo', is_active=True, department__affiliate__name__iexact='SDSL').first()
+                except Exception:
+                    return None
+            # Staff -> manager first
             if hasattr(emp, 'manager') and emp.manager:
                 return emp.manager
             elif hasattr(emp, 'department') and emp.department and hasattr(emp.department, 'hod'):
                 return emp.department.hod
             return None
         elif current_status == 'manager_approved':
-            # SDSL CEO (Kofi Ameyaw)
-            try:
-                return User.objects.get(email='sdslceo@umbcapital.com', role='ceo', is_active=True)
-            except User.DoesNotExist:
-                return None
+            # SDSL CEO
+            return User.objects.filter(role='ceo', is_active=True, department__affiliate__name__iexact='SDSL').first()
         elif current_status == 'hr_approved':
             # HR for final approval  
             return User.objects.filter(role='hr', is_active=True).first()
@@ -259,23 +298,27 @@ class ApprovalWorkflowService:
         if not handler.can_approve(approver, leave_request.status):
             raise ValueError(f"User {approver} cannot approve request in status {leave_request.status}")
         
-        # Get next status
-        next_status = handler.get_next_status(leave_request.status)
-        
-        # Apply approval based on current status
-        if leave_request.status == 'pending':
+        # Determine required role for this status
+        flow = handler.get_approval_flow()
+        required_role = flow.get(leave_request.status)
+
+        # Apply the appropriate stage based on required_role
+        if required_role == 'manager':
             leave_request.manager_approve(approver, comments)
-        elif leave_request.status == 'manager_approved':
+        elif required_role == 'hr':
+            leave_request.hr_approve(approver, comments)
+        elif required_role == 'ceo':
+            # Special handling for SDSL flow: CEO approval moves request to HR stage
             if isinstance(handler, SDSLApprovalHandler):
-                # For SDSL: this is CEO approval, but we store in hr_approved
                 leave_request.hr_approve(approver, comments)
             else:
-                # Standard: HR approval
-                leave_request.hr_approve(approver, comments)
-        elif leave_request.status == 'hr_approved':
-            if isinstance(handler, SDSLApprovalHandler):
-                # For SDSL: HR gives final approval
                 leave_request.ceo_approve(approver, comments)
+        else:
+            # Fallback for unexpected mapping; progress using default status transition
+            next_status = handler.get_next_status(leave_request.status)
+            if next_status == 'manager_approved':
+                leave_request.manager_approve(approver, comments)
+            elif next_status == 'hr_approved':
+                leave_request.hr_approve(approver, comments)
             else:
-                # Standard: CEO gives final approval
                 leave_request.ceo_approve(approver, comments)

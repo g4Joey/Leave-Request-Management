@@ -27,7 +27,8 @@ function AdminSystemReset() {
 
     setLoading(true);
     try {
-      const response = await api.post('/leaves/system_reset/', {
+      // System reset endpoint lives under requests viewset
+      const response = await api.post('/leaves/requests/system_reset/', {
         confirm_reset: confirmText
       });
 

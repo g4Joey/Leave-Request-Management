@@ -17,7 +17,8 @@ function HRApprovals() {
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/leaves/manager/pending_approvals/');
+      // HR should call the requests viewset pending_approvals endpoint
+      const response = await api.get('/leaves/requests/pending_approvals/');
       const requests = response.data.requests || [];
       setPendingApprovals(requests);
       
@@ -51,11 +52,12 @@ function HRApprovals() {
   const handleAction = async (requestId, action, comments = '') => {
     try {
       if (action === 'approve') {
-        await api.put(`/leaves/manager/${requestId}/approve/`, {
+        // Use the LeaveRequestViewSet approve action
+        await api.put(`/leaves/requests/${requestId}/approve/`, {
           approval_comments: comments
         });
       } else if (action === 'reject') {
-        await api.put(`/leaves/manager/${requestId}/reject/`, {
+        await api.put(`/leaves/requests/${requestId}/reject/`, {
           rejection_comments: comments
         });
       }
