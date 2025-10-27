@@ -883,7 +883,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         
         return Response(counts)
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], url_path='system_reset')
     def system_reset(self, request):
         """
         Admin-only feature to reset all leave requests and balances for testing.

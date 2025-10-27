@@ -29,18 +29,26 @@ function Dashboard() {
             api.get('/leaves/requests/?limit=5')
           ]);
           
-          console.log('Balances response:', balancesRes);
-          console.log('Requests response:', requestsRes);
+          console.log('Balances response status:', balancesRes.status);
+          console.log('Balances response headers:', balancesRes.headers);
+          console.log('Balances response data:', balancesRes.data);
+          console.log('Requests response status:', requestsRes.status);
+          console.log('Requests response data:', requestsRes.data);
           
           const balancesData = balancesRes.data.results || balancesRes.data;
           const requestsData = requestsRes.data.results || requestsRes.data;
           
-          console.log('Processed balances data:', balancesData);
-          console.log('Balances data type:', typeof balancesData);
-          console.log('Balances data is array:', Array.isArray(balancesData));
-          console.log('Balances data length:', balancesData?.length);
-          
-          console.log('Processed requests data:', requestsData);
+                  console.log('Processed balances data:', balancesData);
+                  console.log('Balances data type:', typeof balancesData);
+                  console.log('Balances data is array:', Array.isArray(balancesData));
+                  console.log('Balances data length:', balancesData?.length);
+                  
+                  // Debug first balance item structure
+                  if (balancesData && balancesData.length > 0) {
+                    console.log('First balance item:', balancesData[0]);
+                    console.log('First balance leave_type:', balancesData[0].leave_type);
+                    console.log('First balance leave_type.name:', balancesData[0].leave_type?.name);
+                  }          console.log('Processed requests data:', requestsData);
           console.log('Requests data type:', typeof requestsData);
           console.log('Requests data is array:', Array.isArray(requestsData));
           console.log('Requests data length:', requestsData?.length);
@@ -50,7 +58,10 @@ function Dashboard() {
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
-        console.error('Error details:', error.response?.data || error.message);
+        console.error('Error status:', error.response?.status);
+        console.error('Error data:', error.response?.data);
+        console.error('Error message:', error.message);
+        console.error('Full error object:', error);
         
         // Set empty arrays to show "No data" messages instead of loading forever
         setBalances([]);
