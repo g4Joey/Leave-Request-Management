@@ -60,6 +60,17 @@ if [ "${FIX_USER_MISMATCHES:-0}" = "1" ]; then
 	fi
 fi
 
+# Reset demo data if requested (for CEO demos)
+if [ "${RUN_RESET_DEMO_DATA:-0}" = "1" ]; then
+	echo "Running reset_demo_data (RUN_RESET_DEMO_DATA=1 detected)..."
+	echo "⚠️  WARNING: This will delete all leave requests and reset balances!"
+	if ! python reset_demo_data.py; then
+		echo "Warning: reset_demo_data failed. Check logs." >&2
+	else
+		echo "✅ Demo data reset complete. Remember to set RUN_RESET_DEMO_DATA=0!"
+	fi
+fi
+
 # Create or update CEO user if CEO_EMAIL is provided (password optional)
 if [ -n "${CEO_EMAIL:-}" ]; then
 	echo "Ensuring CEO user from env (CEO_EMAIL=${CEO_EMAIL})..."

@@ -11,6 +11,11 @@ What this script does:
 - Preserves departments, affiliates, and leave types
 
 Use this before CEO demo to show clean slate with realistic users.
+
+Environment Variable Trigger:
+- Set RUN_RESET_DEMO_DATA=1 in your deployment environment variables
+- The reset will run automatically on startup
+- Remember to set it back to 0 after deployment completes
 """
 import os
 import sys
@@ -26,14 +31,15 @@ from leaves.models import LeaveRequest, LeaveBalance
 from django.utils import timezone
 
 
-def reset_demo_data(confirm_text: str = None):
+def reset_demo_data(confirm_text: str = None, auto_confirm: bool = False):
     """
     Reset leave data for demo purposes.
     
     Args:
-        confirm_text: Must be "RESET DEMO DATA" to proceed
+        confirm_text: Must be "RESET DEMO DATA" to proceed (if not auto_confirm)
+        auto_confirm: If True, skip confirmation (used for env var trigger)
     """
-    if confirm_text != "RESET DEMO DATA":
+    if not auto_confirm and confirm_text != "RESET DEMO DATA":
         print("❌ Invalid confirmation. Script aborted.")
         print("   To proceed, run: python reset_demo_data.py")
         print('   And type: RESET DEMO DATA')
@@ -41,6 +47,8 @@ def reset_demo_data(confirm_text: str = None):
     
     print("\n" + "="*60)
     print("🔄 DEMO DATA RESET - Starting...")
+    if auto_confirm:
+        print("   (Triggered by RUN_RESET_DEMO_DATA environment variable)")
     print("="*60 + "\n")
     
     try:
@@ -96,6 +104,21 @@ def reset_demo_data(confirm_text: str = None):
 
 
 if __name__ == '__main__':
+    # Check for environment variable trigger
+    env_trigger = os.environ.get('RUN_RESET_DEMO_DATA', '0').strip()
+    
+    if env_trigger == '1':
+        print("\n" + "🔔 "*20)
+        print("ENVIRONMENT VARIABLE TRIGGER DETECTED")
+        print("🔔 "*20)
+        print("\nRUN_RESET_DEMO_DATA=1 detected")
+        print("Proceeding with automatic demo data reset...\n")
+        success = reset_demo_data(auto_confirm=True)
+        if success:
+            print("\n⚠️  IMPORTANT: Set RUN_RESET_DEMO_DATA=0 to prevent future resets!\n")
+        sys.exit(0 if success else 1)
+    
+    # Interactive mode
     print("\n" + "⚠️ "*20)
     print("WARNING: DEMO DATA RESET")
     print("⚠️ "*20)
