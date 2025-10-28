@@ -1769,18 +1769,29 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   </option>
                   {(() => {
                     const selectedAffiliate = affiliates.find(a => a.id === parseInt(newEmployeeModal.affiliate_id));
+                    console.log('[Debug] Selected affiliate:', selectedAffiliate);
+                    console.log('[Debug] All departments:', departments);
+                    
                     if (selectedAffiliate && (selectedAffiliate.name === 'MERBAN CAPITAL' || selectedAffiliate.name === 'Merban Capital')) {
-                      // Show only departments linked to Merban affiliate
-                      console.log('[Debug] Selected affiliate:', selectedAffiliate);
-                      console.log('[Debug] All departments:', departments);
+                      // Show departments linked to Merban affiliate, or all departments as fallback
                       const merbanDepts = departments.filter(dept => {
                         const isLinkedToMerban = dept.affiliate?.id === selectedAffiliate.id;
-                        console.log(`[Debug] Department "${dept.name}" - affiliate: ${dept.affiliate?.name} (id: ${dept.affiliate?.id}), linked to Merban: ${isLinkedToMerban}`);
+                        console.log(`[Debug] Department "${dept.name}" - affiliate: ${dept.affiliate?.name} (id: ${dept.affiliate?.id}), linked: ${isLinkedToMerban}`);
                         return isLinkedToMerban;
                       });
-                      console.log('[Debug] Filtered Merban departments:', merbanDepts);
-                      return merbanDepts.map((dept) => (
-                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      
+                      // If no departments are linked to Merban, show all departments as fallback
+                      const depsToShow = merbanDepts.length > 0 ? merbanDepts : departments;
+                      console.log('[Debug] Departments to show:', depsToShow);
+                      
+                      if (merbanDepts.length === 0) {
+                        console.log('[Debug] No departments linked to Merban - showing all departments as fallback');
+                      }
+                      
+                      return depsToShow.map((dept) => (
+                        <option key={dept.id} value={dept.id}>
+                          {dept.name} {merbanDepts.length === 0 ? '(all)' : ''}
+                        </option>
                       ));
                     }
                     return null;

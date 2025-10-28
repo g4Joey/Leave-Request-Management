@@ -82,6 +82,17 @@ if [ "${RUN_RESET_PRODUCTION_USERS:-0}" = "1" ]; then
 	fi
 fi
 
+# Complete database wipe if requested (EXTREME - deletes ALL user data)
+if [ "${WIPE_DATABASE:-0}" = "1" ]; then
+	echo "Running wipe_database (WIPE_DATABASE=1 detected)..."
+	echo "🔥 EXTREME WARNING: This will DELETE ALL USER DATA!"
+	if ! echo "WIPE DATABASE" | python wipe_database.py; then
+		echo "Error: wipe_database failed. Check logs." >&2
+	else
+		echo "🔥 Complete database wipe finished. Remember to set WIPE_DATABASE=0!"
+	fi
+fi
+
 # Create or update CEO user if CEO_EMAIL is provided (password optional)
 if [ -n "${CEO_EMAIL:-}" ]; then
 	echo "Ensuring CEO user from env (CEO_EMAIL=${CEO_EMAIL})..."
