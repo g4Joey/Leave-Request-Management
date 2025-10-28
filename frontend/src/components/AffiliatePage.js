@@ -20,7 +20,7 @@ export default function AffiliatePage() {
   const desiredOrder = [
     'Finance & Accounts',
     'Government Securities',
-    'Pensions & Provident Funds',
+    'Pensions & Provident Fund',
     'Private Wealth & Mutual Fund',
     'HR & Admin',
     'Client Service/Marketing',

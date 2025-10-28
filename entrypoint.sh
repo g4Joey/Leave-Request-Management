@@ -31,6 +31,12 @@ if ! retry_cmd "migrate" python manage.py migrate --noinput; then
 	echo "Warning: migrations failed after retries. Proceeding to start server so the site can respond." >&2
 fi
 
+# Clean up old departments before any data setup
+echo "Cleaning up departments..."
+if ! python clean_departments.py; then
+	echo "Warning: department cleanup failed." >&2
+fi
+
 echo "Collecting static files..."
 if ! retry_cmd "collectstatic" python manage.py collectstatic --noinput; then
 	echo "Warning: collectstatic failed after retries. Static assets may be missing." >&2
@@ -93,22 +99,28 @@ if [ "${WIPE_DATABASE:-0}" = "1" ]; then
 	fi
 fi
 
-# Create or update CEO user if CEO_EMAIL is provided (password optional)
-if [ -n "${CEO_EMAIL:-}" ]; then
-	echo "Ensuring CEO user from env (CEO_EMAIL=${CEO_EMAIL})..."
-	if ! retry_cmd "create_ceo" python manage.py create_ceo; then
-		echo "Warning: create_ceo failed after retries." >&2
+# Enhanced reset with proper balance creation (recommended for production resets)
+if [ "${ENHANCED_RESET:-0}" = "1" ]; then
+	echo "Running enhanced_reset (ENHANCED_RESET=1 detected)..."
+	echo "🔄 Enhanced reset will delete all user data and recreate CEOs with proper balances"
+	if ! python manage.py enhanced_reset --confirm; then
+		echo "Error: enhanced_reset failed. Check logs." >&2
+	else
+		echo "✅ Enhanced reset completed successfully!"
 	fi
 fi
 
 # Optionally run production data setup (idempotent). This is controlled by:
 # - RUN_SEED_ON_DEPLOY=1 OR presence of DJANGO_SUPERUSER_USERNAME, HR_ADMIN_PASSWORD, or SEED_USERS env vars.
+# BUT skip if WIPE_DATABASE is set to avoid conflicts
 should_seed=0
-if [ "${RUN_SEED_ON_DEPLOY:-0}" = "1" ]; then
-	should_seed=1
-fi
-if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ] || [ -n "${HR_ADMIN_PASSWORD:-}" ] || [ -n "${SEED_USERS:-}" ]; then
-	should_seed=1
+if [ "${WIPE_DATABASE:-0}" != "1" ]; then
+	if [ "${RUN_SEED_ON_DEPLOY:-0}" = "1" ]; then
+		should_seed=1
+	fi
+	if [ -n "${DJANGO_SUPERUSER_USERNAME:-}" ] || [ -n "${HR_ADMIN_PASSWORD:-}" ] || [ -n "${SEED_USERS:-}" ]; then
+		should_seed=1
+	fi
 fi
 
 if [ "$should_seed" = "1" ]; then
@@ -117,7 +129,19 @@ if [ "$should_seed" = "1" ]; then
 		echo "Warning: setup_production_data failed after retries." >&2
 	fi
 else
-	echo "Skipping setup_production_data (no RUN_SEED_ON_DEPLOY and no seed env vars detected)."
+	if [ "${WIPE_DATABASE:-0}" = "1" ]; then
+		echo "Skipping setup_production_data (WIPE_DATABASE=1 detected - will create clean slate)"
+	else
+		echo "Skipping setup_production_data (no RUN_SEED_ON_DEPLOY and no seed env vars detected)."
+	fi
+fi
+
+# Create or update CEO user if CEO_EMAIL is provided (password optional)
+if [ -n "${CEO_EMAIL:-}" ]; then
+	echo "Ensuring CEO user from env (CEO_EMAIL=${CEO_EMAIL})..."
+	if ! retry_cmd "create_ceo" python manage.py create_ceo; then
+		echo "Warning: create_ceo failed after retries." >&2
+	fi
 fi
 
 echo "Starting Gunicorn..."

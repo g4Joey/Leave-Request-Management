@@ -116,7 +116,6 @@ class Command(BaseCommand):
                         email='ato@company.com',
                         first_name='Ato',
                         last_name='Manager',
-                        employee_id='EMP001',
                         role='manager',
                         department=it_dept,
                         is_demo=True
@@ -158,7 +157,6 @@ class Command(BaseCommand):
                         email='george@company.com',
                         first_name='George',
                         last_name='',
-                        employee_id='EMP002',
                         role='staff',
                         department=it_dept,
                         manager=ato,
@@ -195,7 +193,6 @@ class Command(BaseCommand):
                         email='augustine@company.com',
                         first_name='Augustine',
                         last_name='',
-                        employee_id='EMP003',
                         role='staff',
                         department=it_dept,
                         manager=ato,
@@ -221,9 +218,8 @@ class Command(BaseCommand):
                         email='hr@company.com',
                         first_name='HR',
                         last_name='Administrator',
-                        employee_id='HR001',
                         role='hr',
-                        department=created_departments.get('Client Service')  # Assign HR to Client Service
+                        department=created_departments.get('HR & Admin')  # Assign HR to HR & Admin department
                     )
                     hr_user.set_password('password123')
                     hr_user.save()

@@ -11,11 +11,18 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         User = get_user_model()
 
-        # Create Departments
+        # Create Departments - Updated to use new structure only
         dept_names = [
-            ("Engineering", "Builds the product"),
-            ("Human Resources", "Manages people and policies"),
-            ("Operations", "Keeps the lights on"),
+            ("Finance & Accounts", "Financial accounts and accounting services"),
+            ("Government Securities", "Government securities trading"),
+            ("Pensions & Provident Fund", "Pension fund and provident fund management"),
+            ("Private Wealth & Mutual Fund", "Private wealth management and mutual fund services"),
+            ("HR & Admin", "Human resources and administrative services"),
+            ("Client Service/Marketing", "Customer service and marketing"),
+            ("Corporate Finance", "Corporate finance and advisory services"),
+            ("IT", "Information Technology services"),
+            ("Compliance", "Regulatory compliance and oversight"),
+            ("Audit", "Internal and external audit services"),
         ]
         departments = {}
         for name, desc in dept_names:
@@ -46,9 +53,8 @@ class Command(BaseCommand):
                 "username": "john.doe@company.com",
                 "first_name": "John",
                 "last_name": "Doe",
-                "employee_id": "EMP001",
                 "role": "staff",
-                "department": departments.get("Engineering"),
+                "department": departments.get("IT"),
                 "password": "password123",
             },
             {
@@ -56,9 +62,8 @@ class Command(BaseCommand):
                 "username": "manager@company.com",
                 "first_name": "Mary",
                 "last_name": "Manager",
-                "employee_id": "MGR001",
                 "role": "manager",
-                "department": departments.get("Engineering"),
+                "department": departments.get("IT"),
                 "password": "password123",
             },
             {
@@ -66,9 +71,8 @@ class Command(BaseCommand):
                 "username": "hr@company.com",
                 "first_name": "Hank",
                 "last_name": "HR",
-                "employee_id": "HR001",
                 "role": "hr",
-                "department": departments.get("Human Resources"),
+                "department": departments.get("HR & Admin"),
                 "password": "password123",
             },
             {
@@ -76,9 +80,8 @@ class Command(BaseCommand):
                 "username": "admin@company.com",
                 "first_name": "Alice",
                 "last_name": "Admin",
-                "employee_id": "ADM001",
                 "role": "admin",
-                "department": departments.get("Operations"),
+                "department": departments.get("Finance & Accounts"),
                 "password": "password123",
                 "is_superuser": True,
                 "is_staff": True,
