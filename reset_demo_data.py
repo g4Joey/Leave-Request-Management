@@ -71,14 +71,35 @@ def reset_demo_data(confirm_text: str = None, auto_confirm: bool = False):
             LeaveRequest.objects.all().delete()
             print(f"   ✓ Deleted {requests_count} leave request(s)\n")
             
-            # Reset all balances (current year only)
-            print("♻️  Resetting leave balances for current year...")
-            updated = LeaveBalance.objects.filter(year=current_year).update(
+            # Reset balances for the current year and previous year to be safe
+            print("♻️  Resetting leave balances for target years...")
+            years_to_reset = [current_year, current_year - 1]
+            updated = LeaveBalance.objects.filter(year__in=years_to_reset).update(
                 used_days=0,
                 pending_days=0
             )
-            print(f"   ✓ Reset {updated} balance record(s)\n")
-            
+            print(f"   ✓ Zeroed used/pending on {updated} balance record(s) for years: {years_to_reset}\n")
+
+            # Recalculate balances to ensure consistency (will remain zero if no requests exist)
+            recalculated = 0
+            for bal in LeaveBalance.objects.filter(year__in=years_to_reset).select_related('employee', 'leave_type'):
+                bal.update_balance()
+                recalculated += 1
+            print(f"   ✓ Recalculated {recalculated} balance record(s) to ensure consistency\n")
+
+            # Write a marker file so deployments/logs can show the reset ran and when
+            try:
+                marker_dir = '/tmp'
+                marker_path = os.path.join(marker_dir, f'reset_demo_run_{int(timezone.now().timestamp())}.txt')
+                with open(marker_path, 'w') as mf:
+                    mf.write(f"reset_run_at={timezone.now().isoformat()}\n")
+                    mf.write(f"deleted_requests={requests_count}\n")
+                    mf.write(f"reset_balances={updated}\n")
+                print(f"   ✓ Wrote marker file: {marker_path}\n")
+            except Exception:
+                # Non-fatal: just log but do not abort
+                print("   ⚠️  Failed to write marker file (non-fatal)")
+
             # Summary
             print("="*60)
             print("✅ DEMO DATA RESET COMPLETED SUCCESSFULLY")
