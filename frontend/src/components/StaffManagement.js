@@ -668,6 +668,7 @@ function StaffManagement() {
         // Enhanced field mapping
     const nameIdx = header.indexOf('name');
     const emailIdx = header.indexOf('email');
+    const affiliateIdx = header.indexOf('affiliate');
     const deptIdx = header.indexOf('department');
         const roleIdx = header.indexOf('role');
         const employeeIdIdx = header.indexOf('employee_id');
@@ -679,10 +680,23 @@ function StaffManagement() {
           return;
         }
         
+        if (affiliateIdx === -1) {
+          showToast({ type: 'error', message: 'CSV must contain "affiliate" column' });
+          return;
+        }
+        
   const validRoles = ['junior_staff', 'senior_staff', 'hod', 'hr', 'ceo', 'admin'];
         
         const parsed = rows.map((r, i) => {
           const cols = r.split(',').map((c) => c.trim());
+          
+          // Extract affiliate
+          const affiliateName = cols[affiliateIdx] || '';
+          const matchedAffiliate = affiliates.find(a => (a.name || '').toLowerCase() === affiliateName.toLowerCase());
+          
+          if (!matchedAffiliate) {
+            return { error: `Row ${i + 2}: Invalid or missing affiliate "${affiliateName}"` };
+          }
           
           // Extract and validate role
           const role = cols[roleIdx] || 'junior_staff';
@@ -704,9 +718,22 @@ function StaffManagement() {
           const email = cols[emailIdx] || '';
           const username = email.split('@')[0] || `user${Date.now() + i}`;
           
-          // Find department ID
+          // Handle department based on affiliate
+          let department_id = null;
           const deptName = cols[deptIdx] || '';
-          const matchedDept = departments.find(d => (d.name || '').toLowerCase() === deptName.toLowerCase());
+          
+          // For Merban Capital, department is required
+          if (matchedAffiliate.name === 'Merban Capital') {
+            if (!deptName) {
+              return { error: `Row ${i + 2}: Department required for Merban Capital employees` };
+            }
+            const matchedDept = departments.find(d => (d.name || '').toLowerCase() === deptName.toLowerCase());
+            if (!matchedDept) {
+              return { error: `Row ${i + 2}: Invalid department "${deptName}"` };
+            }
+            department_id = matchedDept.id;
+          }
+          // For SDSL/SBL, department will be auto-assigned by backend to Executive
           
           return {
             username,
@@ -716,22 +743,40 @@ function StaffManagement() {
             employee_id: employeeId,
             role: validatedRole,
             hire_date: hireDate,
-            department_id: matchedDept?.id || null,
+            affiliate_id: matchedAffiliate.id,
+            department_id: department_id,
             password: 'TempPass123!', // Default temporary password
             is_active_employee: true
           };
         });
         
+        // Filter out errors and collect valid entries
+        const validEntries = parsed.filter(p => !p.error);
+        const parseErrors = parsed.filter(p => p.error);
+        
+        if (parseErrors.length > 0) {
+          console.error('CSV parsing errors:', parseErrors);
+          showToast({ 
+            type: 'warning', 
+            message: `${parseErrors.length} rows have errors. Check console for details.` 
+          });
+        }
+        
+        if (validEntries.length === 0) {
+          showToast({ type: 'error', message: 'No valid employees to import' });
+          return;
+        }
+        
         // Show preview and ask for confirmation
-        showToast({ type: 'info', message: `Parsed ${parsed.length} employees. Starting import...` });
+        showToast({ type: 'info', message: `Parsed ${validEntries.length} valid employees. Starting import...` });
         
         // Import employees one by one to the backend
         let successCount = 0;
         let errorCount = 0;
         const errors = [];
         
-        for (let i = 0; i < parsed.length; i++) {
-          const employeeData = parsed[i];
+        for (let i = 0; i < validEntries.length; i++) {
+          const employeeData = validEntries[i];
           try {
             const response = await api.post('/users/staff/', employeeData);
             successCount++;
@@ -793,11 +838,11 @@ function StaffManagement() {
   };
 
   const downloadTemplateCSV = () => {
-  const csv = `name,email,department,role,employee_id,hire_date
-John Doe,john.doe@company.com,IT,senior_staff,EMP001,2023-01-15
-Jane Smith,jane.smith@company.com,HR,hod,HOD001,2022-03-01
-Alice Johnson,alice.johnson@company.com,Finance,junior_staff,EMP002,2024-06-10
-Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
+  const csv = `name,email,affiliate,department,role,employee_id,hire_date
+John Doe,john.doe@company.com,Merban Capital,IT,senior_staff,EMP001,2023-01-15
+Jane Smith,jane.smith@company.com,Merban Capital,HR & Admin,hod,HOD001,2022-03-01
+Alice Johnson,alice.johnson@company.com,SDSL,,junior_staff,EMP002,2024-06-10
+Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -805,7 +850,7 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
     a.download = 'employees_template.csv';
     a.click();
     URL.revokeObjectURL(url);
-    showToast({ type: 'info', message: 'Downloaded enhanced CSV template with sample data' });
+    showToast({ type: 'info', message: 'Downloaded CSV template with affiliate column' });
   };
 
   const handleSidebarKeyDown = (e) => {
