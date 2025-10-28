@@ -1,6 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, UserProfileView, StaffManagementView, MyProfileView, DepartmentViewSet, ChangePasswordView, get_role_choices, role_summary, AffiliateViewSet, normalize_merban
+from .views import (
+    UserViewSet, UserProfileView, StaffManagementView, MyProfileView, 
+    DepartmentViewSet, ChangePasswordView, AdminResetPasswordView, 
+    AdminUpdateEmailView, get_role_choices, role_summary, 
+    AffiliateViewSet, normalize_merban
+)
 
 router = DefaultRouter()
 """Router configuration:
@@ -25,6 +30,8 @@ urlpatterns = [
     path('profile/', UserProfileView.as_view(), name='user-profile'),
     path('me/', MyProfileView.as_view(), name='my-profile'),
     path('me/change-password/', ChangePasswordView.as_view(), name='change-password'),
+    path('<int:user_id>/reset-password/', AdminResetPasswordView.as_view(), name='admin-reset-password'),
+    path('<int:user_id>/update-email/', AdminUpdateEmailView.as_view(), name='admin-update-email'),
     path('staff/', StaffManagementView.as_view(), name='staff-management'),
     path('admin/normalize-merban/', normalize_merban, name='normalize-merban'),
     path('role-choices/', get_role_choices, name='role-choices'),

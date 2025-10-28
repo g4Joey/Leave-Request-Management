@@ -47,8 +47,10 @@ function StaffManagement() {
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
   const [profileRoleSaving, setProfileRoleSaving] = useState(false);
-  const [profileEditFields, setProfileEditFields] = useState({ employee_id: '', hire_date: '' });
+  const [profileEditFields, setProfileEditFields] = useState({ employee_id: '', hire_date: '', new_email: '', new_password: '' });
   const [profileFieldsSaving, setProfileFieldsSaving] = useState(false);
+  const [resetPasswordSaving, setResetPasswordSaving] = useState(false);
+  const [updateEmailSaving, setUpdateEmailSaving] = useState(false);
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
@@ -185,7 +187,9 @@ function StaffManagement() {
       // Initialize editable fields
       setProfileEditFields({ 
         employee_id: normalized.employee_id || '', 
-        hire_date: normalized.hire_date || '' 
+        hire_date: normalized.hire_date || '',
+        new_email: '',
+        new_password: ''
       });
     } catch (e) {
       const status = e.response?.status;
@@ -333,11 +337,12 @@ function StaffManagement() {
         } : prev.data 
       }));
       
-      // Update the edit fields to match saved data
-      setProfileEditFields({
+      // Update the edit fields to match saved data (preserve new_email and new_password)
+      setProfileEditFields(prev => ({
+        ...prev,
         employee_id: updatedUser.employee_id || '',
         hire_date: updatedUser.hire_date || ''
-      });
+      }));
       
       // Update employees list
       const employeeId = profileModal.employee.id;
@@ -379,6 +384,80 @@ function StaffManagement() {
       showToast({ type: 'error', message: msg });
     } finally {
       setProfileFieldsSaving(false);
+    }
+  };
+
+  const resetEmployeePassword = async () => {
+    if (!profileModal?.employee?.id) return;
+    const newPassword = profileEditFields.new_password.trim();
+    
+    if (!newPassword) {
+      showToast({ type: 'error', message: 'New password is required' });
+      return;
+    }
+    
+    if (newPassword.length < 8) {
+      showToast({ type: 'error', message: 'Password must be at least 8 characters' });
+      return;
+    }
+    
+    try {
+      setResetPasswordSaving(true);
+      await api.post(`/users/${profileModal.employee.id}/reset-password/`, { 
+        new_password: newPassword 
+      });
+      showToast({ type: 'success', message: 'Password reset successfully' });
+      setProfileEditFields(prev => ({ ...prev, new_password: '' }));
+    } catch (e) {
+      console.error('Password reset error:', e.response?.data);
+      const msg = e.response?.data?.error || e.response?.data?.detail || 'Failed to reset password';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setResetPasswordSaving(false);
+    }
+  };
+
+  const updateEmployeeEmail = async () => {
+    if (!profileModal?.employee?.id) return;
+    const newEmail = profileEditFields.new_email.trim();
+    
+    if (!newEmail) {
+      showToast({ type: 'error', message: 'New email is required' });
+      return;
+    }
+    
+    if (!newEmail.includes('@')) {
+      showToast({ type: 'error', message: 'Invalid email format' });
+      return;
+    }
+    
+    try {
+      setUpdateEmailSaving(true);
+      const res = await api.patch(`/users/${profileModal.employee.id}/update-email/`, { 
+        email: newEmail 
+      });
+      showToast({ type: 'success', message: 'Email updated successfully' });
+      
+      // Update modal data
+      setProfileModal(prev => ({ 
+        ...prev, 
+        data: prev.data ? { ...prev.data, email: res.data.new_email } : prev.data 
+      }));
+      
+      // Update employees list
+      const employeeId = profileModal.employee.id;
+      setEmployees(prev => prev.map((emp) => (
+        emp.id === employeeId ? { ...emp, email: res.data.new_email } : emp
+      )));
+      
+      // Clear the input
+      setProfileEditFields(prev => ({ ...prev, new_email: '' }));
+    } catch (e) {
+      console.error('Email update error:', e.response?.data);
+      const msg = e.response?.data?.error || e.response?.data?.detail || 'Failed to update email';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setUpdateEmailSaving(false);
     }
   };
 
@@ -1366,8 +1445,31 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   </div>
                 </div>
 
-                {/* Email - Read only */}
-                <div><span className="font-medium">Email:</span> {profileModal.data.email || '—'}</div>
+                {/* Email - Editable by Admin/HR */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                  <div className="space-y-2">
+                    <div className="text-sm"><span className="font-medium">Current:</span> {profileModal.data.email || '—'}</div>
+                    {(user?.role === 'hr' || user?.role === 'admin' || user?.is_superuser) && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="email"
+                          value={profileEditFields.new_email}
+                          onChange={(e) => setProfileEditFields(prev => ({ ...prev, new_email: e.target.value }))}
+                          className="border rounded-md px-2 py-1 text-sm flex-1"
+                          placeholder="Enter new email"
+                        />
+                        <button
+                          onClick={updateEmployeeEmail}
+                          disabled={updateEmailSaving || !profileEditFields.new_email}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {updateEmailSaving ? 'Updating...' : 'Update Email'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 
                 {/* Department - Read only */}
                 <div><span className="font-medium">Department:</span> {profileModal.data.department_name || '—'}</div>
@@ -1424,6 +1526,29 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                     </button>
                   </div>
                 </div>
+
+                {/* Password Reset - Admin/HR Only */}
+                {(user?.role === 'hr' || user?.role === 'admin' || user?.is_superuser) && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Reset Password</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={profileEditFields.new_password}
+                        onChange={(e) => setProfileEditFields(prev => ({ ...prev, new_password: e.target.value }))}
+                        className="border rounded-md px-2 py-1 text-sm flex-1"
+                        placeholder="Enter new password (min 8 chars)"
+                      />
+                      <button
+                        onClick={resetEmployeePassword}
+                        disabled={resetPasswordSaving || !profileEditFields.new_password}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-red-600 text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {resetPasswordSaving ? 'Resetting...' : 'Reset Password'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {!profileModal.loading && !profileModal.error && !profileModal.data && (
@@ -1433,7 +1558,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
               <button 
                 onClick={() => {
                   setProfileModal({ open: false, loading: false, employee: null, data: null });
-                  setProfileEditFields({ employee_id: '', hire_date: '' });
+                  setProfileEditFields({ employee_id: '', hire_date: '', new_email: '', new_password: '' });
                 }} 
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
               >

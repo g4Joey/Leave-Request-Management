@@ -192,6 +192,104 @@ class ChangePasswordView(APIView):
         return Response({'message': 'Password changed successfully'})
 
 
+class AdminResetPasswordView(APIView):
+    """Admin/HR can reset any staff member's password"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, user_id):
+        # Only HR and Admin can reset passwords
+        if not (getattr(request.user, 'is_superuser', False) or 
+                getattr(request.user, 'role', None) in ['hr', 'admin']):
+            return Response(
+                {'error': 'Only HR and Admin can reset passwords'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        new_password = request.data.get('new_password')
+        if not new_password:
+            return Response(
+                {'error': 'new_password is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(new_password) < 8:
+            return Response(
+                {'error': 'Password must be at least 8 characters long'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            target_user = CustomUser.objects.get(pk=user_id)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'User not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        target_user.set_password(new_password)
+        target_user.save()
+        
+        return Response({
+            'message': f'Password reset successfully for {target_user.get_full_name()}',
+            'user_id': target_user.id,
+            'username': target_user.username
+        })
+
+
+class AdminUpdateEmailView(APIView):
+    """Admin/HR can update any staff member's email"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, user_id):
+        # Only HR and Admin can update emails
+        if not (getattr(request.user, 'is_superuser', False) or 
+                getattr(request.user, 'role', None) in ['hr', 'admin']):
+            return Response(
+                {'error': 'Only HR and Admin can update emails'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        new_email = request.data.get('email')
+        if not new_email:
+            return Response(
+                {'error': 'email is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate email format
+        if '@' not in new_email:
+            return Response(
+                {'error': 'Invalid email format'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            target_user = CustomUser.objects.get(pk=user_id)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'User not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check email uniqueness
+        if CustomUser.objects.filter(email=new_email).exclude(pk=user_id).exists():
+            return Response(
+                {'error': 'Email already in use by another user'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        old_email = target_user.email
+        target_user.email = new_email
+        target_user.save()
+        
+        return Response({
+            'message': f'Email updated successfully for {target_user.get_full_name()}',
+            'user_id': target_user.id,
+            'old_email': old_email,
+            'new_email': new_email
+        })
+
+
 class StaffManagementView(APIView):
     """
     View for HR staff management - view departments and staff
