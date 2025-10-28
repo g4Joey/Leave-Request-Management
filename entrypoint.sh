@@ -71,6 +71,17 @@ if [ "${RUN_RESET_DEMO_DATA:-0}" = "1" ]; then
 	fi
 fi
 
+# Reset production users if requested (for fresh start)
+if [ "${RUN_RESET_PRODUCTION_USERS:-0}" = "1" ]; then
+	echo "Running reset_production_users (RUN_RESET_PRODUCTION_USERS=1 detected)..."
+	echo "⚠️  WARNING: This will delete ALL user accounts except superusers!"
+	if ! python reset_production_users.py; then
+		echo "Warning: reset_production_users failed. Check logs." >&2
+	else
+		echo "✅ Production user reset complete. Remember to set RUN_RESET_PRODUCTION_USERS=0!"
+	fi
+fi
+
 # Create or update CEO user if CEO_EMAIL is provided (password optional)
 if [ -n "${CEO_EMAIL:-}" ]; then
 	echo "Ensuring CEO user from env (CEO_EMAIL=${CEO_EMAIL})..."

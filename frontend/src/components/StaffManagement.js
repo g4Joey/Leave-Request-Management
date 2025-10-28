@@ -1769,13 +1769,19 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   </option>
                   {(() => {
                     const selectedAffiliate = affiliates.find(a => a.id === parseInt(newEmployeeModal.affiliate_id));
-                    if (selectedAffiliate && selectedAffiliate.name === 'MERBAN CAPITAL') {
-                      // Show only Merban departments
-                      return departments
-                        .filter(dept => dept.affiliate?.id === parseInt(newEmployeeModal.affiliate_id) || dept.affiliate?.name === 'MERBAN CAPITAL')
-                        .map((dept) => (
-                          <option key={dept.id} value={dept.id}>{dept.name}</option>
-                        ));
+                    if (selectedAffiliate && (selectedAffiliate.name === 'MERBAN CAPITAL' || selectedAffiliate.name === 'Merban Capital')) {
+                      // Show only departments linked to Merban affiliate
+                      console.log('[Debug] Selected affiliate:', selectedAffiliate);
+                      console.log('[Debug] All departments:', departments);
+                      const merbanDepts = departments.filter(dept => {
+                        const isLinkedToMerban = dept.affiliate?.id === selectedAffiliate.id;
+                        console.log(`[Debug] Department "${dept.name}" - affiliate: ${dept.affiliate?.name} (id: ${dept.affiliate?.id}), linked to Merban: ${isLinkedToMerban}`);
+                        return isLinkedToMerban;
+                      });
+                      console.log('[Debug] Filtered Merban departments:', merbanDepts);
+                      return merbanDepts.map((dept) => (
+                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      ));
                     }
                     return null;
                   })()}
