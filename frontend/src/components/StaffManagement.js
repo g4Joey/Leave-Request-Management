@@ -526,6 +526,7 @@ function StaffManagement() {
       last_name: '', 
       employee_id: '', 
       role: 'junior_staff', 
+      affiliate_id: '',
       department_id: '', 
       password: '',
       hire_date: ''
@@ -533,24 +534,46 @@ function StaffManagement() {
   };
 
   const createEmployee = async () => {
-    const { username, email, first_name, last_name, employee_id, role, department_id, password, hire_date } = newEmployeeModal;
+    const { username, email, first_name, last_name, employee_id, role, affiliate_id, department_id, password, hire_date } = newEmployeeModal;
     
-    if (!username.trim() || !email.trim() || !first_name.trim() || !employee_id.trim() || !role) {
-      showToast({ type: 'warning', message: 'Username, email, first name, employee ID, and role are required' });
+    // Updated validation: email, first_name, last_name are required
+    if (!email.trim() || !first_name.trim() || !last_name.trim() || !role) {
+      showToast({ type: 'warning', message: 'Email, first name, last name, and role are required' });
+      return;
+    }
+    
+    // Validate affiliate selection
+    if (!affiliate_id) {
+      showToast({ type: 'warning', message: 'Please select an affiliate' });
+      return;
+    }
+    
+    // If Merban Capital selected, department is required
+    const selectedAffiliate = affiliates.find(a => a.id === parseInt(affiliate_id));
+    if (selectedAffiliate && selectedAffiliate.name === 'MERBAN CAPITAL' && !department_id) {
+      showToast({ type: 'warning', message: 'Department is required for Merban Capital employees' });
       return;
     }
     
     try {
       setNewEmployeeModal((prev) => ({ ...prev, loading: true }));
       const data = {
-        username: username.trim(),
         email: email.trim(),
         first_name: first_name.trim(),
         last_name: last_name.trim(),
-        employee_id: employee_id.trim(),
         role,
+        affiliate_id: parseInt(affiliate_id),
         is_active_employee: true
       };
+      
+      // Optional fields
+      if (username.trim()) {
+        data.username = username.trim();
+      }
+      
+      if (employee_id.trim()) {
+        data.employee_id = employee_id.trim();
+      }
       
       if (department_id) {
         data.department_id = parseInt(department_id, 10);
@@ -574,7 +597,8 @@ function StaffManagement() {
         first_name: '', 
         last_name: '', 
         employee_id: '', 
-        role: 'staff', 
+        role: 'junior_staff',
+        affiliate_id: '', 
         department_id: '', 
         password: '',
         hire_date: ''
@@ -1467,30 +1491,6 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
           <div className="bg-white rounded-md shadow p-6 w-full max-w-lg">
             <h3 className="text-lg font-semibold mb-4">Create New Employee</h3>
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
-                  <input
-                    type="text"
-                    value={newEmployeeModal.username}
-                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, username: e.target.value }))}
-                    className="w-full border rounded-md px-3 py-2"
-                    placeholder="john.doe"
-                    disabled={newEmployeeModal.loading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
-                  <input
-                    type="text"
-                    value={newEmployeeModal.employee_id}
-                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, employee_id: e.target.value }))}
-                    className="w-full border rounded-md px-3 py-2"
-                    placeholder="EMP001"
-                    disabled={newEmployeeModal.loading}
-                  />
-                </div>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                 <input
@@ -1515,7 +1515,7 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
                   <input
                     type="text"
                     value={newEmployeeModal.last_name}
@@ -1525,6 +1525,91 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                     disabled={newEmployeeModal.loading}
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                  <input
+                    type="text"
+                    value={newEmployeeModal.username}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, username: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="john.doe (optional)"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+                  <input
+                    type="text"
+                    value={newEmployeeModal.employee_id}
+                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, employee_id: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    placeholder="EMP001 (optional)"
+                    disabled={newEmployeeModal.loading}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Affiliate *</label>
+                <select
+                  value={newEmployeeModal.affiliate_id}
+                  onChange={(e) => setNewEmployeeModal((prev) => ({ 
+                    ...prev, 
+                    affiliate_id: e.target.value,
+                    // Clear department when affiliate changes
+                    department_id: '' 
+                  }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  disabled={newEmployeeModal.loading}
+                >
+                  <option value="">Select Affiliate</option>
+                  {affiliates.map((aff) => (
+                    <option key={aff.id} value={aff.id}>{aff.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department {(() => {
+                    const selectedAffiliate = affiliates.find(a => a.id === parseInt(newEmployeeModal.affiliate_id));
+                    return selectedAffiliate && selectedAffiliate.name === 'MERBAN CAPITAL' ? '*' : '';
+                  })()}
+                </label>
+                <select
+                  value={newEmployeeModal.department_id}
+                  onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, department_id: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  disabled={newEmployeeModal.loading || (() => {
+                    const selectedAffiliate = affiliates.find(a => a.id === parseInt(newEmployeeModal.affiliate_id));
+                    // Disable if SDSL or SBL selected, or if no affiliate selected
+                    return !newEmployeeModal.affiliate_id || 
+                           (selectedAffiliate && (selectedAffiliate.name === 'SDSL' || selectedAffiliate.name === 'SBL'));
+                  })()}
+                >
+                  <option value="">
+                    {(() => {
+                      const selectedAffiliate = affiliates.find(a => a.id === parseInt(newEmployeeModal.affiliate_id));
+                      if (!newEmployeeModal.affiliate_id) return 'Select affiliate first';
+                      if (selectedAffiliate && (selectedAffiliate.name === 'SDSL' || selectedAffiliate.name === 'SBL')) {
+                        return 'N/A for SDSL/SBL';
+                      }
+                      return 'Select Department';
+                    })()}
+                  </option>
+                  {(() => {
+                    const selectedAffiliate = affiliates.find(a => a.id === parseInt(newEmployeeModal.affiliate_id));
+                    if (selectedAffiliate && selectedAffiliate.name === 'MERBAN CAPITAL') {
+                      // Show only Merban departments
+                      return departments
+                        .filter(dept => dept.affiliate?.id === parseInt(newEmployeeModal.affiliate_id) || dept.affiliate?.name === 'MERBAN CAPITAL')
+                        .map((dept) => (
+                          <option key={dept.id} value={dept.id}>{dept.name}</option>
+                        ));
+                    }
+                    return null;
+                  })()}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1544,33 +1629,6 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select
-                    value={newEmployeeModal.department_id}
-                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, department_id: e.target.value }))}
-                    className="w-full border rounded-md px-3 py-2"
-                    disabled={newEmployeeModal.loading}
-                  >
-                    <option value="">Select Department</option>
-                    {departments.map((dept) => (
-                      <option key={dept.id} value={dept.id}>{dept.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={newEmployeeModal.password}
-                    onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, password: e.target.value }))}
-                    className="w-full border rounded-md px-3 py-2"
-                    placeholder="Leave empty for auto-generated"
-                    disabled={newEmployeeModal.loading}
-                  />
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
                   <input
                     type="date"
@@ -1580,6 +1638,17 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                     disabled={newEmployeeModal.loading}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={newEmployeeModal.password}
+                  onChange={(e) => setNewEmployeeModal((prev) => ({ ...prev, password: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  placeholder="Leave empty for auto-generated"
+                  disabled={newEmployeeModal.loading}
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-6">
@@ -1592,7 +1661,8 @@ Bob Wilson,bob.wilson@company.com,IT,senior_staff,EMP003,2023-08-22`;
                   first_name: '', 
                   last_name: '', 
                   employee_id: '', 
-                  role: 'staff', 
+                  role: 'junior_staff',
+                  affiliate_id: '', 
                   department_id: '', 
                   password: '',
                   hire_date: ''

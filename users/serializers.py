@@ -45,7 +45,8 @@ class DepartmentSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     department = DepartmentSerializer(read_only=True)
-    department_id = serializers.IntegerField(write_only=True, required=False)
+    department_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    affiliate_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     password = serializers.CharField(write_only=True, required=False)
     is_superuser = serializers.BooleanField(read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
@@ -67,25 +68,70 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'employee_id', 'role', 'role_display', 'department', 'department_id',
+            'employee_id', 'role', 'role_display', 'department', 'department_id', 'affiliate_id',
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser', 'grade', 'grade_id'
         ]
         extra_kwargs = {
-            'password': {'write_only': True},
+            'password': {'write_only': True, 'required': False},
+            'username': {'required': False},
+            'employee_id': {'required': False},
+            'email': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
         }
         read_only_fields = ['is_superuser']
     
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         department_id = validated_data.pop('department_id', None)
+        affiliate_id = validated_data.pop('affiliate_id', None)
+        
+        # Auto-generate username from email if not provided
+        if 'username' not in validated_data or not validated_data.get('username'):
+            base_username = validated_data['email'].split('@')[0]
+            username = base_username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+            validated_data['username'] = username
+        
+        # Auto-generate employee_id if not provided
+        if 'employee_id' not in validated_data or not validated_data.get('employee_id'):
+            # Generate format: EMP-YYYY-NNNN
+            from django.utils import timezone
+            year = timezone.now().year
+            last_emp = User.objects.filter(employee_id__startswith=f'EMP-{year}').order_by('-employee_id').first()
+            if last_emp and last_emp.employee_id:
+                try:
+                    last_num = int(last_emp.employee_id.split('-')[-1])
+                    new_num = last_num + 1
+                except:
+                    new_num = 1
+            else:
+                new_num = 1
+            validated_data['employee_id'] = f'EMP-{year}-{new_num:04d}'
         
         user = User.objects.create_user(**validated_data)
         
         if password:
             user.set_password(password)
             user.save()
+        
+        # Handle affiliate assignment
+        if affiliate_id and not department_id:
+            # For SDSL/SBL, assign to Executive department of that affiliate
+            try:
+                from users.models import Affiliate, Department
+                affiliate = Affiliate.objects.get(pk=affiliate_id)
+                exec_dept = Department.objects.filter(name='Executive', affiliate=affiliate).first()
+                if exec_dept:
+                    user.department = exec_dept
+                    user.save()
+            except:
+                pass
             
         if department_id:
             # Assign foreign key id via setattr to satisfy static analyzers

@@ -1,0 +1,29 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Trigger DigitalOcean Deploy Hook
+        if: ${{ secrets.DIGITALOCEAN_DEPLOY_HOOK_URL }}
+        run: |
+          echo "Triggering DigitalOcean deployment..."
+          curl -X POST "${{ secrets.DIGITALOCEAN_DEPLOY_HOOK_URL }}"
+          echo "✓ Deployment triggered successfully"
+      
+      - name: No deploy hook configured
+        if: ${{ !secrets.DIGITALOCEAN_DEPLOY_HOOK_URL }}
+        run: |
+          echo "⚠️  No DIGITALOCEAN_DEPLOY_HOOK_URL secret configured"
+          echo "To enable auto-deploy, add your DigitalOcean App Platform deploy hook URL to repository secrets"
+          echo "For now, deployment will occur automatically via DigitalOcean's GitHub integration"

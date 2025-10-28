@@ -19,18 +19,18 @@ class Command(BaseCommand):
         skip_hr = options.get('skip_hr')
         
         with transaction.atomic():
-            # Create departments
+            # Create departments - Updated to match new organizational structure
             departments_data = [
-                ('Accounts & Compliance', 'Financial accounts and regulatory compliance'),
-                ('IHL', 'Investment and Holdings Limited'),
-                ('Stockbrokers', 'Stock brokerage services'),
-                # SDSL is Strategic Debts Solution Limited
-                ('SDSL', 'Strategic Debts Solution Limited'),
-                ('Client Service', 'Customer service and support'),
-                ('Pensions', 'Pension fund management'),
+                ('Finance & Accounts', 'Financial accounts and accounting services'),
                 ('Government Securities', 'Government securities trading'),
-                ('Marketing', 'Marketing and communications'),
+                ('Pensions & Provident Fund', 'Pension fund and provident fund management'),
+                ('Private Wealth & Mutual Fund', 'Private wealth management and mutual fund services'),
+                ('HR & Admin', 'Human resources and administrative services'),
+                ('Client Service/Marketing', 'Customer service and marketing'),
+                ('Corporate Finance', 'Corporate finance and advisory services'),
                 ('IT', 'Information Technology services'),
+                ('Compliance', 'Regulatory compliance and oversight'),
+                ('Audit', 'Internal and external audit services'),
             ]
             
             created_departments = {}
