@@ -45,9 +45,8 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         for role_code, role_display in role_choices:
             # Get users with this role
             users_with_role = User.objects.filter(
-                role=role_code, 
-                is_active=True, 
-                is_active_employee=True
+                role=role_code,
+                is_active=True,
             )
             user_count = users_with_role.count()
             
@@ -113,7 +112,6 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         users_with_role = User.objects.filter(
             role=role_code,
             is_active=True,
-            is_active_employee=True
         )
         
         if users_with_role.count() == 0:
@@ -195,7 +193,6 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         users_with_role = User.objects.filter(
             role=role_code,
             is_active=True,
-            is_active_employee=True
         )
         
         role_display = dict(CustomUser.ROLE_CHOICES).get(role_code, role_code)
