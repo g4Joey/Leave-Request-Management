@@ -37,26 +37,26 @@ def cleanup_executive_departments():
             print("ERROR: No suitable default department (IT or HR & Admin) found for reassignment")
             return
         
-        # Reassign all users from Executive departments
+        # Make Executive users standalone (CEOs) instead of reassigning to departments
         total_moved = 0
         for exec_dept in executive_depts:
             users = CustomUser.objects.filter(department=exec_dept)
             user_count = users.count()
             
             if user_count > 0:
-                # Show users being moved
+                # Show users being made standalone
                 for user in users:
-                    print(f"Moving user: {user.get_full_name()} ({user.email}) from Executive to {default_dept.name}")
+                    print(f"Making user standalone: {user.get_full_name()} ({user.email}) - removing from Executive department")
                 
-                # Move users to default department
-                users.update(department=default_dept)
+                # Make users standalone (department=None) - they become individual entities
+                users.update(department=None)
                 total_moved += user_count
                 
             # Delete the Executive department
             exec_dept.delete()
             print(f"Deleted Executive department (id={exec_dept.pk})")
         
-        print(f"Successfully moved {total_moved} user(s) and removed all Executive departments")
+        print(f"Successfully made {total_moved} user(s) standalone and removed all Executive departments")
 
 if __name__ == '__main__':
     cleanup_executive_departments()
