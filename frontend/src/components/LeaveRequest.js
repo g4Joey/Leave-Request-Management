@@ -14,6 +14,9 @@ function LeaveRequest() {
 
   // Helper: today's date in YYYY-MM-DD to avoid past-date submissions
   const today = new Date().toISOString().split('T')[0];
+  
+  // Helper: maximum allowed date (end of next year)
+  const maxDate = new Date(new Date().getFullYear() + 1, 11, 31).toISOString().split('T')[0];
 
   useEffect(() => {
     const fetchLeaveTypes = async () => {
@@ -129,6 +132,7 @@ function LeaveRequest() {
               onChange={handleChange}
               required
               min={today}
+              max={maxDate}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
             />
           </div>
@@ -145,6 +149,7 @@ function LeaveRequest() {
               onChange={handleChange}
               required
               min={formData.start_date || today}
+              max={maxDate}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
             />
           </div>

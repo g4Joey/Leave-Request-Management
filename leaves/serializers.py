@@ -70,8 +70,15 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             if start_date > end_date:
                 raise serializers.ValidationError("Start date cannot be after end date.")
             
-            if start_date < timezone.now().date():
+            # Allow next year requests: Allow current year and next year only
+            current_date = timezone.now().date()
+            max_allowed_year = current_date.year + 1
+            
+            if start_date < current_date:
                 raise serializers.ValidationError("Cannot submit leave request for past dates.")
+            
+            if start_date.year > max_allowed_year:
+                raise serializers.ValidationError(f"Cannot submit leave request beyond {max_allowed_year}.")
             
             # Working days (weekdays only) to enforce balance realistically
             total_days = self._calculate_working_days(start_date, end_date)
@@ -94,9 +101,19 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
                         )
                         
                 except LeaveBalance.DoesNotExist:
-                    raise serializers.ValidationError(
-                        f"No leave balance found for {leave_type.name} in {start_date.year}."
-                    )
+                    # Auto-create next year balance if needed
+                    if start_date.year == timezone.now().date().year + 1:
+                        balance = self._create_next_year_balance(user, leave_type, start_date.year)
+                        # Check if user has enough balance
+                        remaining_days = balance.entitled_days - balance.used_days - balance.pending_days
+                        if total_days > remaining_days:
+                            raise serializers.ValidationError(
+                                f"Insufficient leave balance. You have {remaining_days} days remaining."
+                            )
+                    else:
+                        raise serializers.ValidationError(
+                            f"No leave balance found for {leave_type.name} in {start_date.year}."
+                        )
             
             # Check for overlapping leave requests
             if hasattr(self.context.get('request'), 'user'):
@@ -134,6 +151,53 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
                 wd += 1
             current += timedelta(days=1)
         return wd
+    
+    def _create_next_year_balance(self, user, leave_type, year):
+        """Auto-create next year leave balance using current year entitlements as baseline"""
+        from .models import LeaveBalance
+        
+        # Try to get current year balance as reference for entitlements
+        current_year = timezone.now().year
+        try:
+            current_balance = LeaveBalance.objects.get(
+                employee=user,
+                leave_type=leave_type,
+                year=current_year
+            )
+            entitled_days = current_balance.entitled_days
+        except LeaveBalance.DoesNotExist:
+            # Fallback to default entitlements
+            entitled_days = self._get_default_entitlement(user, leave_type)
+        
+        # Create next year balance
+        balance = LeaveBalance.objects.create(
+            employee=user,
+            leave_type=leave_type,
+            year=year,
+            entitled_days=entitled_days,
+            used_days=0,
+            pending_days=0
+        )
+        return balance
+    
+    def _get_default_entitlement(self, user, leave_type):
+        """Get default entitlement based on leave type and user role"""
+        type_name = leave_type.name.lower()
+        
+        if 'annual' in type_name:
+            return getattr(user, 'annual_leave_entitlement', 25)
+        elif 'sick' in type_name:
+            return 14 if user.role in ['manager', 'admin', 'hr'] else 10
+        elif 'maternity' in type_name:
+            return 90 if user.role in ['manager', 'admin', 'hr'] else 84
+        elif 'paternity' in type_name:
+            return 14 if user.role in ['manager', 'admin', 'hr'] else 7
+        elif 'compassionate' in type_name:
+            return 5
+        elif 'casual' in type_name:
+            return 7 if user.role in ['manager', 'admin', 'hr'] else 5
+        else:
+            return 10
 
 
 class LeaveRequestListSerializer(serializers.ModelSerializer):
