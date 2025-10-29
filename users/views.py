@@ -308,8 +308,9 @@ class StaffManagementView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        departments = Department.objects.select_related('hod').all()
-        data = []
+        # Check for filtering parameters
+        affiliate_id = request.GET.get('affiliate_id')
+        role_filter = request.GET.get('role')
         
         import os
         # Control demo user visibility:
@@ -325,6 +326,37 @@ class StaffManagementView(APIView):
         else:
             # Default: hide demo users in production
             exclude_demo = not bool(getattr(settings, 'DEBUG', False))
+        
+        # If requesting CEOs specifically, handle that separately
+        if role_filter == 'ceo':
+            ceo_qs = CustomUser.objects.filter(role='ceo', is_active=True)
+            if affiliate_id:
+                ceo_qs = ceo_qs.filter(affiliate_id=affiliate_id)
+            
+            if exclude_demo:
+                ceo_qs = ceo_qs.exclude(is_demo=True)
+            
+            ceo_data = []
+            for ceo in ceo_qs:
+                ceo_data.append({
+                    'id': ceo.pk,
+                    'employee_id': getattr(ceo, 'employee_id', None),
+                    'name': ceo.get_full_name(),
+                    'email': ceo.email,
+                    'role': ceo.role,
+                    'hire_date': ceo.hire_date,
+                })
+            
+            return Response(ceo_data)
+        
+        if affiliate_id:
+            # Filter departments by affiliate
+            departments = Department.objects.select_related('hod').filter(affiliate_id=affiliate_id)
+        else:
+            departments = Department.objects.select_related('hod').all()
+        
+        data = []
+        
         for dept in departments:
             # Use a simple, reliable filter to avoid missing users on legacy datasets
             staff_qs = CustomUser.objects.filter(
@@ -346,15 +378,6 @@ class StaffManagementView(APIView):
                         'employee_id': staff.manager.employee_id
                     }
 
-                grade = getattr(staff, 'grade', None)
-                grade_info = None
-                if grade is not None:
-                    grade_info = {
-                        'id': getattr(grade, 'pk', None),
-                        'name': getattr(grade, 'name', None),
-                        'slug': getattr(grade, 'slug', None),
-                    }
-                
                 staff_data.append({
                     'id': staff.pk,
                     'employee_id': staff.employee_id,
@@ -363,8 +386,7 @@ class StaffManagementView(APIView):
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,
-                    'grade': grade_info,
-                    'grade_id': getattr(staff, 'grade_id', None)
+                    # grades removed
                 })
             
             data.append({
@@ -382,6 +404,88 @@ class StaffManagementView(APIView):
                 } if getattr(dept, 'hod', None) else None
             })
         
+        # Handle affiliate-specific individual employees (SDSL/SBL without departments)
+        if affiliate_id:
+            try:
+                affiliate = Affiliate.objects.get(pk=affiliate_id)
+                # For SDSL/SBL, include individual employees (no department, but with affiliate)
+                if affiliate.name in ['SDSL', 'SBL']:
+                    individual_qs = CustomUser.objects.filter(
+                        affiliate_id=affiliate_id,
+                        department__isnull=True,  # No department assignment
+                        is_active=True
+                    ).exclude(role='ceo')  # Exclude CEOs as they're handled separately
+                    
+                    if exclude_demo:
+                        individual_qs = individual_qs.exclude(is_demo=True)
+                    
+                    # Convert to list format similar to departments
+                    individual_staff = []
+                    for staff in individual_qs:
+                        manager_info = None
+                        if staff.manager:
+                            manager_info = {
+                                'id': staff.manager.pk,
+                                'name': staff.manager.get_full_name(),
+                                'employee_id': staff.manager.employee_id
+                            }
+                        
+                        individual_staff.append({
+                            'id': staff.pk,
+                            'employee_id': staff.employee_id,
+                            'name': staff.get_full_name(),
+                            'email': staff.email,
+                            'role': staff.role,
+                            'hire_date': staff.hire_date,
+                            'manager': manager_info,
+                            # grades removed
+                        })
+                    
+                    # Return individual employees as a flattened list for SDSL/SBL
+                    if individual_staff:
+                        return Response(individual_staff)
+                        
+            except Affiliate.DoesNotExist:
+                pass
+        
+        # Additionally include CEOs (executives) as a top-level section so they appear
+        # in the staff/department view even when they are individual entities (department=None).
+        # This respects the same demo-exclusion policy used above.
+        ceo_qs = CustomUser.objects.filter(role='ceo', is_active=True)
+        if affiliate_id:
+            ceo_qs = ceo_qs.filter(affiliate_id=affiliate_id)
+        if exclude_demo:
+            ceo_qs = ceo_qs.exclude(is_demo=True)
+        ceo_list = []
+        for ceo in ceo_qs:
+            manager_info = None
+            if ceo.manager:
+                manager_info = {
+                    'id': ceo.manager.pk,
+                    'name': ceo.manager.get_full_name(),
+                    'employee_id': ceo.manager.employee_id
+                }
+            ceo_list.append({
+                'id': ceo.pk,
+                'employee_id': getattr(ceo, 'employee_id', None),
+                'name': ceo.get_full_name(),
+                'email': ceo.email,
+                'role': ceo.role,
+                'hire_date': ceo.hire_date,
+                'manager': manager_info,
+                # grades removed
+            })
+
+        if ceo_list:
+            data.append({
+                'id': 'executives',
+                'name': 'Executives',
+                'description': 'Top-level executive users (CEOs)',
+                'staff_count': len(ceo_list),
+                'staff': ceo_list,
+                'manager': None
+            })
+
         return Response(data)
     
     def post(self, request):

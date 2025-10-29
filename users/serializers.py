@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Department, CustomUser as User, EmploymentGrade, Affiliate
+from .models import Department, CustomUser as User, Affiliate
 
 
 class AffiliateSerializer(serializers.ModelSerializer):
@@ -50,17 +50,8 @@ class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     is_superuser = serializers.BooleanField(read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
-    grade = serializers.SerializerMethodField(read_only=True)
-    grade_id = serializers.PrimaryKeyRelatedField(
-        queryset=EmploymentGrade.objects.filter(is_active=True), source='grade', allow_null=True, required=False, write_only=True
-    )
     role_display = serializers.SerializerMethodField(read_only=True)
 
-    def get_grade(self, obj):
-        if obj.grade:
-            return {'id': obj.grade.id, 'name': obj.grade.name, 'slug': obj.grade.slug}
-        return None
-    
     def get_role_display(self, obj):
         return obj.get_role_display_name()
 
@@ -71,7 +62,7 @@ class UserSerializer(serializers.ModelSerializer):
             'employee_id', 'role', 'role_display', 'department', 'department_id', 'affiliate_id',
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
-            'is_superuser', 'grade', 'grade_id'
+            'is_superuser'
         ]
         extra_kwargs = {
             'password': {'write_only': True, 'required': False},
@@ -120,18 +111,11 @@ class UserSerializer(serializers.ModelSerializer):
             user.set_password(password)
             user.save()
         
-        # Handle affiliate assignment
-        if affiliate_id and not department_id:
-            # For SDSL/SBL, assign to Executive department of that affiliate
-            try:
-                from users.models import Affiliate, Department
-                affiliate = Affiliate.objects.get(pk=affiliate_id)
-                exec_dept = Department.objects.filter(name='Executive', affiliate=affiliate).first()
-                if exec_dept:
-                    user.department = exec_dept
-                    user.save()
-            except:
-                pass
+        # Handle affiliate assignment (no automatic department assignment for affiliate-only users)
+        if affiliate_id:
+            # Assign foreign key id via setattr to satisfy static analyzers
+            setattr(user, 'affiliate_id', affiliate_id)
+            user.save(update_fields=['affiliate'])
             
         if department_id:
             # Assign foreign key id via setattr to satisfy static analyzers

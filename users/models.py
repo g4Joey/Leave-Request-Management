@@ -74,6 +74,8 @@ class CustomUser(AbstractUser):
     employee_id = models.CharField(max_length=20, unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='junior_staff')
     department = models.ForeignKey(Department, on_delete=models.PROTECT, null=True, blank=True)
+    affiliate = models.ForeignKey(Affiliate, on_delete=models.PROTECT, null=True, blank=True, 
+                                 related_name='users')
     manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, 
                                related_name='managed_employees')
     
