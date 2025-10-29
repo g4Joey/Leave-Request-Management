@@ -3,6 +3,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../services/api';
 
+const formatRoleLabel = (role) => {
+  if (!role) {
+    return 'Not assigned';
+  }
+  return role
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
 function MyProfile() {
   const { user, setUser, refreshUser } = useAuth();
   const { showToast } = useToast();
@@ -76,9 +87,6 @@ function MyProfile() {
         last_name: response.data.last_name,
         email: response.data.email,
         phone: response.data.phone,
-        grade: response.data.grade ?? prev?.grade ?? null,
-        grade_id: response.data.grade?.id ?? response.data.grade_id ?? prev?.grade_id ?? null,
-        grade_slug: response.data.grade?.slug ?? prev?.grade_slug ?? null,
       }));
       showToast('Profile updated successfully', 'success');
     } catch (error) {
@@ -127,10 +135,7 @@ function MyProfile() {
         <div className="px-6 py-4 border-b border-gray-200">
           <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
           <p className="text-gray-600">Manage your personal information and preferences</p>
-          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-sm font-medium">
-            <span>Your grade:</span>
-            <span>{user?.grade?.name || 'Not assigned'}</span>
-          </div>
+          {/* Grade display removed: roles now cover classification */}
         </div>
 
         <div className="p-6 space-y-8">
@@ -227,11 +232,11 @@ function MyProfile() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Employment Grade
+                  Role
                 </label>
                 <input
                   type="text"
-                  value={user?.grade?.name || 'Not assigned'}
+                  value={formatRoleLabel(user?.role)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
                   disabled
                 />

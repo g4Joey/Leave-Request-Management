@@ -10,7 +10,8 @@ export const getRoleDisplayName = (role) => {
     manager: 'HOD (Head of Department)',
     hr: 'HR',
     ceo: 'CEO',
-    admin: 'Admin'
+    admin: 'Admin',
+    employee: 'Junior Staff'
   };
   
   return roleDisplayMap[role] || role;
@@ -24,7 +25,8 @@ export const getRoleShortName = (role) => {
     manager: 'HOD',
     hr: 'HR',
     ceo: 'CEO', 
-    admin: 'Admin'
+    admin: 'Admin',
+    employee: 'Junior Staff'
   };
   
   return roleShortMap[role] || role;
@@ -38,7 +40,8 @@ export const getRoleColor = (role) => {
     manager: 'bg-blue-100 text-blue-800',
     hr: 'bg-green-100 text-green-800',
     ceo: 'bg-indigo-100 text-indigo-800',
-    admin: 'bg-purple-100 text-purple-800'
+    admin: 'bg-purple-100 text-purple-800',
+    employee: 'bg-gray-100 text-gray-800'
   };
   
   return roleColors[role] || roleColors.junior_staff;

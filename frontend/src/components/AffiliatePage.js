@@ -3,6 +3,84 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 
+const parseNumericId = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+};
+
+const mapStaffRecord = (staff, context = {}) => {
+  const firstName = staff.first_name || '';
+  const lastName = staff.last_name || '';
+  const fallbackName = `${firstName} ${lastName}`.trim();
+
+  const affiliateIdRaw = context.affiliateId ?? staff.affiliate?.id ?? staff.affiliate_id ?? null;
+  const affiliateId = parseNumericId(affiliateIdRaw);
+  const affiliateName = context.affiliateName ?? staff.affiliate?.name ?? staff.affiliate_name ?? null;
+  const departmentName = context.department ?? staff.department?.name ?? staff.department_name ?? (typeof staff.department === 'string' ? staff.department : null) ?? null;
+
+  return {
+    id: staff.id,
+    name: staff.name || fallbackName || staff.email || 'Staff member',
+    email: staff.email || '',
+    department: departmentName,
+    employee_id: staff.employee_id,
+    role: staff.role,
+    manager: staff.manager,
+    hire_date: staff.hire_date,
+    affiliateId,
+    affiliateName,
+  };
+};
+
+const normalizeStaffPayload = (payload, affiliateContext = {}) => {
+  const base = Array.isArray(payload?.results)
+    ? payload.results
+    : (Array.isArray(payload?.data)
+      ? payload.data
+      : (Array.isArray(payload) ? payload : []));
+
+  if (!Array.isArray(base)) {
+    return [];
+  }
+
+  const records = [];
+
+  base.forEach((item) => {
+    if (Array.isArray(item?.staff)) {
+      const departmentName = item.name || item.department_name || (typeof item.department === 'string' ? item.department : null) || null;
+      const affiliateDetails = {
+        affiliateId: item.affiliate?.id ?? item.affiliate_id ?? affiliateContext.id ?? null,
+        affiliateName: item.affiliate?.name ?? item.affiliate_name ?? affiliateContext.name ?? null,
+      };
+      item.staff.forEach((member) => {
+        records.push(mapStaffRecord(member, { department: departmentName, ...affiliateDetails }));
+      });
+    } else if (item && (item.id || item.email || item.first_name || item.last_name)) {
+      records.push(mapStaffRecord(item, {
+        affiliateId: affiliateContext.id,
+        affiliateName: affiliateContext.name,
+      }));
+    }
+  });
+
+  return records;
+};
+
+const stripAffiliateMeta = (records) => records.map(({ affiliateId, affiliateName, ...rest }) => rest);
+
 export default function AffiliatePage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -10,11 +88,13 @@ export default function AffiliatePage() {
   const [affiliate, setAffiliate] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [ceo, setCeo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newDeptModal, setNewDeptModal] = useState({ open: false, name: '', description: '' });
   const [deleteModal, setDeleteModal] = useState({ open: false, selected: {}, processing: false });
   const [hodModal, setHodModal] = useState({ open: false, loading: false, department: null, selectedManagerId: '' });
+  const [newEmployeeModal, setNewEmployeeModal] = useState({ open: false, loading: false });
 
   // Desired display order for departments (case-insensitive match)
   const desiredOrder = [
@@ -37,7 +117,18 @@ export default function AffiliatePage() {
         api.get(`/users/affiliates/${id}/`),
         api.get(`/users/departments/?affiliate_id=${id}`),
       ]);
-      setAffiliate(affRes.data);
+      const affiliateData = affRes.data;
+      setAffiliate(affiliateData);
+
+      // Fetch CEO for this affiliate
+      try {
+        const ceoRes = await api.get(`/users/staff/?affiliate_id=${id}&role=ceo`);
+        const ceoData = ceoRes.data?.results?.[0] || ceoRes.data?.[0];
+        setCeo(ceoData || null);
+      } catch (e) {
+        console.warn('Failed to load CEO for affiliate:', e);
+        setCeo(null);
+      }
       const list = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
       // Sort departments to follow desired order first, then others alphabetically
       const nameKey = (n) => (n || '').toString().trim().toLowerCase();
@@ -53,52 +144,39 @@ export default function AffiliatePage() {
       });
       setDepartments(sorted);
 
-      // Try to load staff scoped to this affiliate (for HOD dropdown and staff counts)
+      let staffRecords = [];
+      const affiliateIdForContext = parseNumericId(affiliateData?.id) ?? (affiliateData?.id ?? null);
       try {
         const staffRes = await api.get(`/users/staff/?affiliate_id=${id}`);
-        const payload = staffRes?.data;
-        const depts = Array.isArray(payload)
-          ? payload
-          : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : []));
-        const flattened = (depts || []).flatMap((d) =>
-          (Array.isArray(d?.staff) ? d.staff : []).map((s) => ({
-            id: s.id,
-            name: s.name,
-            email: s.email,
-            department: d.name,
-            employee_id: s.employee_id,
-            role: s.role,
-            manager: s.manager,
-            hire_date: s.hire_date,
-          }))
-        );
-        setEmployees(flattened);
-      } catch (e) {
-        // Fallback: load all staff and filter by departments we have (best-effort)
+        staffRecords = normalizeStaffPayload(staffRes?.data, {
+          id: affiliateIdForContext,
+          name: affiliateData?.name,
+        });
+      } catch (_err) {
         try {
           const staffResAll = await api.get(`/users/staff/`);
-          const payload = staffResAll?.data;
-          const depts = Array.isArray(payload)
-            ? payload
-            : (Array.isArray(payload?.results) ? payload.results : (Array.isArray(payload?.data) ? payload.data : []));
+          const allRecords = normalizeStaffPayload(staffResAll?.data);
           const deptNames = new Set(sorted.map((d) => (d?.name || '').toString()));
-          const flattened = (depts || []).flatMap((d) =>
-            (Array.isArray(d?.staff) ? d.staff : []).map((s) => ({
-              id: s.id,
-              name: s.name,
-              email: s.email,
-              department: d.name,
-              employee_id: s.employee_id,
-              role: s.role,
-              manager: s.manager,
-              hire_date: s.hire_date,
-            }))
-          ).filter((s) => deptNames.has(s.department));
-          setEmployees(flattened);
+          const affiliateMatchId = parseNumericId(affiliateData?.id);
+          const affiliateNameMatch = affiliateData?.name;
+          staffRecords = allRecords.filter((record) => {
+            const recordAffiliateId = parseNumericId(record.affiliateId);
+            if (recordAffiliateId !== null && affiliateMatchId !== null) {
+              return recordAffiliateId === affiliateMatchId;
+            }
+            if (record.affiliateName && affiliateNameMatch) {
+              return record.affiliateName === affiliateNameMatch;
+            }
+            if (deptNames.size > 0 && record.department) {
+              return deptNames.has(record.department);
+            }
+            return false;
+          });
         } catch (_) {
-          setEmployees([]);
+          staffRecords = [];
         }
       }
+      setEmployees(stripAffiliateMeta(staffRecords));
     } catch (e) {
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load affiliate';
       showToast({ type: 'error', message: msg });
@@ -189,33 +267,60 @@ export default function AffiliatePage() {
           <button onClick={() => navigate('/staff')} className="text-sm text-gray-600 hover:underline">← Back</button>
           <h1 className="text-2xl font-semibold mt-1">{affiliate.name}</h1>
         </div>
-        <div>
+        <div className="flex items-center gap-4">
+          {/* CEO Display */}
+          {ceo && (
+            <div className="text-right">
+              <div className="text-sm font-medium text-gray-900">
+                CEO: {ceo.name}
+              </div>
+              <div className="text-xs text-gray-500">
+                {ceo.email}
+              </div>
+            </div>
+          )}
+          
           <div className="flex items-center gap-2">
+            {/* New Employee Button */}
             <button
-              onClick={() => setNewDeptModal({ open: true, name: '', description: '' })}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-gray-200"
+              onClick={() => setNewEmployeeModal({ open: true, loading: false })}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
             >
-              New department
+              New Employee
             </button>
-            <button
-              onClick={() => setDeleteModal({ open: true, selected: {}, processing: false })}
-              disabled={departments.length === 0}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-red-600 text-red-600 disabled:opacity-50"
-              title={departments.length === 0 ? 'No departments to delete' : 'Delete departments'}
-            >
-              Delete departments
-            </button>
+            
+            {/* Only show department management for MERBAN CAPITAL */}
+            {affiliate.name === 'MERBAN CAPITAL' && (
+              <>
+                <button
+                  onClick={() => setNewDeptModal({ open: true, name: '', description: '' })}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-gray-200"
+                >
+                  New department
+                </button>
+                <button
+                  onClick={() => setDeleteModal({ open: true, selected: {}, processing: false })}
+                  disabled={departments.length === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-red-600 text-red-600 disabled:opacity-50"
+                  title={departments.length === 0 ? 'No departments to delete' : 'Delete departments'}
+                >
+                  Delete departments
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="bg-white shadow rounded-md p-4">
-        <h2 className="text-lg font-medium mb-4">Departments</h2>
-        {departments.length === 0 ? (
-          <div className="text-sm text-gray-500">No departments under this affiliate yet.</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {departments.map((d) => (
+      {/* MERBAN CAPITAL: Show departments */}
+      {affiliate.name === 'MERBAN CAPITAL' && (
+        <div className="bg-white shadow rounded-md p-4">
+          <h2 className="text-lg font-medium mb-4">Departments</h2>
+          {departments.length === 0 ? (
+            <div className="text-sm text-gray-500">No departments under this affiliate yet.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {departments.map((d) => (
               <div key={d.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
                 <div className="w-full px-4 py-4 text-left">
                   <div className="flex items-center justify-between">
@@ -251,7 +356,30 @@ export default function AffiliatePage() {
             ))}
           </div>
         )}
-      </div>
+        </div>
+      )}
+
+      {/* SDSL/SBL: Show individual employees */}
+      {(affiliate.name === 'SDSL' || affiliate.name === 'SBL') && (
+        <div className="bg-white shadow rounded-md p-4">
+          <h2 className="text-lg font-medium mb-4">Team Members</h2>
+          {employees.length === 0 ? (
+            <div className="text-sm text-gray-500">No team members under this affiliate yet.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {employees.map((emp) => (
+                <div key={emp.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="text-lg font-medium text-gray-900">{emp.name}</h4>
+                  <p className="text-sm text-gray-600 mt-1">{emp.email}</p>
+                  <p className="text-sm text-gray-600">ID: {emp.employee_id}</p>
+                  <p className="text-sm text-gray-600">Role: {emp.role}</p>
+                  {emp.hire_date && <p className="text-sm text-gray-600">Hired: {new Date(emp.hire_date).toLocaleDateString()}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {newDeptModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
@@ -443,6 +571,235 @@ export default function AffiliatePage() {
           </div>
         </div>
       )}
+
+      {/* New Employee Modal */}
+      {newEmployeeModal.open && (
+        <NewEmployeeModal
+          affiliate={affiliate}
+          departments={departments}
+          onClose={() => setNewEmployeeModal({ open: false, loading: false })}
+          onSuccess={() => {
+            setNewEmployeeModal({ open: false, loading: false });
+            load(); // Refresh data
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// New Employee Modal Component
+function NewEmployeeModal({ affiliate, departments, onClose, onSuccess }) {
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [formData, setFormData] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    employee_id: '',
+    department_id: '',
+    role: 'junior_staff',
+    hire_date: new Date().toISOString().split('T')[0],
+    password: ''
+  });
+
+  // No grade fetching; roles fully replace grades
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    // Client-side validation
+    const nextErrors = {};
+    if (!formData.first_name.trim()) nextErrors.first_name = 'First name is required';
+    if (!formData.last_name.trim()) nextErrors.last_name = 'Last name is required';
+    if (!formData.email.trim()) nextErrors.email = 'Email is required';
+    if (!formData.password || formData.password.length < 8) nextErrors.password = 'Password must be at least 8 characters';
+    if (affiliate.name === 'MERBAN CAPITAL' && !formData.department_id) nextErrors.department_id = 'Department is required for Merban Capital';
+  // roles replace grades; no grade required
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setLoading(true);
+    try {
+      const payload = {
+        first_name: formData.first_name.trim(),
+        last_name: formData.last_name.trim(),
+        email: formData.email.trim(),
+        role: formData.role,
+        hire_date: formData.hire_date,
+        password: formData.password,
+        affiliate_id: Number(affiliate.id),
+        // Only include department_id for MERBAN CAPITAL
+        ...(affiliate.name === 'MERBAN CAPITAL' && formData.department_id ? { department_id: Number(formData.department_id) } : {}),
+      };
+
+      if (formData.employee_id.trim()) {
+        payload.employee_id = formData.employee_id.trim();
+      }
+
+      await api.post('/users/staff/', payload);
+      showToast({ type: 'success', message: 'Employee created successfully!' });
+      onSuccess();
+    } catch (error) {
+      console.error('Error creating employee:', error);
+      showToast({ 
+        type: 'error', 
+        message: error.response?.data?.detail || error.response?.data?.error || 'Failed to create employee' 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-semibold mb-4">Add New Employee - {affiliate.name}</h3>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+              <input
+                type="text"
+                value={formData.first_name}
+                onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
+                className={`w-full border rounded-md px-3 py-2 ${errors.first_name ? 'border-red-500' : ''}`}
+                required
+                disabled={loading}
+              />
+              {errors.first_name && <p className="mt-1 text-xs text-red-600">{errors.first_name}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+              <input
+                type="text"
+                value={formData.last_name}
+                onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+                className={`w-full border rounded-md px-3 py-2 ${errors.last_name ? 'border-red-500' : ''}`}
+                required
+                disabled={loading}
+              />
+              {errors.last_name && <p className="mt-1 text-xs text-red-600">{errors.last_name}</p>}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              className={`w-full border rounded-md px-3 py-2 ${errors.email ? 'border-red-500' : ''}`}
+              required
+              disabled={loading}
+            />
+            {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+            <input
+              type="text"
+              value={formData.employee_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, employee_id: e.target.value }))}
+              className="w-full border rounded-md px-3 py-2"
+              disabled={loading}
+              placeholder="Auto-generated if left blank"
+            />
+          </div>
+
+          {/* Show department dropdown only for MERBAN CAPITAL */}
+          {affiliate.name === 'MERBAN CAPITAL' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+              <select
+                value={formData.department_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, department_id: e.target.value }))}
+                className={`w-full border rounded-md px-3 py-2 ${errors.department_id ? 'border-red-500' : ''}`}
+                required
+                disabled={loading}
+              >
+                <option value="">Select Department</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.id}>{dept.name}</option>
+                ))}
+              </select>
+              {errors.department_id && <p className="mt-1 text-xs text-red-600">{errors.department_id}</p>}
+            </div>
+          )}
+
+          {/* For SDSL/SBL, show as individual entity */}
+          {(affiliate.name === 'SDSL' || affiliate.name === 'SBL') && (
+            <div className="bg-blue-50 p-3 rounded-md">
+              <p className="text-sm text-blue-700">
+                This employee will be added as an individual entity under {affiliate.name} (no department assignment).
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                className="w-full border rounded-md px-3 py-2"
+                disabled={loading}
+              >
+                <option value="junior_staff">Junior Staff</option>
+                <option value="senior_staff">Senior Staff</option>
+                <option value="manager">HOD</option>
+                <option value="hr">HR</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+              <input
+                type="date"
+                value={formData.hire_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, hire_date: e.target.value }))}
+                className="w-full border rounded-md px-3 py-2"
+                disabled={loading}
+              />
+            </div>
+          </div>
+
+          {/* No grade selection; role dropdown above handles classification */}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+              className={`w-full border rounded-md px-3 py-2 ${errors.password ? 'border-red-500' : ''}`}
+              required
+              disabled={loading}
+              placeholder="Minimum 8 characters"
+            />
+            {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password}</p>}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium border border-gray-300 rounded-md hover:bg-gray-50"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              disabled={loading}
+            >
+              {loading ? 'Creating...' : 'Create Employee'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

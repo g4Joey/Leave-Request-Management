@@ -18,6 +18,82 @@ const BASE_SIDEBAR_ITEMS = [
   { id: 'export', label: 'Export' },
 ];
 
+const parseNumericId = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+};
+
+const mapStaffRecord = (staff, context = {}) => {
+  const firstName = staff.first_name || '';
+  const lastName = staff.last_name || '';
+  const fallbackName = `${firstName} ${lastName}`.trim();
+
+  const affiliateIdRaw = context.affiliateId ?? staff.affiliate?.id ?? staff.affiliate_id ?? null;
+  const affiliateId = parseNumericId(affiliateIdRaw);
+  const affiliateName = context.affiliateName ?? staff.affiliate?.name ?? staff.affiliate_name ?? null;
+  const departmentName = context.department ?? staff.department?.name ?? staff.department_name ?? (typeof staff.department === 'string' ? staff.department : null) ?? null;
+
+  return {
+    id: staff.id,
+    name: staff.name || fallbackName || staff.email || 'Staff member',
+    email: staff.email || '',
+    department: departmentName,
+    employee_id: staff.employee_id,
+    role: staff.role,
+    manager: staff.manager,
+    hire_date: staff.hire_date,
+    affiliateId,
+    affiliateName,
+  };
+};
+
+const normalizeStaffPayload = (payload, affiliateContext = {}) => {
+  const base = Array.isArray(payload?.results)
+    ? payload.results
+    : (Array.isArray(payload?.data)
+      ? payload.data
+      : (Array.isArray(payload) ? payload : []));
+
+  if (!Array.isArray(base)) {
+    return [];
+  }
+
+  const records = [];
+
+  base.forEach((item) => {
+    if (Array.isArray(item?.staff)) {
+      const departmentName = item.name || item.department_name || (typeof item.department === 'string' ? item.department : null) || null;
+      const affiliateDetails = {
+        affiliateId: item.affiliate?.id ?? item.affiliate_id ?? affiliateContext.id ?? null,
+        affiliateName: item.affiliate?.name ?? item.affiliate_name ?? affiliateContext.name ?? null,
+      };
+      item.staff.forEach((member) => {
+        records.push(mapStaffRecord(member, { department: departmentName, ...affiliateDetails }));
+      });
+    } else if (item && (item.id || item.email || item.first_name || item.last_name)) {
+      records.push(mapStaffRecord(item, {
+        affiliateId: affiliateContext.id,
+        affiliateName: affiliateContext.name,
+      }));
+    }
+  });
+
+  return records;
+};
+
 function StaffManagement() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -37,6 +113,7 @@ function StaffManagement() {
   }, [canManageGradeEntitlements]);
   const [departments, setDepartments] = useState([]);
   const [affiliates, setAffiliates] = useState([]);
+  const [affiliateInfo, setAffiliateInfo] = useState({}); // { [id]: { ceo: string|null, depts: number, members: number } }
   const [loading, setLoading] = useState(true);
   const [expandedDepts, setExpandedDepts] = useState({});
   // Default to Affiliates since the standalone Departments tab is hidden
@@ -145,6 +222,47 @@ function StaffManagement() {
     fetchAffiliates();
   }, [fetchAffiliates]);
 
+  // After affiliates load, fetch quick counts and CEO summary for each
+  useEffect(() => {
+    const loadQuickInfo = async () => {
+      if (!Array.isArray(affiliates) || affiliates.length === 0) {
+        setAffiliateInfo({});
+        return;
+      }
+      try {
+        const entries = await Promise.all(affiliates.map(async (aff) => {
+          try {
+            // CEO name
+            const ceoRes = await api.get(`/users/staff/?affiliate_id=${aff.id}&role=ceo`);
+            const ceoItem = ceoRes.data?.results?.[0] || ceoRes.data?.[0] || null;
+            // Departments (for Merban) and staff counts
+            const deptRes = await api.get(`/users/departments/?affiliate_id=${aff.id}`);
+            const departments = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
+            let memberCount = 0;
+            try {
+              const staffRes = await api.get(`/users/staff/?affiliate_id=${aff.id}`);
+              const normalized = normalizeStaffPayload(staffRes?.data, {
+                id: parseNumericId(aff.id) ?? aff.id ?? null,
+                name: aff.name,
+              });
+              memberCount = normalized.length;
+            } catch (_) {
+              memberCount = 0;
+            }
+            return [aff.id, { ceo: ceoItem?.name || null, depts: departments.length, members: memberCount }];
+          } catch (e) {
+            return [aff.id, { ceo: null, depts: 0, members: 0 }];
+          }
+        }));
+        setAffiliateInfo(Object.fromEntries(entries));
+      } catch (e) {
+        console.warn('Failed to load affiliate quick info', e);
+        setAffiliateInfo({});
+      }
+    };
+    loadQuickInfo();
+  }, [affiliates]);
+
 
 
   // Force refresh data when component becomes visible
@@ -174,12 +292,12 @@ function StaffManagement() {
         id: raw.id,
         employee_id: raw.employee_id,
         email: raw.email,
-        role: raw.role,
+        role: (raw.role === 'employee' || raw.role === 'staff') ? 'junior_staff' : raw.role,
         department_name: raw.department?.name || raw.department_name || (typeof raw.department === 'string' ? raw.department : undefined),
         hire_date: raw.hire_date,
         first_name: raw.first_name,
         last_name: raw.last_name,
-        grade: raw.grade || null,
+        // grade removed
       };
       console.log('[StaffManagement] Normalized profile response:', normalized);
       setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
@@ -210,6 +328,12 @@ function StaffManagement() {
 
 
   const getRoleBadge = (role) => {
+    // Normalize legacy aliases to current role codes for display
+    if (role === 'staff' || role === 'employee') {
+      role = 'junior_staff';
+    } else if (role === 'hod') {
+      role = 'manager';
+    }
     const roleColors = {
       junior_staff: 'bg-gray-100 text-gray-800',
       senior_staff: 'bg-slate-100 text-slate-800',
@@ -217,6 +341,7 @@ function StaffManagement() {
       hr: 'bg-green-100 text-green-800',
       ceo: 'bg-indigo-100 text-indigo-800',
       admin: 'bg-purple-100 text-purple-800',
+      employee: 'bg-gray-100 text-gray-800',
     };
 
     // Map role to display name (manager -> HOD)
@@ -226,7 +351,8 @@ function StaffManagement() {
       manager: 'HOD',
       hr: 'HR',
       admin: 'Admin',
-      ceo: 'CEO'
+      ceo: 'CEO',
+      employee: 'Junior Staff',
     };
 
     const displayName = roleDisplayMap[role] || role?.replace('_', ' ')?.replace(/\b\w/g, l => l.toUpperCase()) || 'Staff';
@@ -764,7 +890,7 @@ function StaffManagement() {
           return;
         }
         
-  const validRoles = ['junior_staff', 'senior_staff', 'hod', 'hr', 'ceo', 'admin'];
+  const validRoles = ['junior_staff', 'senior_staff', 'manager', 'hr', 'ceo', 'admin'];
         
         const parsed = rows.map((r, i) => {
           const cols = r.split(',').map((c) => c.trim());
@@ -812,7 +938,7 @@ function StaffManagement() {
             }
             department_id = matchedDept.id;
           }
-          // For SDSL/SBL, department will be auto-assigned by backend to Executive
+          // For SDSL/SBL, users remain as individual entities (no department assignment)
           
           return {
             username,
@@ -1041,14 +1167,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   New department
                 </button>
               )}
-              {active === 'employees' && (
-                <button
-                  onClick={openNewEmployeeModal}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
-                >
-                  New employee
-                </button>
-              )}
+              {/* New employee creation moved to affiliate pages (MERBAN, SDSL, SBL). */}
               {active === 'employees' && (
                 <button
                   onClick={() => setDeleteEmployeeModal({ open: true, selected: {}, processing: false })}
@@ -1092,7 +1211,15 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         className="text-left border border-gray-200 rounded-lg p-4 bg-white hover:bg-gray-50 focus:outline-none"
                       >
                         <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
-                        <p className="text-sm text-gray-600 mt-1">Affiliate</p>
+                        <div className="mt-2 space-y-1 text-sm text-gray-600">
+                          <p>Affiliate</p>
+                          <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || '—'}</p>
+                          {aff.name === 'MERBAN CAPITAL' ? (
+                            <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
+                          ) : (
+                            <p><span className="text-gray-700 font-medium">Members:</span> {affiliateInfo[aff.id]?.members ?? '—'}</p>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -1234,7 +1361,6 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         <th className="px-3 py-2">Department</th>
                         <th className="px-3 py-2">Employee ID</th>
                         <th className="px-3 py-2">Role</th>
-                        <th className="px-3 py-2">Grade</th>
                         <th className="px-3 py-2">Actions</th>
                       </tr>
                     </thead>
@@ -1246,11 +1372,6 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                           <td className="px-3 py-2">{emp.department}</td>
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>
-                          <td className="px-3 py-2">
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {emp.grade || '—'}
-                            </span>
-                          </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -1323,7 +1444,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   <ul className="text-xs text-blue-800 space-y-1">
                     <li><strong>Required:</strong> name, email</li>
                     <li><strong>Optional:</strong> department, role, employee_id, hire_date</li>
-                    <li><strong>Valid roles:</strong> junior_staff, senior_staff, hod, hr, ceo, admin</li>
+                    <li><strong>Valid roles:</strong> junior_staff, senior_staff, manager, hr, ceo, admin</li>
                     <li><strong>Date format:</strong> YYYY-MM-DD (e.g., 2023-01-15)</li>
                   </ul>
                 </div>
