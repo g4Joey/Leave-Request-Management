@@ -203,6 +203,30 @@ function StaffManagement() {
           byId.set(s.id, record); // last write wins; ensures uniqueness per user id
         });
       });
+      
+      // Fetch and include CEOs separately since they're excluded from department staff
+      try {
+        const ceoRes = await api.get('/users/staff/?role=ceo');
+        const ceoData = ceoRes.data?.results || ceoRes.data || [];
+        ceoData.forEach((ceo) => {
+          if (ceo && ceo.id) {
+            const ceoRecord = {
+              id: ceo.id,
+              name: cleanName(ceo.name || `${ceo.first_name || ''} ${ceo.last_name || ''}`.trim()),
+              email: ceo.email,
+              department: '—', // CEOs don't have departments
+              employee_id: ceo.employee_id,
+              role: 'ceo',
+              manager: null,
+              hire_date: ceo.hire_date,
+            };
+            byId.set(ceo.id, ceoRecord);
+          }
+        });
+      } catch (ceoError) {
+        console.warn('Failed to load CEOs:', ceoError);
+      }
+      
       setEmployees(Array.from(byId.values()));
 
   // Affiliates removed
