@@ -21,7 +21,7 @@
     "serve": "^14.2.1"
   },
   "scripts": {
-    "start": "serve -s build -p ${PORT:-3000}",
+    "start": "node scripts/serve.js",
     "dev": "react-scripts start",
     "build": "react-scripts build",
     "heroku-postbuild": "npm run build",

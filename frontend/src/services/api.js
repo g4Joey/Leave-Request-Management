@@ -8,10 +8,15 @@ function resolveApiBaseUrl() {
   // Fallback: use current host (so it works over LAN/IP) but port 8000 for Django
   try {
     const { protocol, hostname } = window.location;
+    const port = window.location.port;
+    // If running the React dev server (commonly port 3000), default to Django on :8000
+    if (port === '3000') {
+      return 'http://127.0.0.1:8000/api';
+    }
     // In production (unified Docker) Django lives on the same origin.
-    // Do not force :8000 (that was only for local dev). Use same-origin /api.
-    const port = window.location.port ? `:${window.location.port}` : '';
-    return `${protocol}//${hostname}${port}/api`;
+    // Use same-origin /api.
+    const portPart = port ? `:${port}` : '';
+    return `${protocol}//${hostname}${portPart}/api`;
   } catch (e) {
     // SSR or unexpected context: default to localhost
     return 'http://localhost:8000/api';
