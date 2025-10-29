@@ -129,7 +129,12 @@ export default function AffiliatePage() {
         console.warn('Failed to load CEO for affiliate:', e);
         setCeo(null);
       }
-      const list = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
+      let list = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
+      // Hide Executive pseudo-departments if any remain
+      list = (list || []).filter((d) => {
+        const n = (d?.name || '').toString().trim().toLowerCase();
+        return !(n === 'executive' || n === 'executives');
+      });
       // Sort departments to follow desired order first, then others alphabetically
       const nameKey = (n) => (n || '').toString().trim().toLowerCase();
       const orderIndex = (n) => {

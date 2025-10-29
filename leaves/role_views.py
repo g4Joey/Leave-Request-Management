@@ -42,12 +42,20 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         leave_types = LeaveType.objects.filter(is_active=True)
         
         roles_data = []
+        legacy_map = {
+            'junior_staff': ['employee', 'staff'],
+            'manager': ['hod'],
+        }
         for role_code, role_display in role_choices:
-            # Get users with this role
+            # Get users with this role, including legacy aliases
+            from django.db.models import Q
+            legacy_aliases = legacy_map.get(role_code, [])
+            role_filter = Q(role=role_code)
+            for alias in legacy_aliases:
+                role_filter |= Q(role=alias)
             users_with_role = User.objects.filter(
-                role=role_code,
                 is_active=True,
-            )
+            ).filter(role_filter)
             user_count = users_with_role.count()
             
             # Get current entitlements for this role (sample from first user)
@@ -109,10 +117,18 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         current_year = timezone.now().year
         
         # Get all users with this role
+        legacy_map = {
+            'junior_staff': ['employee', 'staff'],
+            'manager': ['hod'],
+        }
+        from django.db.models import Q
+        legacy_aliases = legacy_map.get(role_code, [])
+        role_filter = Q(role=role_code)
+        for alias in legacy_aliases:
+            role_filter |= Q(role=alias)
         users_with_role = User.objects.filter(
-            role=role_code,
             is_active=True,
-        )
+        ).filter(role_filter)
         
         if users_with_role.count() == 0:
             return Response({'error': f'No active users found with role: {role_code}'}, status=status.HTTP_400_BAD_REQUEST)
@@ -190,10 +206,18 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         User = get_user_model()
         current_year = timezone.now().year
         
+        legacy_map = {
+            'junior_staff': ['employee', 'staff'],
+            'manager': ['hod'],
+        }
+        from django.db.models import Q
+        legacy_aliases = legacy_map.get(role_code, [])
+        role_filter = Q(role=role_code)
+        for alias in legacy_aliases:
+            role_filter |= Q(role=alias)
         users_with_role = User.objects.filter(
-            role=role_code,
             is_active=True,
-        )
+        ).filter(role_filter)
         
         role_display = dict(CustomUser.ROLE_CHOICES).get(role_code, role_code)
         

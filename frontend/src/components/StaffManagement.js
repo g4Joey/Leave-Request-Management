@@ -172,22 +172,38 @@ function StaffManagement() {
         staff: Array.isArray(d?.staff) ? d.staff : [],
       }));
 
-      setDepartments(safeDepts);
-      
-      // Flatten employees for the Employees tab
-      const flattened = safeDepts.flatMap((d) =>
-        (d.staff || []).map((s) => ({
-          id: s.id,
-          name: cleanName(s.name),
-          email: s.email,
-          department: d.name,
-          employee_id: s.employee_id,
-          role: s.role,
-          manager: s.manager,
-          hire_date: s.hire_date,
-        }))
-      );
-      setEmployees(flattened);
+      // Hide Executive(s) pseudo-departments in UI lists
+      const filteredDepts = safeDepts.filter((d) => {
+        const n = (d?.name || '').toString().trim().toLowerCase();
+        return !(n === 'executive' || n === 'executives');
+      });
+      setDepartments(filteredDepts);
+
+      // Flatten employees for the Employees tab with CEO normalization and de-duplication
+      const byId = new Map();
+      safeDepts.forEach((d) => {
+        const deptName = (d?.name || '').toString();
+        (d.staff || []).forEach((s) => {
+          // Normalize department for CEOs and for pseudo "Executive(s)" department labels
+          const roleNorm = (s.role === 'employee' || s.role === 'staff') ? 'junior_staff' : (s.role === 'hod' ? 'manager' : s.role);
+          const isCeo = roleNorm === 'ceo';
+          const isExecDept = /^executive(s)?$/i.test(deptName);
+          const deptDisplay = isCeo || isExecDept ? '—' : deptName;
+
+          const record = {
+            id: s.id,
+            name: cleanName(s.name),
+            email: s.email,
+            department: deptDisplay,
+            employee_id: s.employee_id,
+            role: roleNorm,
+            manager: s.manager,
+            hire_date: s.hire_date,
+          };
+          byId.set(s.id, record); // last write wins; ensures uniqueness per user id
+        });
+      });
+      setEmployees(Array.from(byId.values()));
 
   // Affiliates removed
     } catch (error) {
@@ -232,12 +248,29 @@ function StaffManagement() {
       try {
         const entries = await Promise.all(affiliates.map(async (aff) => {
           try {
-            // CEO name
+            // CEO name - more robust name detection
             const ceoRes = await api.get(`/users/staff/?affiliate_id=${aff.id}&role=ceo`);
             const ceoItem = ceoRes.data?.results?.[0] || ceoRes.data?.[0] || null;
+            let ceoName = null;
+            if (ceoItem) {
+              // Try multiple name sources in order of preference
+              if (ceoItem.name && ceoItem.name.trim()) {
+                ceoName = ceoItem.name.trim();
+              } else if (ceoItem.first_name || ceoItem.last_name) {
+                ceoName = [ceoItem.first_name, ceoItem.last_name].filter(Boolean).join(' ').trim();
+              } else if (ceoItem.email) {
+                // Fallback to email prefix if no name available
+                ceoName = ceoItem.email.split('@')[0];
+              }
+            }
             // Departments (for Merban) and staff counts
             const deptRes = await api.get(`/users/departments/?affiliate_id=${aff.id}`);
-            const departments = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
+            const allDepartments = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
+            // Filter out Executive departments from count
+            const departments = allDepartments.filter((d) => {
+              const n = (d?.name || '').toString().trim().toLowerCase();
+              return !(n === 'executive' || n === 'executives');
+            });
             let memberCount = 0;
             try {
               const staffRes = await api.get(`/users/staff/?affiliate_id=${aff.id}`);
@@ -245,11 +278,13 @@ function StaffManagement() {
                 id: parseNumericId(aff.id) ?? aff.id ?? null,
                 name: aff.name,
               });
-              memberCount = normalized.length;
+              // Include CEO in member counts
+              const ceoCount = ceoName ? 1 : 0;
+              memberCount = normalized.length + ceoCount;
             } catch (_) {
-              memberCount = 0;
+              memberCount = ceoName ? 1 : 0;
             }
-            return [aff.id, { ceo: ceoItem?.name || null, depts: departments.length, members: memberCount }];
+            return [aff.id, { ceo: ceoName, depts: departments.length, members: memberCount }];
           } catch (e) {
             return [aff.id, { ceo: null, depts: 0, members: 0 }];
           }
@@ -1212,13 +1247,12 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                       >
                         <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
-                          <p>Affiliate</p>
-                          <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || '—'}</p>
-                          {aff.name === 'MERBAN CAPITAL' ? (
-                            <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
-                          ) : (
-                            <p><span className="text-gray-700 font-medium">Members:</span> {affiliateInfo[aff.id]?.members ?? '—'}</p>
-                          )}
+                              <p>Affiliate</p>
+                              <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || '—'}</p>
+                              {aff.name === 'MERBAN CAPITAL' && (
+                                <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
+                              )}
+                              <p><span className="text-gray-700 font-medium">Members:</span> {affiliateInfo[aff.id]?.members ?? '—'}</p>
                         </div>
                       </button>
                     ))}
@@ -1369,7 +1403,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         <tr key={emp.id} className="border-t">
                           <td className="px-3 py-2">{emp.name}</td>
                           <td className="px-3 py-2">{emp.email}</td>
-                          <td className="px-3 py-2">{emp.department}</td>
+                          <td className="px-3 py-2">{emp.role === 'ceo' ? '—' : (emp.department || '—')}</td>
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>
                           <td className="px-3 py-2">
@@ -1593,7 +1627,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                 </div>
                 
                 {/* Department - Read only */}
-                <div><span className="font-medium">Department:</span> {profileModal.data.department_name || '—'}</div>
+                <div><span className="font-medium">Department:</span> {(profileModal.data.role === 'ceo' || /^executive(s)?$/i.test(profileModal.data.department_name || '')) ? '—' : (profileModal.data.department_name || '—')}</div>
 
                 {/* Hire Date - Editable */}
                 <div>
@@ -1636,6 +1670,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                       <option value="senior_staff">Senior Staff</option>
                       <option value="manager">Head of Department</option>
                       <option value="hr">HR</option>
+                      <option value="ceo">CEO</option>
                       <option value="admin">Admin</option>
                     </select>
                     <button
@@ -1933,6 +1968,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                     <option value="senior_staff">Senior Staff</option>
                     <option value="manager">Head of Department</option>
                     <option value="hr">HR</option>
+                    <option value="ceo">CEO</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
@@ -2082,7 +2118,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                       />
                       <div>
                         <div className="font-medium text-gray-900">{emp.name} <span className="text-gray-500">({emp.employee_id})</span></div>
-                        <div className="text-sm text-gray-600">{emp.email} · {emp.department}</div>
+                        <div className="text-sm text-gray-600">{emp.email} · {emp.role === 'ceo' ? '—' : (emp.department || '—')}</div>
                       </div>
                     </label>
                   ))}
