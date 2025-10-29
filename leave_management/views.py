@@ -149,3 +149,33 @@ def debug_static_files(request):
         'react_static_files': list_files(react_static),
     })
     
+
+def demo_visibility(request):
+    """Probe endpoint to report current demo user visibility policy.
+
+    Logic mirrors users.views where demo users are conditionally excluded based on
+    SHOW_DEMO_USERS / EXCLUDE_DEMO_USERS env vars and DEBUG setting.
+    """
+    show_demo_env = os.environ.get('SHOW_DEMO_USERS')
+    exclude_demo_env = os.environ.get('EXCLUDE_DEMO_USERS')
+
+    if show_demo_env == '1':
+        exclude_demo = False
+        reason = 'SHOW_DEMO_USERS=1'
+    elif exclude_demo_env == '1':
+        exclude_demo = True
+        reason = 'EXCLUDE_DEMO_USERS=1'
+    else:
+        # Default: hide demo users in production (DEBUG=False), show in DEBUG
+        exclude_demo = not bool(getattr(settings, 'DEBUG', False))
+        reason = 'DEBUG-based default'
+
+    return JsonResponse({
+        'status': 'ok',
+        'exclude_demo': bool(exclude_demo),
+        'debug': bool(getattr(settings, 'DEBUG', False)),
+        'show_demo_env': show_demo_env or None,
+        'exclude_demo_env': exclude_demo_env or None,
+        'reason': reason,
+    })
+    
