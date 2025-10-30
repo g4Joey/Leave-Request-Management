@@ -564,34 +564,12 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # Managers see requests pending their approval
             pending_requests = self.get_queryset().filter(status='pending')
         elif user_role == 'hr':
-            # HR sees requests approved by manager. Be robust: include requests where
-            # the workflow handler indicates HR is the next approver OR where the
-            # employee affiliate is MERBAN (Merban flow: manager -> HR -> CEO).
-            from .services import ApprovalWorkflowService
-
-            mgr_approved_qs = self.get_queryset().filter(status='manager_approved')
-            include_ids = []
-            for req in mgr_approved_qs.select_related('employee__department', 'employee__affiliate'):
-                try:
-                    # If this HR user can act on the request per the workflow, include it
-                    if ApprovalWorkflowService.can_user_approve(req, user):
-                        include_ids.append(req.id)
-                        continue
-                except Exception:
-                    # Safety: continue to other checks
-                    pass
-
-                # Fallback: include if affiliate indicates Merban Capital (case-insensitive)
-                emp_aff = None
-                if getattr(req.employee, 'department', None) and getattr(req.employee.department, 'affiliate', None):
-                    emp_aff = req.employee.department.affiliate.name
-                elif getattr(req.employee, 'affiliate', None):
-                    emp_aff = req.employee.affiliate.name
-
-                if emp_aff and 'MERBAN' in emp_aff.upper():
-                    include_ids.append(req.id)
-
-            pending_requests = self.get_queryset().filter(id__in=include_ids)
+            # HR sees manager_approved requests that are not SDSL or SBL (those go to CEO first)
+            from django.db.models import Q
+            pending_requests = self.get_queryset().filter(status='manager_approved').exclude(
+                Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) | 
+                Q(employee__affiliate__name__in=['SDSL', 'SBL'])
+            )
         elif user_role == 'ceo':
             # CEO sees requests that require their approval - filtered by affiliate and workflow
             from .services import ApprovalWorkflowService
