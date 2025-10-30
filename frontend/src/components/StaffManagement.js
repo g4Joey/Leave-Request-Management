@@ -203,30 +203,6 @@ function StaffManagement() {
           byId.set(s.id, record); // last write wins; ensures uniqueness per user id
         });
       });
-      
-      // Fetch and include CEOs separately since they're excluded from department staff
-      try {
-        const ceoRes = await api.get('/users/staff/?role=ceo');
-        const ceoData = ceoRes.data?.results || ceoRes.data || [];
-        ceoData.forEach((ceo) => {
-          if (ceo && ceo.id) {
-            const ceoRecord = {
-              id: ceo.id,
-              name: cleanName(ceo.name || `${ceo.first_name || ''} ${ceo.last_name || ''}`.trim()),
-              email: ceo.email,
-              department: '—', // CEOs don't have departments
-              employee_id: ceo.employee_id,
-              role: 'ceo',
-              manager: null,
-              hire_date: ceo.hire_date,
-            };
-            byId.set(ceo.id, ceoRecord);
-          }
-        });
-      } catch (ceoError) {
-        console.warn('Failed to load CEOs:', ceoError);
-      }
-      
       setEmployees(Array.from(byId.values()));
 
   // Affiliates removed
@@ -272,29 +248,15 @@ function StaffManagement() {
       try {
         const entries = await Promise.all(affiliates.map(async (aff) => {
           try {
-            // CEO name - more robust name detection
+            // CEO name
             const ceoRes = await api.get(`/users/staff/?affiliate_id=${aff.id}&role=ceo`);
             const ceoItem = ceoRes.data?.results?.[0] || ceoRes.data?.[0] || null;
-            let ceoName = null;
-            if (ceoItem) {
-              // Try multiple name sources in order of preference
-              if (ceoItem.name && ceoItem.name.trim()) {
-                ceoName = ceoItem.name.trim();
-              } else if (ceoItem.first_name || ceoItem.last_name) {
-                ceoName = [ceoItem.first_name, ceoItem.last_name].filter(Boolean).join(' ').trim();
-              } else if (ceoItem.email) {
-                // Fallback to email prefix if no name available
-                ceoName = ceoItem.email.split('@')[0];
-              }
-            }
+            const ceoName = (ceoItem?.name && ceoItem.name.trim())
+              ? ceoItem.name
+              : [ceoItem?.first_name, ceoItem?.last_name].filter(Boolean).join(' ').trim() || null;
             // Departments (for Merban) and staff counts
             const deptRes = await api.get(`/users/departments/?affiliate_id=${aff.id}`);
-            const allDepartments = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
-            // Filter out Executive departments from count
-            const departments = allDepartments.filter((d) => {
-              const n = (d?.name || '').toString().trim().toLowerCase();
-              return !(n === 'executive' || n === 'executives');
-            });
+            const departments = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
             let memberCount = 0;
             try {
               const staffRes = await api.get(`/users/staff/?affiliate_id=${aff.id}`);
@@ -1427,7 +1389,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         <tr key={emp.id} className="border-t">
                           <td className="px-3 py-2">{emp.name}</td>
                           <td className="px-3 py-2">{emp.email}</td>
-                          <td className="px-3 py-2">{emp.role === 'ceo' ? '—' : (emp.department || '—')}</td>
+                          <td className="px-3 py-2">{emp.department}</td>
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>
                           <td className="px-3 py-2">
@@ -1992,7 +1954,6 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                     <option value="senior_staff">Senior Staff</option>
                     <option value="manager">Head of Department</option>
                     <option value="hr">HR</option>
-                    <option value="ceo">CEO</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
@@ -2142,7 +2103,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                       />
                       <div>
                         <div className="font-medium text-gray-900">{emp.name} <span className="text-gray-500">({emp.employee_id})</span></div>
-                        <div className="text-sm text-gray-600">{emp.email} · {emp.role === 'ceo' ? '—' : (emp.department || '—')}</div>
+                        <div className="text-sm text-gray-600">{emp.email} · {emp.department}</div>
                       </div>
                     </label>
                   ))}

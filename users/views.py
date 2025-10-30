@@ -331,7 +331,9 @@ class StaffManagementView(APIView):
         if role_filter == 'ceo':
             ceo_qs = CustomUser.objects.filter(role='ceo', is_active=True)
             if affiliate_id:
-                ceo_qs = ceo_qs.filter(affiliate_id=affiliate_id)
+                # Match either direct user.affiliate or via their department's affiliate
+                from django.db.models import Q as _Q
+                ceo_qs = ceo_qs.filter(_Q(affiliate_id=affiliate_id) | _Q(department__affiliate_id=affiliate_id))
             
             if exclude_demo:
                 ceo_qs = ceo_qs.exclude(is_demo=True)
@@ -448,9 +450,43 @@ class StaffManagementView(APIView):
             except Affiliate.DoesNotExist:
                 pass
         
-        # Do not include CEOs as a separate "Executives" department to avoid duplicates
-        # CEOs are already handled as individual entities under their affiliates
-        # This prevents duplicate entries in HR employee list
+        # Additionally include CEOs (executives) as a top-level section so they appear
+        # in the staff/department view even when they are individual entities (department=None).
+        # This respects the same demo-exclusion policy used above.
+        ceo_qs = CustomUser.objects.filter(role='ceo', is_active=True)
+        if affiliate_id:
+            ceo_qs = ceo_qs.filter(affiliate_id=affiliate_id)
+        if exclude_demo:
+            ceo_qs = ceo_qs.exclude(is_demo=True)
+        ceo_list = []
+        for ceo in ceo_qs:
+            manager_info = None
+            if ceo.manager:
+                manager_info = {
+                    'id': ceo.manager.pk,
+                    'name': ceo.manager.get_full_name(),
+                    'employee_id': ceo.manager.employee_id
+                }
+            ceo_list.append({
+                'id': ceo.pk,
+                'employee_id': getattr(ceo, 'employee_id', None),
+                'name': ceo.get_full_name(),
+                'email': ceo.email,
+                'role': ceo.role,
+                'hire_date': ceo.hire_date,
+                'manager': manager_info,
+                # grades removed
+            })
+
+        if ceo_list:
+            data.append({
+                'id': 'executives',
+                'name': 'Executives',
+                'description': 'Top-level executive users (CEOs)',
+                'staff_count': len(ceo_list),
+                'staff': ceo_list,
+                'manager': None
+            })
 
         return Response(data)
     

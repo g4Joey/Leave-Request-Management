@@ -90,8 +90,11 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
         leave_type = self.get_object()
         current_year = timezone.now().year
         User = get_user_model()
-        # Update active employees only (both Django active and domain-specific active)
-        employees = User.objects.filter(is_active=True, is_active_employee=True)
+        # Update active workers. Include domain-active employees and also HR/Managers/CEOs even if not flagged as active employees.
+        # This ensures HODs or HR acting as managers receive updated entitlements too.
+        employees = User.objects.filter(is_active=True).filter(
+            Q(is_active_employee=True) | Q(role__in=['manager', 'hr', 'ceo'])
+        )
 
         updated = 0
         created = 0
@@ -489,9 +492,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs
 
         if role == 'manager':
-            # Direct reports or same department where user is Manager, but EXCLUDE own requests
+            # Direct reports or same department where user is HOD/Manager, but EXCLUDE own requests
             return qs.filter(
-                Q(employee__manager=user) | Q(employee__department__manager=user)
+                Q(employee__manager=user) | Q(employee__department__hod=user)
             ).exclude(employee=user)
 
         if role == 'hr':
@@ -499,8 +502,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
-            # Items that have passed HR stage
-            return qs.filter(status__in=['hr_approved', 'approved', 'rejected'])
+            # Items that require or have passed CEO stage. Include manager_approved for SDSL flow.
+            return qs.filter(status__in=['manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()
@@ -529,7 +532,10 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return (
                 leave_request.employee and (
                     leave_request.employee.manager_id == getattr(user, 'id', None)
-                    or (getattr(leave_request.employee, 'department_id', None) and getattr(getattr(leave_request.employee, 'department', None), 'manager_id', None) == getattr(user, 'id', None))
+                    or (
+                        getattr(leave_request.employee, 'department_id', None)
+                        and getattr(getattr(leave_request.employee, 'department', None), 'hod_id', None) == getattr(user, 'id', None)
+                    )
                 )
             )
         if role == 'hr':
@@ -692,7 +698,11 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         logger = logging.getLogger('leaves')
         
         try:
-            leave_request = self.get_object()
+            # Use unrestricted lookup so HR/Admin can cancel on behalf of employees
+            try:
+                leave_request = LeaveRequest.objects.select_related('employee', 'leave_type').get(pk=pk)
+            except LeaveRequest.DoesNotExist:
+                return Response({'error': 'Leave request not found'}, status=status.HTTP_404_NOT_FOUND)
             user = request.user
             comments = request.data.get('comments', '')
             
