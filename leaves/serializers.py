@@ -220,12 +220,57 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     manager_comments = serializers.CharField(read_only=True)
     hr_comments = serializers.CharField(read_only=True)
     ceo_approval_date = serializers.DateTimeField(read_only=True)
+    manager_approval_date = serializers.DateTimeField(read_only=True)
+    hr_approval_date = serializers.DateTimeField(read_only=True)
+    stage_label = serializers.SerializerMethodField()
     
     def get_employee_department_affiliate(self, obj):
         """Get the affiliate name for the employee's department"""
         if obj.employee and obj.employee.department and obj.employee.department.affiliate:
             return obj.employee.department.affiliate.name
         return 'Other'
+
+    def _get_affiliate_name(self, obj):
+        emp = getattr(obj, 'employee', None)
+        if not emp:
+            return None
+        # Prefer department affiliate, then user affiliate
+        try:
+            if getattr(emp, 'department', None) and getattr(emp.department, 'affiliate', None):
+                return emp.department.affiliate.name
+        except Exception:
+            pass
+        try:
+            if getattr(emp, 'affiliate', None):
+                return emp.affiliate.name
+        except Exception:
+            pass
+        return None
+
+    def get_stage_label(self, obj):
+        """Human-friendly label pointing to the next required approval step.
+        Examples: 'Pending HR approval', 'Pending CEO approval'."""
+        status = getattr(obj, 'status', None)
+        aff = (self._get_affiliate_name(obj) or '').upper()
+        if status == 'manager_approved':
+            # SDSL/SBL flow: CEO comes before HR. Standard (Merban): HR next.
+            if aff in ['SDSL', 'SBL']:
+                return 'Pending CEO approval'
+            return 'Pending HR approval'
+        if status == 'hr_approved':
+            # After HR, next is CEO in standard; in SDSL, HR_approved means CEO already acted and HR will finalize next
+            if aff in ['SDSL', 'SBL']:
+                return 'Pending HR final approval'
+            return 'Pending CEO approval'
+        if status == 'pending':
+            return 'Pending Manager approval'
+        if status == 'approved':
+            return 'Approved'
+        if status == 'rejected':
+            return 'Rejected'
+        if status == 'cancelled':
+            return 'Cancelled'
+        return getattr(obj, 'get_status_display', lambda: status)()
     
     class Meta:
         model = LeaveRequest
@@ -233,8 +278,8 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
             'id', 'employee_name', 'employee_email', 'employee_id', 'employee_role', 
             'employee_department', 'employee_department_affiliate', 'leave_type_name', 
             'start_date', 'end_date', 'total_days', 'working_days', 'calendar_days', 'range_with_days',
-            'status', 'status_display', 'reason', 'manager_approval_comments', 'manager_comments', 'hr_comments', 
-            'ceo_approval_date', 'created_at'
+            'status', 'status_display', 'stage_label', 'reason', 'manager_approval_comments', 'manager_comments', 'hr_comments', 
+            'manager_approval_date', 'hr_approval_date', 'ceo_approval_date', 'created_at'
         ]
     
     # total_days is computed in model.save() (working days). Expose as read-only.

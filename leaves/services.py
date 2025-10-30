@@ -28,24 +28,26 @@ class ApprovalRoutingService:
         - SBL departments → Winslow Sackey (SBL CEO)
         - Default/No affiliate → Benjamin Ackah
         """
-        if not employee or not hasattr(employee, 'department') or not employee.department:
+        if not employee:
             return cls._get_default_ceo()
-        
-        affiliate = getattr(employee.department, 'affiliate', None)
+        # Prefer department affiliate when present; otherwise fall back to user's own affiliate
+        affiliate = None
+        if hasattr(employee, 'department') and employee.department:
+            affiliate = getattr(employee.department, 'affiliate', None)
+        if not affiliate and hasattr(employee, 'affiliate'):
+            affiliate = getattr(employee, 'affiliate', None)
+
         if not affiliate:
             return cls._get_default_ceo()
-        
-        # Use email-based CEO mapping since CEOs don't have departments
+
+        # Prefer dynamic lookup: a user with role 'ceo' whose department belongs to this affiliate or whose own affiliate matches
         try:
-            affiliate_name = affiliate.name.upper()
-            if 'MERBAN' in affiliate_name:
-                return User.objects.filter(email='ceo@umbcapital.com', role='ceo', is_active=True).first() or cls._get_default_ceo()
-            elif affiliate_name == 'SDSL':
-                return User.objects.filter(email='sdslceo@umbcapital.com', role='ceo', is_active=True).first() or cls._get_default_ceo()
-            elif affiliate_name == 'SBL':
-                return User.objects.filter(email='sblceo@umbcapital.com', role='ceo', is_active=True).first() or cls._get_default_ceo()
-            else:
-                return cls._get_default_ceo()
+            ceo = (
+                User.objects.filter(role='ceo', is_active=True)
+                .filter(models.Q(department__affiliate=affiliate) | models.Q(affiliate=affiliate))
+                .first()
+            )
+            return ceo or cls._get_default_ceo()
         except Exception:
             return cls._get_default_ceo()
     
@@ -57,10 +59,15 @@ class ApprovalRoutingService:
     @classmethod
     def get_employee_affiliate_name(cls, employee: CustomUser) -> str:
         """Get the affiliate name for an employee, or 'DEFAULT' if none."""
-        if (employee and hasattr(employee, 'department') and 
-            employee.department and hasattr(employee.department, 'affiliate') and
-            employee.department.affiliate):
-            return employee.department.affiliate.name
+        if employee:
+            if (
+                hasattr(employee, 'department') and employee.department and 
+                hasattr(employee.department, 'affiliate') and employee.department.affiliate
+            ):
+                return employee.department.affiliate.name
+            # Fallback to user's affiliate when no department is assigned (SDSL/SBL individual users)
+            if hasattr(employee, 'affiliate') and getattr(employee, 'affiliate', None):
+                return employee.affiliate.name
         return 'DEFAULT'
 
 
@@ -268,95 +275,6 @@ class SDSLApprovalHandler(ApprovalHandler):
         return 'approved'
 
 
-class SBLApprovalHandler(ApprovalHandler):
-    """
-    SBL special workflow: Manager → SBL CEO (Kofi) → HR (final approval)  
-    Similar to SDSL but uses SBL CEO instead.
-    """
-    
-    def get_approval_flow(self) -> Dict[str, str]:
-        """Dynamic SBL flow."""
-        emp = self.leave_request.employee
-        role = getattr(emp, 'role', None)
-        if role in ['manager', 'hod']:
-            return {
-                'pending': 'ceo',   # SBL CEO first
-                'hr_approved': 'hr'
-            }
-        if role == 'hr':
-            return {
-                'pending': 'ceo'    # Direct to SBL CEO, then HR will finalize
-            }
-        return {
-            'pending': 'manager',
-            'manager_approved': 'ceo',  # SBL CEO approves after manager
-            'hr_approved': 'hr'         # HR gives final approval
-        }
-    
-    def can_approve(self, user: CustomUser, current_status: str) -> bool:
-        """Override: SBL CEO approves at manager_approved stage."""
-        flow = self.get_approval_flow()
-        required_role = flow.get(current_status)
-        user_role = getattr(user, 'role', None)
-        
-        # Admin can always approve
-        if getattr(user, 'is_superuser', False) or user_role == 'admin':
-            return True
-        
-        # Basic role check
-        if user_role != required_role:
-            return False
-            
-        # For SBL CEO approval at manager_approved stage
-        if required_role == 'ceo' and current_status == 'manager_approved':
-            # Must be SBL CEO (Winslow Sackey)
-            try:
-                expected_ceo = User.objects.get(email='sblceo@umbcapital.com', role='ceo', is_active=True)
-                return user == expected_ceo
-            except User.DoesNotExist:
-                return False
-                
-        return True
-    
-    def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
-        if current_status == 'pending':
-            emp = self.leave_request.employee
-            role = getattr(emp, 'role', None)
-            # Manager/HOD and HR requests go straight to SBL CEO
-            if role in ['manager', 'hod', 'hr']:
-                try:
-                    # SBL CEO by email
-                    return User.objects.get(email='sblceo@umbcapital.com', role='ceo', is_active=True)
-                except User.DoesNotExist:
-                    return None
-            # Staff -> manager first
-            if hasattr(emp, 'manager') and emp.manager:
-                return emp.manager
-            elif hasattr(emp, 'department') and emp.department and hasattr(emp.department, 'hod'):
-                return emp.department.hod
-            return None
-        elif current_status == 'manager_approved':
-            # SBL CEO approval
-            try:
-                return User.objects.get(email='sblceo@umbcapital.com', role='ceo', is_active=True)
-            except User.DoesNotExist:
-                return None
-        elif current_status == 'hr_approved':
-            # HR final approval
-            return User.objects.filter(role='hr', is_active=True).first()
-        return None
-
-    def get_next_status(self, current_status: str) -> str:
-        """Override: SBL has different status progression."""
-        if current_status == 'pending':
-            return 'manager_approved'
-        elif current_status == 'manager_approved':
-            return 'hr_approved'  # CEO approval moves to HR stage
-        elif current_status == 'hr_approved':
-            return 'approved'     # HR gives final approval
-        return 'approved'
-
-
 class ApprovalWorkflowService:
     """
     Factory service to get appropriate approval handler based on employee's affiliate.
@@ -371,10 +289,8 @@ class ApprovalWorkflowService:
         
         if affiliate_name == 'SDSL':
             return SDSLApprovalHandler(leave_request)
-        elif affiliate_name == 'SBL':
-            return SBLApprovalHandler(leave_request)
         else:
-            # Standard workflow for Merban Capital and others
+            # Standard workflow for Merban Capital, SBL, and others
             return StandardApprovalHandler(leave_request)
     
     @classmethod
@@ -407,8 +323,8 @@ class ApprovalWorkflowService:
         elif required_role == 'hr':
             leave_request.hr_approve(approver, comments)
         elif required_role == 'ceo':
-            # Special handling for SDSL and SBL flows: CEO approval moves request to HR stage
-            if isinstance(handler, (SDSLApprovalHandler, SBLApprovalHandler)):
+            # Special handling for SDSL flow: CEO approval moves request to HR stage
+            if isinstance(handler, SDSLApprovalHandler):
                 leave_request.hr_approve(approver, comments)
             else:
                 leave_request.ceo_approve(approver, comments)
