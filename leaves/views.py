@@ -699,6 +699,46 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             'results': data,
         })
     
+    @action(detail=True, methods=['get'])
+    def trace(self, request, pk=None):
+        """Debug endpoint: return approval state and next approver suggestions for a leave request."""
+        from .services import ApprovalWorkflowService
+        try:
+            lr = LeaveRequest.objects.select_related('employee__department', 'employee__affiliate').get(pk=pk)
+        except LeaveRequest.DoesNotExist:
+            return Response({'error': 'LeaveRequest not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        handler = ApprovalWorkflowService.get_handler(lr)
+        next_approver = ApprovalWorkflowService.get_next_approver(lr)
+
+        data = {
+            'id': lr.id,
+            'employee': {
+                'id': lr.employee.id,
+                'name': lr.employee.get_full_name(),
+                'affiliate': getattr(getattr(lr.employee, 'department', None), 'affiliate', None) and getattr(lr.employee.department.affiliate, 'name', None) or (getattr(lr.employee, 'affiliate', None) and getattr(lr.employee.affiliate, 'name', None)),
+            },
+            'status': lr.status,
+            'current_approval_stage': lr.current_approval_stage,
+            'manager_approved_by': lr.manager_approved_by and {'id': lr.manager_approved_by.id, 'name': lr.manager_approved_by.get_full_name(), 'email': lr.manager_approved_by.email} or None,
+            'manager_approval_date': lr.manager_approval_date,
+            'hr_approved_by': lr.hr_approved_by and {'id': lr.hr_approved_by.id, 'name': lr.hr_approved_by.get_full_name(), 'email': lr.hr_approved_by.email} or None,
+            'hr_approval_date': lr.hr_approval_date,
+            'ceo_approved_by': lr.ceo_approved_by and {'id': lr.ceo_approved_by.id, 'name': lr.ceo_approved_by.get_full_name(), 'email': lr.ceo_approved_by.email} or None,
+            'ceo_approval_date': lr.ceo_approval_date,
+            'next_approver_suggestion': next_approver and {'id': getattr(next_approver, 'id', None), 'name': getattr(next_approver, 'get_full_name', lambda: None)()} or None,
+            'handler_class': handler.__class__.__name__,
+        }
+
+        # Add quick checks: can typical HR/CEO approve this now?
+        User = get_user_model()
+        hr_user = User.objects.filter(role='hr', is_active=True).first()
+        ceo_user = User.objects.filter(role='ceo', is_active=True).first()
+        data['can_hr_approve_now'] = bool(hr_user and ApprovalWorkflowService.can_user_approve(lr, hr_user))
+        data['can_ceo_approve_now'] = bool(ceo_user and ApprovalWorkflowService.can_user_approve(lr, ceo_user))
+
+        return Response(data)
+    
     @action(detail=True, methods=['put'])
     def cancel(self, request, pk=None):
         """Cancel a leave request (only allowed for pending requests by employee or HR/Admin)"""
