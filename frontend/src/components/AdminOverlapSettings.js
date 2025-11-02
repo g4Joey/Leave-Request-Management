@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
 function AdminOverlapSettings() {
-  const { user } = useAuth();
   const [minDays, setMinDays] = useState(2);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -44,27 +42,17 @@ function AdminOverlapSettings() {
     }
   };
 
-  const canAdmin = user && (user.role === 'admin' || user.is_superuser);
-  if (!canAdmin) {
-    return (
-      <div className="max-w-xl mx-auto bg-white shadow rounded p-6">
-        <h3 className="text-lg font-semibold mb-2">Access Denied</h3>
-        <p className="text-sm text-gray-600">You do not have permission to view this page.</p>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+      <div className="flex justify-center items-center h-32">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto bg-white shadow rounded p-6">
-      <h2 className="text-xl font-semibold mb-4">Overlap Notification Settings</h2>
+    <div>
+      <h3 className="text-lg font-semibold mb-4">Overlap Notification Settings</h3>
       <p className="text-sm text-gray-600 mb-6">Configure the minimum overlapping days before managers are notified to reduce alert fatigue.</p>
 
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
