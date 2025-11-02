@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
 function LeaveRequest() {
@@ -11,6 +12,8 @@ function LeaveRequest() {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [overlapData, setOverlapData] = useState({ loading: false, overlaps: [], message: '' });
+  const { user } = useAuth();
 
   // Helper: today's date in YYYY-MM-DD to avoid past-date submissions
   const today = new Date().toISOString().split('T')[0];
@@ -30,6 +33,66 @@ function LeaveRequest() {
 
     fetchLeaveTypes();
   }, []);
+
+  // Debounced overlap detection
+  const checkOverlaps = useCallback(
+    debounce(async (startDate, endDate, deptId, userId) => {
+      if (!startDate || !endDate || !deptId) return;
+      
+      try {
+        setOverlapData(prev => ({ ...prev, loading: true }));
+        
+        const response = await api.get('/leaves/overlaps/', {
+          params: {
+            start: startDate,
+            end: endDate,
+            dept_id: deptId,
+            exclude_user_id: userId
+          }
+        });
+        
+        const overlaps = response.data.overlaps || [];
+        let message = '';
+        
+        if (overlaps.length > 0) {
+          if (overlaps.length === 1) {
+            message = `⚠️ This request overlaps with ${overlaps[0].name}'s ${overlaps[0].leave_type} leave.`;
+          } else if (overlaps.length <= 3) {
+            const names = overlaps.map(o => o.name).join(', ');
+            message = `⚠️ This request overlaps with leaves from ${names}.`;
+          } else {
+            const first = overlaps.slice(0, 2).map(o => o.name).join(', ');
+            message = `⚠️ This request overlaps with leaves from ${first} and ${overlaps.length - 2} others.`;
+          }
+        }
+        
+        setOverlapData({ loading: false, overlaps, message });
+        
+      } catch (error) {
+        console.error('Error checking overlaps:', error);
+        setOverlapData({ loading: false, overlaps: [], message: '' });
+      }
+    }, 800), // 800ms debounce
+    []
+  );
+
+  // Utility function for debouncing
+  function debounce(func, delay) {
+    let timeoutId;
+    return function (...args) {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func.apply(this, args), delay);
+    };
+  }
+
+  // Effect to trigger overlap check when dates change
+  useEffect(() => {
+    if (formData.start_date && formData.end_date && user?.department?.id) {
+      checkOverlaps(formData.start_date, formData.end_date, user.department.id, user.id);
+    } else {
+      setOverlapData({ loading: false, overlaps: [], message: '' });
+    }
+  }, [formData.start_date, formData.end_date, user, checkOverlaps]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -168,6 +231,52 @@ function LeaveRequest() {
               placeholder="Optional reason for leave request"
             />
           </div>
+
+          {/* Overlap Detection Advisory */}
+          {(overlapData.loading || overlapData.message) && (
+            <div className={`p-4 rounded-md border ${
+              overlapData.loading 
+                ? 'bg-blue-50 border-blue-200' 
+                : overlapData.overlaps.length > 0
+                  ? 'bg-yellow-50 border-yellow-200'
+                  : 'bg-green-50 border-green-200'
+            }`}>
+              {overlapData.loading ? (
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                  <span className="text-sm text-blue-700">Checking for overlapping leaves...</span>
+                </div>
+              ) : (
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    {overlapData.overlaps.length > 0 ? (
+                      <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="ml-3">
+                    <p className={`text-sm ${
+                      overlapData.overlaps.length > 0 
+                        ? 'text-yellow-700' 
+                        : 'text-green-700'
+                    }`}>
+                      {overlapData.message || 'No overlapping leaves detected.'}
+                    </p>
+                    {overlapData.overlaps.length > 0 && (
+                      <div className="mt-2 text-xs text-yellow-600">
+                        <p>Your manager will be notified of these overlaps during the approval process.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <button

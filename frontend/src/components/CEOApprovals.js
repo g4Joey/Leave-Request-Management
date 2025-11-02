@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { Dialog } from '@headlessui/react';
 import { useToast } from '../contexts/ToastContext';
+import OverlapAdvisory from './OverlapAdvisory';
 
 function CEOApprovals() {
   const { showToast } = useToast();
@@ -110,6 +111,16 @@ function CEOApprovals() {
 
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
+        {/* Overlap Advisory Banner */}
+        <OverlapAdvisory 
+          leaveRequest={{
+            ...request,
+            employee_department_id: request.employee_department_id || request.department_id,
+            employee_id: request.employee_id || request.employee
+          }}
+          className="mb-4"
+        />
+        
         <div className="flex justify-between items-start mb-4">
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900">

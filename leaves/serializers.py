@@ -262,7 +262,12 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
             if aff in ['SDSL', 'SBL']:
                 return 'Pending HR final approval'
             return 'Pending CEO approval'
+        if status == 'ceo_approved':
+            return 'Pending HR approval'
         if status == 'pending':
+            # For SDSL/SBL there is no manager step; CEO is first approver
+            if aff in ['SDSL', 'SBL']:
+                return 'Pending CEO approval'
             return 'Pending Manager approval'
         if status == 'approved':
             return 'Approved'

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import OverlapAdvisory from './OverlapAdvisory';
 
 function HRApprovals() {
   const { user } = useAuth();
@@ -128,6 +129,16 @@ function HRApprovals() {
                   <div className="space-y-4">
                     {requests.map((request) => (
                       <div key={request.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow bg-white">
+                        {/* Overlap Advisory Banner */}
+                        <OverlapAdvisory 
+                          leaveRequest={{
+                            ...request,
+                            employee_department_id: request.employee_department_id || request.department_id,
+                            employee_id: request.employee_id || request.employee
+                          }}
+                          className="mb-4"
+                        />
+                        
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
                             <h3 className="text-lg font-medium text-gray-900">

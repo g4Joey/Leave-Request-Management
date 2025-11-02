@@ -31,6 +31,7 @@ class LeaveRequest(models.Model):
         ('pending', 'Pending Manager Approval'),
         ('manager_approved', 'Manager Approved - Pending HR'),
         ('hr_approved', 'HR Approved - Pending CEO'),
+        ('ceo_approved', 'CEO Approved - Pending HR'),
         ('approved', 'Fully Approved'),
         ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
@@ -145,7 +146,21 @@ class LeaveRequest(models.Model):
         self.save()
     
     def hr_approve(self, approved_by, comments=""):
-        """HR approves the leave request"""
+        """HR approves the leave request.
+        In SDSL/SBL flow, HR is the final approver after CEO has approved first (ceo_approved stage)."""
+        # If CEO has already approved (SDSL/SBL flow), HR finalizes to approved
+        if self.status == 'ceo_approved':
+            self.status = 'approved'
+            self.hr_approved_by = approved_by
+            self.hr_approval_date = timezone.now()
+            self.hr_approval_comments = comments
+            # Set legacy final approval fields to HR for SDSL/SBL
+            self.approved_by = approved_by
+            self.approval_date = self.hr_approval_date
+            self.approval_comments = comments
+            self.save()
+            return
+        # Standard flow: move to hr_approved
         self.status = 'hr_approved'
         self.hr_approved_by = approved_by
         self.hr_approval_date = timezone.now()
@@ -153,15 +168,27 @@ class LeaveRequest(models.Model):
         self.save()
     
     def ceo_approve(self, approved_by, comments=""):
-        """CEO gives final approval"""
-        self.status = 'approved'
+        """CEO approval.
+        - In standard flow (Merban): CEO is final approver after HR (hr_approved -> approved)
+        - In SDSL/SBL: CEO approves first (pending -> ceo_approved), HR gives final approval.
+        """
+        # If HR has already approved (standard flow), CEO gives final approval
+        if self.status == 'hr_approved':
+            self.status = 'approved'
+            self.ceo_approved_by = approved_by
+            self.ceo_approval_date = timezone.now()
+            self.ceo_approval_comments = comments
+            # Set legacy fields for backward compatibility
+            self.approved_by = approved_by
+            self.approval_date = self.ceo_approval_date
+            self.approval_comments = comments
+            self.save()
+            return
+        # Otherwise, treat as CEO-first flow (SDSL/SBL): move to ceo_approved
+        self.status = 'ceo_approved'
         self.ceo_approved_by = approved_by
         self.ceo_approval_date = timezone.now()
         self.ceo_approval_comments = comments
-        # Set legacy fields for backward compatibility
-        self.approved_by = approved_by
-        self.approval_date = self.ceo_approval_date
-        self.approval_comments = comments
         self.save()
     
     def reject(self, rejected_by, comments="", rejection_stage=""):
@@ -262,6 +289,8 @@ class LeaveRequest(models.Model):
             return 'hr'
         elif self.status == 'hr_approved':
             return 'ceo'
+        elif self.status == 'ceo_approved':
+            return 'hr'
         elif self.status == 'approved':
             return 'completed'
         elif self.status == 'rejected':
@@ -328,7 +357,7 @@ class LeaveBalance(models.Model):
         )
         
         # Calculate pending days (all requests in approval workflow)
-        pending_statuses = ['pending', 'manager_approved', 'hr_approved']
+        pending_statuses = ['pending', 'manager_approved', 'hr_approved', 'ceo_approved']
         self.pending_days = sum(
             req.total_days or 0 for req in current_year_requests.filter(status__in=pending_statuses)
         )

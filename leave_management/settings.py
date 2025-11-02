@@ -220,3 +220,9 @@ AUTH_USER_MODEL = 'users.CustomUser'
 # Media files (uploads)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Leave Overlap Notification Settings
+OVERLAP_NOTIFY_MIN_DAYS = int(os.getenv("OVERLAP_NOTIFY_MIN_DAYS", "2"))  # minimum overlapping days to consider
+OVERLAP_NOTIFY_MIN_COUNT = int(os.getenv("OVERLAP_NOTIFY_MIN_COUNT", "2"))  # min number of overlaps to notify
+OVERLAP_NOTIFY_EMAIL = env_bool("OVERLAP_NOTIFY_EMAIL", default=False)  # send email notifications for overlaps
+OVERLAP_DETECT_ENABLED = env_bool("OVERLAP_DETECT_ENABLED", default=True)  # enable/disable overlap detection

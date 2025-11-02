@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 from django.contrib.auth import get_user_model
 from users.models import Affiliate, CustomUser
-from django.db import models
 
 
 User = get_user_model()
@@ -106,7 +105,7 @@ class ApprovalHandler(ABC):
             return False
             
         # For CEO approval, ensure it's the correct CEO for the employee's affiliate
-        if required_role == 'ceo' and current_status == 'hr_approved':
+        if required_role == 'ceo':
             expected_ceo = ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
             return user == expected_ceo
             
@@ -188,73 +187,36 @@ class StandardApprovalHandler(ApprovalHandler):
 
 class SDSLApprovalHandler(ApprovalHandler):
     """
-    CEO-first workflow for affiliates without managers (SDSL, SBL): Staff → CEO → HR (final).
-    Supports legacy records that might already be manager_approved by allowing CEO at that stage too.
+    SDSL special workflow: Manager → SDSL CEO (Kofi) → HR (final approval)
+    No final CEO step - HR gives final approval after SDSL CEO.
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
-        """Dynamic CEO-first flow for SDSL/SBL.
-        - Staff: ceo -> hr(final)
-        - Manager/HOD: ceo -> hr(final)
-        - HR: ceo -> approved (handled by approve pipeline)
-        """
-        emp = self.leave_request.employee
-        role = getattr(emp, 'role', None)
-        # Everyone starts with CEO first
-        flow = {
-            'pending': 'ceo',
-            # Legacy support if a record is already manager_approved from older flow
-            'manager_approved': 'ceo',
-            'hr_approved': 'hr'
+        """SDSL/SBL flow has no manager/HOD step: CEO -> HR (final)."""
+        return {
+            'pending': 'ceo',        # CEO first
+            'ceo_approved': 'hr'     # HR final approval
         }
-        return flow
     
     def can_approve(self, user: CustomUser, current_status: str) -> bool:
-        """Override: SDSL CEO approves at manager_approved stage."""
-        flow = self.get_approval_flow()
-        required_role = flow.get(current_status)
-        user_role = getattr(user, 'role', None)
-        
-        # Admin can always approve
-        if getattr(user, 'is_superuser', False) or user_role == 'admin':
-            return True
-        
-        # Basic role check
-        if user_role != required_role:
-            return False
-            
-        # For CEO approval, ensure the user is the CEO of the employee's affiliate
-        if required_role == 'ceo' and current_status in ['pending', 'manager_approved']:
-            try:
-                aff_name = ApprovalRoutingService.get_employee_affiliate_name(self.leave_request.employee)
-                return bool(User.objects.filter(role='ceo', is_active=True).filter(
-                    models.Q(department__affiliate__name__iexact=aff_name) | models.Q(affiliate__name__iexact=aff_name)
-                ).filter(pk=user.pk).exists())
-            except Exception:
-                return False
-                
-        return True
+        """CEO approves at pending stage for SDSL/SBL; rely on base affiliate-CEO check."""
+        return super().can_approve(user, current_status)
     
     def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
-        if current_status in ['pending', 'manager_approved']:
+        if current_status == 'pending':
             # CEO based on employee's affiliate (SDSL/SBL)
-            aff_name = ApprovalRoutingService.get_employee_affiliate_name(self.leave_request.employee)
-            return User.objects.filter(role='ceo', is_active=True).filter(
-                models.Q(department__affiliate__name__iexact=aff_name) | models.Q(affiliate__name__iexact=aff_name)
-            ).first()
-        elif current_status == 'hr_approved':
-            # HR for final approval  
+            return ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
+        elif current_status == 'ceo_approved':
+            # HR for final approval
             return User.objects.filter(role='hr', is_active=True).first()
         return None
     
     def get_next_status(self, current_status: str) -> str:
-        """Override: SDSL has different status progression."""
+        """SDSL/SBL status progression: pending -> ceo_approved -> approved (HR final)."""
         if current_status == 'pending':
-            return 'manager_approved'
-        elif current_status == 'manager_approved':
-            return 'hr_approved'  # CEO approval moves to HR stage
-        elif current_status == 'hr_approved':
-            return 'approved'     # HR gives final approval
+            return 'ceo_approved'
+        elif current_status == 'ceo_approved':
+            return 'approved'
         return 'approved'
 
 
@@ -306,11 +268,8 @@ class ApprovalWorkflowService:
         elif required_role == 'hr':
             leave_request.hr_approve(approver, comments)
         elif required_role == 'ceo':
-            # Special handling for SDSL flow: CEO approval moves request to HR stage
-            if isinstance(handler, SDSLApprovalHandler):
-                leave_request.hr_approve(approver, comments)
-            else:
-                leave_request.ceo_approve(approver, comments)
+            # SDSL/SBL: CEO approval moves to ceo_approved; Merban: final approve if HR already approved
+            leave_request.ceo_approve(approver, comments)
         else:
             # Fallback for unexpected mapping; progress using default status transition
             next_status = handler.get_next_status(leave_request.status)

@@ -14,6 +14,7 @@ class Notification(models.Model):
         ('leave_approved', 'Leave Request Fully Approved'),
         ('leave_rejected', 'Leave Request Rejected'),
         ('leave_cancelled', 'Leave Request Cancelled'),
+        ('leave_overlap_detected', 'Leave Overlap Detected'),
         ('balance_low', 'Leave Balance Low'),
         ('system', 'System Notification'),
     ]
@@ -32,6 +33,10 @@ class Notification(models.Model):
     # Related objects
     leave_request = models.ForeignKey('leaves.LeaveRequest', on_delete=models.CASCADE,
                                      null=True, blank=True, related_name='notifications')
+    
+    # Metadata (JSON field for storing additional notification data)
+    meta = models.JSONField(default=dict, blank=True, 
+                           help_text="Additional notification metadata (e.g., overlap details, links)")
     
     # Status
     is_read = models.BooleanField(default=False)

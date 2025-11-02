@@ -3,9 +3,30 @@ from .models import Department, CustomUser as User, Affiliate
 
 
 class AffiliateSerializer(serializers.ModelSerializer):
+    ceo = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Affiliate
-        fields = ['id', 'name', 'description']
+        fields = ['id', 'name', 'description', 'ceo']
+
+    def get_ceo(self, obj):
+        # Return the first active CEO linked to this affiliate either directly or via department
+        from .models import CustomUser as User
+        from django.db.models import Q
+        ceo = (
+            User.objects.filter(role='ceo', is_active=True)
+            .filter(Q(affiliate=obj) | Q(department__affiliate=obj))
+            .order_by('id')
+            .first()
+        )
+        if not ceo:
+            return None
+        name = ceo.get_full_name().strip() if ceo.get_full_name() else ''
+        return {
+            'id': ceo.id,
+            'name': name or (ceo.email or ceo.username),
+            'email': ceo.email,
+        }
 
 class DepartmentSerializer(serializers.ModelSerializer):
     manager = serializers.SerializerMethodField(read_only=True)  # backward-compat alias of HOD

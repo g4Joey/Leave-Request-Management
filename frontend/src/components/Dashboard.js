@@ -191,7 +191,8 @@ function Dashboard() {
                       </div>
                       <div className="flex-shrink-0">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
-                          {request.status}
+                          {/* Use stage-aware label for pending pipeline statuses when available */}
+                          {(['pending','manager_approved','hr_approved','ceo_approved'].includes(request.status) && (request.stage_label || request.status_display)) || request.status}
                         </span>
                       </div>
                     </div>

@@ -120,14 +120,22 @@ export default function AffiliatePage() {
       const affiliateData = affRes.data;
       setAffiliate(affiliateData);
 
-      // Fetch CEO for this affiliate
-      try {
-        const ceoRes = await api.get(`/users/staff/?affiliate_id=${id}&role=ceo`);
-        const ceoData = ceoRes.data?.results?.[0] || ceoRes.data?.[0];
-        setCeo(ceoData || null);
-      } catch (e) {
-        console.warn('Failed to load CEO for affiliate:', e);
-        setCeo(null);
+      // Resolve CEO for this affiliate: prefer affiliate.ceo, fallback to staff query
+      if (affiliateData?.ceo) {
+        setCeo({ name: affiliateData.ceo.name || affiliateData.ceo.email, email: affiliateData.ceo.email });
+      } else {
+        try {
+          const ceoRes = await api.get(`/users/staff/?affiliate_id=${id}&role=ceo`);
+          const ceoData = ceoRes.data?.results?.[0] || ceoRes.data?.[0];
+          if (ceoData) {
+            setCeo({ name: ceoData.name || [ceoData.first_name, ceoData.last_name].filter(Boolean).join(' ') || ceoData.email, email: ceoData.email });
+          } else {
+            setCeo(null);
+          }
+        } catch (e) {
+          console.warn('Failed to load CEO for affiliate:', e);
+          setCeo(null);
+        }
       }
       let list = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
       // Hide Executive pseudo-departments if any remain
@@ -181,7 +189,9 @@ export default function AffiliatePage() {
           staffRecords = [];
         }
       }
-      setEmployees(stripAffiliateMeta(staffRecords));
+  // Exclude CEO from employee cards to avoid duplication with top-right CEO display
+  const filtered = staffRecords.filter((rec) => rec.role !== 'ceo');
+  setEmployees(stripAffiliateMeta(filtered));
     } catch (e) {
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load affiliate';
       showToast({ type: 'error', message: msg });
@@ -277,23 +287,11 @@ export default function AffiliatePage() {
           {ceo && (
             <div className="text-right">
               <div className="text-sm font-medium text-gray-900">
-                {(() => {
-                  const displayName = (ceo.name && ceo.name.trim())
-                    || [ceo.first_name, ceo.last_name].filter(Boolean).join(' ').trim()
-                    || ceo.email
-                    || 'CEO';
-                  return (
-                    <>
-                      CEO: {displayName}
-                    </>
-                  );
-                })()}
+                CEO: {ceo.name}
               </div>
-              {ceo.email && (
-                <div className="text-xs text-gray-500">
-                  {ceo.email}
-                </div>
-              )}
+              <div className="text-xs text-gray-500">
+                {ceo.email}
+              </div>
             </div>
           )}
           
@@ -384,7 +382,7 @@ export default function AffiliatePage() {
             <div className="text-sm text-gray-500">No team members under this affiliate yet.</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {employees.filter((emp) => (emp.role || '').toLowerCase() !== 'ceo').map((emp) => (
+              {employees.map((emp) => (
                 <div key={emp.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                   <h4 className="text-lg font-medium text-gray-900">{emp.name}</h4>
                   <p className="text-sm text-gray-600 mt-1">{emp.email}</p>

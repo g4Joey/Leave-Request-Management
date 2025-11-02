@@ -248,12 +248,22 @@ function StaffManagement() {
       try {
         const entries = await Promise.all(affiliates.map(async (aff) => {
           try {
-            // CEO name
-            const ceoRes = await api.get(`/users/staff/?affiliate_id=${aff.id}&role=ceo`);
-            const ceoItem = ceoRes.data?.results?.[0] || ceoRes.data?.[0] || null;
-            const ceoName = (ceoItem?.name && ceoItem.name.trim())
-              ? ceoItem.name
-              : [ceoItem?.first_name, ceoItem?.last_name].filter(Boolean).join(' ').trim() || null;
+            // CEO name: prefer affiliate.ceo from backend serializer; fallback to staff lookup
+            let ceoName = null;
+            if (aff?.ceo) {
+              ceoName = (aff.ceo.name && aff.ceo.name.trim()) ? aff.ceo.name.trim() : (aff.ceo.email || null);
+            }
+            if (!ceoName) {
+              try {
+                const ceoRes = await api.get(`/users/staff/?affiliate_id=${aff.id}&role=ceo`);
+                const ceoItem = ceoRes.data?.results?.[0] || ceoRes.data?.[0] || null;
+                ceoName = (ceoItem?.name && ceoItem.name.trim())
+                  ? ceoItem.name
+                  : [ceoItem?.first_name, ceoItem?.last_name].filter(Boolean).join(' ').trim() || ceoItem?.email || null;
+              } catch (_) {
+                // ignore
+              }
+            }
             // Departments (for Merban) and staff counts
             const deptRes = await api.get(`/users/departments/?affiliate_id=${aff.id}`);
             const departments = Array.isArray(deptRes.data?.results) ? deptRes.data.results : (deptRes.data || []);
@@ -264,8 +274,9 @@ function StaffManagement() {
                 id: parseNumericId(aff.id) ?? aff.id ?? null,
                 name: aff.name,
               });
-              // Include CEO in member counts
-              const ceoCount = ceoName ? 1 : 0;
+              // Include CEO in member counts only if not already in list
+              const hasCeo = normalized.some((m) => m.role === 'ceo');
+              const ceoCount = (!hasCeo && ceoName) ? 1 : 0;
               memberCount = normalized.length + ceoCount;
             } catch (_) {
               memberCount = ceoName ? 1 : 0;
@@ -1231,9 +1242,8 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         onClick={() => navigate(`/staff/affiliates/${aff.id}`)}
                         className="text-left border border-gray-200 rounded-lg p-4 bg-white hover:bg-gray-50 focus:outline-none"
                       >
-                        <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
-                              <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || '—'}</p>
+                              <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || aff?.ceo?.name || aff?.ceo?.email || '—'}</p>
                               {aff.name === 'MERBAN CAPITAL' && (
                                 <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
                               )}

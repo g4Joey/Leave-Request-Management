@@ -242,3 +242,62 @@ class LeaveNotificationService:
             logger.info(f'Notified relevant parties of rejection at {stage_name} level for leave request {leave_request.id}')
         except Exception as e:
             logger.error(f'Error sending rejection notification: {str(e)}', exc_info=True)
+
+    @staticmethod
+    def notify_leave_overlap(leave_request, overlap_summary):
+        """Notify relevant parties when overlapping leaves are detected"""
+        try:
+            from django.conf import settings
+            from leaves.utils import get_overlap_privacy_data, format_overlap_message
+            
+            # Check if overlap notifications are enabled
+            if not getattr(settings, 'OVERLAP_DETECT_ENABLED', True):
+                return
+            
+            # Get privacy-safe overlap data
+            privacy_data = get_overlap_privacy_data(overlap_summary)
+            overlap_message = format_overlap_message(overlap_summary, leave_request.employee.get_full_name())
+            
+            # Notify manager/HOD if exists
+            if leave_request.employee.manager:
+                Notification.objects.create(
+                    recipient=leave_request.employee.manager,
+                    sender=leave_request.employee,
+                    notification_type='leave_overlap_detected',
+                    title=f'Leave Overlap Detected - {leave_request.employee.get_full_name()}',
+                    message=f'A new leave request from {leave_request.employee.get_full_name()} for {leave_request.leave_type.name} ({leave_request.start_date} to {leave_request.end_date}) overlaps with existing department leaves. {overlap_message}',
+                    leave_request=leave_request,
+                    meta={
+                        'overlap_count': overlap_summary['total_overlaps'],
+                        'overlap_days': overlap_summary['total_overlap_days'],
+                        'overlaps': privacy_data
+                    }
+                )
+                logger.info(f'Notified manager {leave_request.employee.manager.username} of overlap for leave request {leave_request.id}')
+            
+            # Notify HR users
+            hr_users = User.objects.filter(role='hr', is_active=True)
+            for hr_user in hr_users:
+                Notification.objects.create(
+                    recipient=hr_user,
+                    sender=leave_request.employee,
+                    notification_type='leave_overlap_detected',
+                    title=f'Department Leave Overlap - {leave_request.employee.get_full_name()}',
+                    message=f'A leave request from {leave_request.employee.get_full_name()} ({leave_request.employee.department.name if hasattr(leave_request.employee, "department") else "Unknown Dept"}) for {leave_request.leave_type.name} ({leave_request.start_date} to {leave_request.end_date}) has detected overlaps with {overlap_summary["total_overlaps"]} other department members.',
+                    leave_request=leave_request,
+                    meta={
+                        'overlap_count': overlap_summary['total_overlaps'],
+                        'overlap_days': overlap_summary['total_overlap_days'],
+                        'overlaps': privacy_data
+                    }
+                )
+            
+            # Optionally send email notifications
+            if getattr(settings, 'OVERLAP_NOTIFY_EMAIL', False):
+                # Email logic can be implemented here if needed
+                logger.info(f'Email overlap notifications are enabled but not implemented for leave request {leave_request.id}')
+                
+            logger.info(f'Sent overlap notifications for leave request {leave_request.id} - {overlap_summary["total_overlaps"]} overlaps detected')
+            
+        except Exception as e:
+            logger.error(f'Error sending overlap notification: {str(e)}', exc_info=True)

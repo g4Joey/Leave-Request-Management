@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { Dialog } from '@headlessui/react';
 import { useToast } from '../contexts/ToastContext';
+import OverlapAdvisory from './OverlapAdvisory';
 
 function ManagerDashboard() {
   const { showToast } = useToast();
@@ -16,7 +17,7 @@ function ManagerDashboard() {
   const [recordsPage, setRecordsPage] = useState(0);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsSearch, setRecordsSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState(''); // 'approved', 'rejected', 'in_progress', or '' for all
+  const [statusFilter, setStatusFilter] = useState(''); // 'approved', 'rejected', or '' for all
   const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search
   
 
@@ -31,31 +32,14 @@ function ManagerDashboard() {
           limit: PAGE_SIZE, 
           offset: page * PAGE_SIZE,
           search: search || undefined,
-          status: status !== 'in_progress' ? status : undefined
+          status: status
         };
-        if (status === 'in_progress') {
-          // Combine pending, manager_approved, hr_approved for progression visibility
-          const [pend, man, hr] = await Promise.all([
-            api.get('/leaves/manager/', { params: { ...params, status: 'pending' } }),
-            api.get('/leaves/manager/', { params: { ...params, status: 'manager_approved' } }),
-            api.get('/leaves/manager/', { params: { ...params, status: 'hr_approved' } }),
-          ]);
-          const items = [
-            ...(pend.data.results || pend.data || []),
-            ...(man.data.results || man.data || []),
-            ...(hr.data.results || hr.data || []),
-          ];
-          // Dedup by id and sort desc
-          const byId = new Map();
-          items.forEach((it) => byId.set(it.id, it));
-          allItems = Array.from(byId.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, PAGE_SIZE);
-          setRecordsHasMore(allItems.length === PAGE_SIZE);
-        } else {
-          const res = await api.get('/leaves/manager/', { params });
-          const data = res.data;
-          allItems = data.results || data;
-          setRecordsHasMore(data && typeof data === 'object' && 'next' in data ? Boolean(data.next) : allItems.length === PAGE_SIZE);
-        }
+        
+        const res = await api.get('/leaves/manager/', { params });
+        const data = res.data;
+        allItems = data.results || data;
+        
+        setRecordsHasMore(data && typeof data === 'object' && 'next' in data ? Boolean(data.next) : allItems.length === PAGE_SIZE);
       } else {
         // Fetch both approved and rejected in parallel, then combine and sort
         const [approvedRes, rejectedRes] = await Promise.all([
@@ -190,6 +174,16 @@ function ManagerDashboard() {
           pendingRequests.map((request) => (
             <li key={request.id}>
               <div className="px-4 py-4 sm:px-6">
+                {/* Overlap Advisory Banner */}
+                <OverlapAdvisory 
+                  leaveRequest={{
+                    ...request,
+                    employee_department_id: request.employee_department_id || request.department_id,
+                    employee_id: request.employee_id || request.employee
+                  }}
+                  className="mb-3"
+                />
+                
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
@@ -265,7 +259,6 @@ function ManagerDashboard() {
             <option value="">All Status</option>
             <option value="approved">Approved Only</option>
             <option value="rejected">Rejected Only</option>
-            <option value="in_progress">Pending/In-Progress</option>
           </select>
           <button
             onClick={() => {
@@ -297,10 +290,9 @@ function ManagerDashboard() {
         {leaveRecords.length > 0 ? (
           leaveRecords.map((request) => {
             const isApproved = request.status === 'approved';
-            const isRejected = request.status === 'rejected';
-            const statusColor = isApproved
-              ? 'bg-green-100 text-green-800 ring-green-200'
-              : (isRejected ? 'bg-red-100 text-red-800 ring-red-200' : 'bg-amber-100 text-amber-800 ring-amber-200');
+            const statusColor = isApproved 
+              ? 'bg-green-100 text-green-800 ring-green-200' 
+              : 'bg-red-100 text-red-800 ring-red-200';
             
             return (
               <li key={`record-${request.id}`}>
@@ -334,7 +326,7 @@ function ManagerDashboard() {
                           </div>
                         </div>
                         <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor}`}>
-                          {isApproved ? 'Approved' : (isRejected ? 'Rejected' : (request.stage_label || 'Pending'))}
+                          {isApproved ? 'Approved' : 'Rejected'}
                         </span>
                       </div>
                     </div>
