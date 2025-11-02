@@ -277,11 +277,23 @@ export default function AffiliatePage() {
           {ceo && (
             <div className="text-right">
               <div className="text-sm font-medium text-gray-900">
-                CEO: {ceo.name}
+                {(() => {
+                  const displayName = (ceo.name && ceo.name.trim())
+                    || [ceo.first_name, ceo.last_name].filter(Boolean).join(' ').trim()
+                    || ceo.email
+                    || 'CEO';
+                  return (
+                    <>
+                      CEO: {displayName}
+                    </>
+                  );
+                })()}
               </div>
-              <div className="text-xs text-gray-500">
-                {ceo.email}
-              </div>
+              {ceo.email && (
+                <div className="text-xs text-gray-500">
+                  {ceo.email}
+                </div>
+              )}
             </div>
           )}
           
@@ -372,7 +384,7 @@ export default function AffiliatePage() {
             <div className="text-sm text-gray-500">No team members under this affiliate yet.</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {employees.map((emp) => (
+              {employees.filter((emp) => (emp.role || '').toLowerCase() !== 'ceo').map((emp) => (
                 <div key={emp.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                   <h4 className="text-lg font-medium text-gray-900">{emp.name}</h4>
                   <p className="text-sm text-gray-600 mt-1">{emp.email}</p>

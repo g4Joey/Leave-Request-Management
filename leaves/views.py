@@ -511,8 +511,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
-            # Items that require or have passed CEO stage. Include manager_approved for SDSL flow.
-            return qs.filter(status__in=['manager_approved', 'hr_approved', 'approved', 'rejected'])
+            # CEO may see pending (CEO-first affiliates), manager_approved (legacy), and hr_approved (standard)
+            return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()
@@ -564,35 +564,31 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # Managers see requests pending their approval
             pending_requests = self.get_queryset().filter(status='pending')
         elif user_role == 'hr':
-            # HR sees manager_approved requests that are not SDSL or SBL (those go to CEO first)
+            # HR sees:
+            # - MERBAN flow: manager_approved
+            # - CEO-first affiliates (SDSL/SBL): hr_approved (CEO already acted)
             from django.db.models import Q
-            pending_requests = self.get_queryset().filter(status='manager_approved').exclude(
-                Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) | 
+            merban_hr = self.get_queryset().filter(status='manager_approved').exclude(
+                Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
                 Q(employee__affiliate__name__in=['SDSL', 'SBL'])
             )
+            ceo_first_pending_hr = self.get_queryset().filter(status='hr_approved').filter(
+                Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
+                Q(employee__affiliate__name__in=['SDSL', 'SBL'])
+            )
+            pending_requests = merban_hr.union(ceo_first_pending_hr)
         elif user_role == 'ceo':
-            # CEO sees requests that require their approval - filtered by affiliate and workflow
+            # CEO sees requests requiring their approval based on affiliate workflow
             from .services import ApprovalWorkflowService
-            
-            # Check both hr_approved (standard workflow) and manager_approved (SDSL workflow)
-            hr_approved_requests = self.get_queryset().filter(status='hr_approved')
-            manager_approved_requests = self.get_queryset().filter(status='manager_approved')
-            
-            filtered_request_ids = []
-            
-            # Check hr_approved requests (standard workflow)
-            for request in hr_approved_requests:
-                handler = ApprovalWorkflowService.get_handler(request)
-                if handler.can_approve(user, 'hr_approved'):
-                    filtered_request_ids.append(request.id)
-            
-            # Check manager_approved requests (SDSL workflow)
-            for request in manager_approved_requests:
-                handler = ApprovalWorkflowService.get_handler(request)
-                if handler.can_approve(user, 'manager_approved'):
-                    filtered_request_ids.append(request.id)
-            
-            pending_requests = self.get_queryset().filter(id__in=filtered_request_ids)
+
+            candidates = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved'])
+            filtered_ids = []
+            for req in candidates:
+                handler = ApprovalWorkflowService.get_handler(req)
+                # Can CEO approve at the request's current status?
+                if handler.can_approve(user, req.status):
+                    filtered_ids.append(req.id)
+            pending_requests = self.get_queryset().filter(id__in=filtered_ids)
         elif user_role == 'admin':
             # Admin sees all pending requests
             pending_requests = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved'])
@@ -619,7 +615,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def ceo_approvals_categorized(self, request):
-        """CEO-specific endpoint that categorizes pending requests by submitter role"""
+        """CEO-specific endpoint categorizing pending requests by submitter role and affiliate workflow."""
         user = request.user
         user_role = getattr(user, 'role', None)
         
@@ -627,10 +623,17 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': 'Only CEOs can access this endpoint'}, 
                           status=status.HTTP_403_FORBIDDEN)
         
-        # Get all requests pending CEO approval
-        pending_requests = self.get_queryset().filter(status='hr_approved')
-        serializer = self.get_serializer(pending_requests, many=True)
-        
+        # Gather all requests that could be pending CEO approval per workflow
+        from .services import ApprovalWorkflowService
+        candidates = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved'])
+        filtered = []
+        for req in candidates:
+            handler = ApprovalWorkflowService.get_handler(req)
+            if handler.can_approve(user, req.status):
+                filtered.append(req)
+
+        serializer = self.get_serializer(filtered, many=True)
+
         # Categorize by submitter role
         categorized = {
             'hod_manager': [],
@@ -745,7 +748,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=True, methods=['put'])
     def cancel(self, request, pk=None):
-        """Cancel a leave request (only allowed for pending requests by employee or HR/Admin)"""
+        """Cancel a leave request (only allowed for pending requests by the requester)."""
         import logging
         from notifications.services import LeaveNotificationService
         logger = logging.getLogger('leaves')
@@ -764,7 +767,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # Check if cancellation is allowed
             if not leave_request.can_be_cancelled(user):
                 return Response({
-                    'error': 'Cannot cancel this request. Only pending requests can be cancelled by the requester or HR/Admin.'
+                    'error': 'Cannot cancel this request. Only the requester can cancel their own pending request.'
                 }, status=status.HTTP_403_FORBIDDEN)
             
             # Cancel the request
@@ -926,24 +929,12 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             elif user_role == 'ceo':
                 # Use same logic as pending_approvals endpoint
                 from .services import ApprovalWorkflowService
-
-                hr_approved_requests = self.get_queryset().filter(status='hr_approved')
-                manager_approved_requests = self.get_queryset().filter(status='manager_approved')
-
+                candidates = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved'])
                 ceo_count = 0
-
-                # Check hr_approved requests (standard workflow)
-                for req in hr_approved_requests:
+                for req in candidates:
                     handler = ApprovalWorkflowService.get_handler(req)
-                    if handler.can_approve(user, 'hr_approved'):
+                    if handler.can_approve(user, req.status):
                         ceo_count += 1
-
-                # Check manager_approved requests (SDSL workflow)
-                for req in manager_approved_requests:
-                    handler = ApprovalWorkflowService.get_handler(req)
-                    if handler.can_approve(user, 'manager_approved'):
-                        ceo_count += 1
-
                 counts['ceo_approvals'] = ceo_count
             elif user_role == 'admin':
                 counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
