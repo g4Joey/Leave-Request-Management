@@ -626,8 +626,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                     filtered_ids.append(req.id)
             pending_requests = self.get_queryset().filter(id__in=filtered_ids)
         elif user_role == 'admin':
-            # Admin sees all not-final statuses (for troubleshooting)
-            pending_requests = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'hr_approved', 'ceo_approved'])
+            # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
+            # Admins can still browse all requests via list endpoints
+            pending_requests = self.get_queryset().filter(status='pending')
         else:
             # No approval permissions
             pending_requests = self.get_queryset().none()

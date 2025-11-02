@@ -18,8 +18,8 @@ function HRApprovals() {
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      // HR should call the requests viewset pending_approvals endpoint
-      const response = await api.get('/leaves/requests/pending_approvals/');
+  // Fetch HR pending approvals via manager endpoint action (stage-aware server filtering)
+  const response = await api.get('/leaves/manager/pending_approvals/');
       const requests = response.data.requests || [];
       setPendingApprovals(requests);
       
@@ -81,6 +81,8 @@ function HRApprovals() {
     const statusConfig = {
       'pending': { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Pending Manager' },
       'manager_approved': { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Pending HR' },
+      // CEO-first (SDSL/SBL) flow where HR is final approver
+      'ceo_approved': { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Pending HR' },
       'hr_approved': { bg: 'bg-purple-100', text: 'text-purple-800', label: 'Pending CEO' },
     };
     
