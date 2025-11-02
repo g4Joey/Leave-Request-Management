@@ -136,10 +136,23 @@ def should_trigger_overlap_notification(overlap_summary: Dict) -> bool:
         Boolean indicating if notification should be sent
     """
     from django.conf import settings
+    from notifications.utils import get_site_setting
     
-    min_days = getattr(settings, 'OVERLAP_NOTIFY_MIN_DAYS', 2)
-    min_count = getattr(settings, 'OVERLAP_NOTIFY_MIN_COUNT', 2)
-    enabled = getattr(settings, 'OVERLAP_DETECT_ENABLED', True)
+    # Fetch runtime override; fall back to settings
+    try:
+        min_days_raw = get_site_setting('OVERLAP_NOTIFY_MIN_DAYS', None)
+        min_days = int(min_days_raw) if min_days_raw is not None else int(getattr(settings, 'OVERLAP_NOTIFY_MIN_DAYS', 2))
+    except Exception:
+        min_days = int(getattr(settings, 'OVERLAP_NOTIFY_MIN_DAYS', 2))
+
+    try:
+        min_count_raw = get_site_setting('OVERLAP_NOTIFY_MIN_COUNT', None)
+        min_count = int(min_count_raw) if min_count_raw is not None else int(getattr(settings, 'OVERLAP_NOTIFY_MIN_COUNT', 2))
+    except Exception:
+        min_count = int(getattr(settings, 'OVERLAP_NOTIFY_MIN_COUNT', 2))
+
+    enabled_raw = get_site_setting('OVERLAP_DETECT_ENABLED', None)
+    enabled = (str(enabled_raw).strip().lower() in ['1','true','yes','on']) if enabled_raw is not None else getattr(settings, 'OVERLAP_DETECT_ENABLED', True)
     
     if not enabled:
         return False

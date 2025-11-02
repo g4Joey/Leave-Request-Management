@@ -85,3 +85,23 @@ class EmailTemplate(models.Model):
         ordering = ['notification_type']
         verbose_name = 'Email Template'
         verbose_name_plural = 'Email Templates'
+
+
+class SiteSetting(models.Model):
+    """
+    Simple key/value settings store editable via Django admin.
+    Used for runtime toggles such as overlap thresholds.
+    """
+    key = models.CharField(max_length=100, unique=True)
+    value = models.TextField(blank=True, default="")
+    description = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.key} = {self.value}"
+
+    class Meta:
+        ordering = ['key']
+        verbose_name = 'Site Setting'
+        verbose_name_plural = 'Site Settings'

@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/leaves/', include('leaves.urls')),
     path('api/users/', include('users.urls')),
+    path('api/notifications/', include('notifications.urls')),
     # Fallback routes without the '/api' prefix. Some platforms may strip the path prefix
     # when forwarding to the backend service. These mirror the API endpoints so requests
     # will still resolve correctly.
@@ -45,6 +46,7 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh_root'),
     path('leaves/', include('leaves.urls')),
     path('users/', include('users.urls')),
+    path('notifications/', include('notifications.urls')),
     path('internal/debug-static-files/', views.debug_static_files),
     path('internal/debug-dashboard-data/', views.debug_dashboard_data),
     path('internal/debug-fix-production-data/', debug_fix_production_data),

@@ -12,6 +12,7 @@ import StaffManagement from './components/StaffManagement';
 import AffiliatePage from './components/AffiliatePage';
 import MyProfile from './components/MyProfile';
 import AdminSystemReset from './components/AdminSystemReset';
+import AdminOverlapSettings from './components/AdminOverlapSettings';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './contexts/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -112,6 +113,14 @@ function App() {
                             element={
                               <AdminRoute>
                                 <AdminSystemReset />
+                              </AdminRoute>
+                            }
+                          />
+                          <Route
+                            path="/admin/overlap-settings"
+                            element={
+                              <AdminRoute>
+                                <AdminOverlapSettings />
                               </AdminRoute>
                             }
                           />
