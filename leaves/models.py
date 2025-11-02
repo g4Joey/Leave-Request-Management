@@ -43,8 +43,8 @@ class LeaveRequest(models.Model):
     leave_type = models.ForeignKey(LeaveType, on_delete=models.PROTECT)
     
     # Leave dates
-    start_date = models.DateField()
-    end_date = models.DateField()
+    start_date = models.DateField(db_index=True)
+    end_date = models.DateField(db_index=True)
     total_days = models.PositiveIntegerField(blank=True, null=True)
     
     # Request information (reason now optional for staff)
