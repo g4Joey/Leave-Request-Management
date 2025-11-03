@@ -604,7 +604,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         # Filter requests based on user's role and approval stage
         if user_role == 'manager':
             # Managers see requests pending their approval
-            pending_requests = self.get_queryset().filter(status='pending')
+            # Safety: HR/admin requests should never be in manager queue
+            pending_requests = self.get_queryset().filter(status='pending').exclude(employee__role__in=['hr', 'admin'])
         elif user_role == 'hr' or (stage_override == 'hr' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # HR sees:
             # - Merban: manager_approved (exclude SDSL/SBL)
@@ -636,7 +637,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         elif user_role == 'admin':
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
             # Admins can still browse all requests via list endpoints
-            pending_requests = self.get_queryset().filter(status='pending')
+            # Safety: hide HR/admin submitters from manager-stage view
+            pending_requests = self.get_queryset().filter(status='pending').exclude(employee__role__in=['hr', 'admin'])
         else:
             # No approval permissions
             pending_requests = self.get_queryset().none()
