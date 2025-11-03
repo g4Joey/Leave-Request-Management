@@ -9,6 +9,7 @@ function HRApprovals() {
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [actionModal, setActionModal] = useState({ open: false, action: '', comments: '' });
+  const [actingId, setActingId] = useState(null);
   const [groupedApprovals, setGroupedApprovals] = useState({});
   const [activeTab, setActiveTab] = useState('Merban Capital');
 
@@ -63,6 +64,7 @@ function HRApprovals() {
 
   const handleAction = async (requestId, action, comments = '') => {
     try {
+      setActingId(requestId);
       if (action === 'approve') {
         // Use the LeaveRequestViewSet approve action
         await api.put(`/leaves/requests/${requestId}/approve/`, {
@@ -80,6 +82,9 @@ function HRApprovals() {
       setSelectedRequest(null);
     } catch (error) {
       console.error(`Error ${action}ing request:`, error);
+    }
+    finally {
+      setActingId(null);
     }
   };
 
@@ -252,10 +257,11 @@ function HRApprovals() {
                           Reject
                         </button>
                         <button
-                          onClick={() => openActionModal(request, 'approve')}
-                          className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          onClick={() => handleAction(request.id, 'approve')}
+                          disabled={actingId === request.id}
+                          className={`px-4 py-2 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-primary-500 ${actingId === request.id ? 'bg-primary-400 cursor-wait' : 'bg-primary-600 hover:bg-primary-700'}`}
                         >
-                          Approve
+                          {actingId === request.id ? 'Approving…' : 'Approve'}
                         </button>
                       </div>
                     </div>
@@ -283,14 +289,14 @@ function HRApprovals() {
               </p>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Comments {actionModal.action === 'reject' ? '(Required)' : '(Optional)'}
+                  Comments (Optional)
                 </label>
                 <textarea
                   value={actionModal.comments}
                   onChange={(e) => setActionModal(prev => ({ ...prev, comments: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                   rows="3"
-                  placeholder={`${actionModal.action === 'approve' ? 'Optional approval' : 'Required rejection'} comments...`}
+                  placeholder={`Add ${actionModal.action === 'approve' ? 'approval' : 'rejection'} comments (optional)…`}
                 />
               </div>
               <div className="flex items-center justify-end space-x-3">
@@ -302,7 +308,6 @@ function HRApprovals() {
                 </button>
                 <button
                   onClick={() => handleAction(selectedRequest?.id, actionModal.action, actionModal.comments)}
-                  disabled={actionModal.action === 'reject' && !actionModal.comments.trim()}
                   className={`px-4 py-2 rounded-md ${
                     actionModal.action === 'approve'
                       ? 'bg-primary-600 hover:bg-primary-700 text-white'

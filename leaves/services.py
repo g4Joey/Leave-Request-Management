@@ -5,6 +5,7 @@ Uses Strategy Pattern and Inheritance for different approval workflows.
 """
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
+from django.db import models
 from django.contrib.auth import get_user_model
 from users.models import Affiliate, CustomUser
 

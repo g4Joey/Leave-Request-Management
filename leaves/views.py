@@ -599,7 +599,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         """Get leave requests pending approval for current user's role"""
         user = request.user
         user_role = getattr(user, 'role', None)
-        stage_override = (request.query_params.get('stage') or '').lower().strip()
+        stage_override = (request.query_params.get('stage') or '').lower().strip() if request.query_params.get('stage') else ''
         
         # Filter requests based on user's role and approval stage
         if user_role == 'manager':
@@ -613,10 +613,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             from django.db.models import Q
             from itertools import chain
             
-            merban_qs = self.get_queryset().filter(status='manager_approved').exclude(
-                Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
-                Q(employee__affiliate__name__in=['SDSL', 'SBL'])
-            ).exclude(employee__role='admin')
+            merban_qs = self.get_queryset().filter(status='manager_approved').exclude(Q(employee__department__affiliate__name__iexact='SDSL') | Q(employee__department__affiliate__name__iexact='SBL')).exclude(employee__role='admin')
             
             ceo_approved_qs = self.get_queryset().filter(status='ceo_approved').exclude(employee__role='admin')
             
@@ -895,7 +892,12 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             leave_request = self.get_object()
             user = request.user
-            comments = request.data.get('approval_comments', '')
+            # Support both keys for backward/forward compatibility
+            comments = (
+                request.data.get('rejection_comments')
+                or request.data.get('approval_comments')
+                or ''
+            )
             
             logger.info(f'Attempting to reject leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
             

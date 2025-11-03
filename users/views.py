@@ -421,11 +421,11 @@ class StaffManagementView(APIView):
                 affiliate = Affiliate.objects.get(pk=affiliate_id)
                 # For SDSL/SBL, include individual employees (no department, but with affiliate)
                 if affiliate.name in ['SDSL', 'SBL']:
-                    individual_qs = CustomUser.objects.filter(
+                    individuals_qs = CustomUser.objects.filter(
                         affiliate_id=affiliate_id,
                         department__isnull=True,  # No department assignment
                         is_active=True
-                    ).exclude(role='ceo').exclude(role='admin')  # Exclude CEOs and admin
+                    ).exclude(role='admin')  # Exclude admin only
                     
                     if exclude_demo:
                         individual_qs = individual_qs.exclude(is_demo=True)
@@ -441,12 +441,22 @@ class StaffManagementView(APIView):
                                 'employee_id': staff.manager.employee_id
                             }
                         
+                        # Prefer department affiliate when present; fallback to user's affiliate
+                        aff_name = None
+                        try:
+                            if getattr(staff, 'department', None) and getattr(staff.department, 'affiliate', None):
+                                aff_name = staff.department.affiliate.name
+                            elif getattr(staff, 'affiliate', None):
+                                aff_name = staff.affiliate.name
+                        except Exception:
+                            aff_name = getattr(getattr(staff, 'affiliate', None), 'name', None)
+
                         individual_staff.append({
                             'id': staff.pk,
                             'employee_id': staff.employee_id,
                             'name': staff.get_full_name(),
                             'email': staff.email,
-                            'affiliate': staff.affiliate.name if staff.affiliate else None,
+                            'affiliate': aff_name,
                             'role': staff.role,
                             'hire_date': staff.hire_date,
                             'manager': manager_info,
@@ -465,7 +475,7 @@ class StaffManagementView(APIView):
             individuals_qs = CustomUser.objects.filter(
                 department__isnull=True, 
                 is_active=True
-            ).exclude(role='ceo').exclude(role='admin')  # Exclude CEOs and admin
+            ).exclude(role='admin')  # Exclude admin only
             if exclude_demo:
                 individuals_qs = individuals_qs.exclude(is_demo=True)
             individuals_list = []
@@ -477,12 +487,22 @@ class StaffManagementView(APIView):
                         'name': staff.manager.get_full_name(),
                         'employee_id': staff.manager.employee_id
                     }
+                # Prefer department affiliate when present; fallback to user's affiliate
+                aff_name = None
+                try:
+                    if getattr(staff, 'department', None) and getattr(staff.department, 'affiliate', None):
+                        aff_name = staff.department.affiliate.name
+                    elif getattr(staff, 'affiliate', None):
+                        aff_name = staff.affiliate.name
+                except Exception:
+                    aff_name = getattr(getattr(staff, 'affiliate', None), 'name', None)
+
                 individuals_list.append({
                     'id': staff.pk,
                     'employee_id': staff.employee_id,
                     'name': staff.get_full_name(),
                     'email': staff.email,
-                    'affiliate': staff.affiliate.name if staff.affiliate else None,
+                    'affiliate': aff_name,
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,
@@ -497,44 +517,7 @@ class StaffManagementView(APIView):
                     'manager': None
                 })
         
-        # Additionally include CEOs (executives) as a top-level section so they appear
-        # in the staff/department view even when they are individual entities (department=None).
-        # This respects the same demo-exclusion policy used above.
-        ceo_qs = CustomUser.objects.filter(role='ceo', is_active=True)
-        if affiliate_id:
-            ceo_qs = ceo_qs.filter(affiliate_id=affiliate_id)
-        if exclude_demo:
-            ceo_qs = ceo_qs.exclude(is_demo=True)
-        ceo_list = []
-        for ceo in ceo_qs:
-            manager_info = None
-            if ceo.manager:
-                manager_info = {
-                    'id': ceo.manager.pk,
-                    'name': ceo.manager.get_full_name(),
-                    'employee_id': ceo.manager.employee_id
-                }
-            ceo_list.append({
-                'id': ceo.pk,
-                'employee_id': getattr(ceo, 'employee_id', None),
-                'name': ceo.get_full_name(),
-                'email': ceo.email,
-                'affiliate': ceo.affiliate.name if ceo.affiliate else None,
-                'role': ceo.role,
-                'hire_date': ceo.hire_date,
-                'manager': manager_info,
-                # grades removed
-            })
-
-        if ceo_list:
-            data.append({
-                'id': 'executives',
-                'name': 'Executives',
-                'description': 'Top-level executive users (CEOs)',
-                'staff_count': len(ceo_list),
-                'staff': ceo_list,
-                'manager': None
-            })
+        # Do not add any special 'Executives' grouping; CEOs will appear in Individuals list (no department)
 
         return Response(data)
     

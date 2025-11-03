@@ -101,6 +101,10 @@ pip install -r requirements.txt
 # Apply migrations (includes CEO-related changes)
 python manage.py migrate
 
+# If you see an error like: "Table 'notifications_sitesetting' doesn't exist"
+# run the targeted fixer to apply notifications migrations and seed defaults:
+python manage.py ensure_notifications_ready
+
 # Collect static files
 python manage.py collectstatic --noinput
 ```
@@ -118,6 +122,9 @@ python verify_three_tier_system.py
 # ✅ CEO role available: CEO  
 # ✅ Status choices updated
 # ✅ All approval fields and methods working
+
+# Also verify overlap settings endpoint (should not 500):
+curl -I http://your-domain.com/api/notifications/settings/overlap/
 ```
 
 ### **5. Test the Workflow**
