@@ -5,6 +5,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
@@ -623,13 +624,28 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # CEO sees requests that require their approval - filtered by affiliate and workflow
             from .services import ApprovalWorkflowService
+            
+            # Get CEO's affiliate for filtering
+            ceo_affiliate = getattr(user, 'affiliate', None)
+            ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
+            
             # Standard (Merban): hr_approved; SDSL/SBL: pending
             candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
             filtered_ids = []
             for req in candidate_qs:
                 handler = ApprovalWorkflowService.get_handler(req)
                 if handler.can_approve(user, req.status):
-                    filtered_ids.append(req.id)
+                    # Double-check affiliate matching for safety
+                    req_affiliate_name = ''
+                    if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
+                        req_affiliate_name = req.employee.affiliate.name.strip().upper()
+                    elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
+                        req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
+                    
+                    # Only include if affiliates match (or admin/superuser)
+                    if getattr(user, 'is_superuser', False) or not ceo_affiliate_name or req_affiliate_name == ceo_affiliate_name:
+                        filtered_ids.append(req.id)
+            
             pending_requests = self.get_queryset().filter(id__in=filtered_ids)
         elif user_role == 'admin':
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
@@ -659,7 +675,14 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def ceo_approvals_categorized(self, request):
-        """CEO-specific endpoint that categorizes pending requests by submitter role"""
+        """CEO-specific endpoint that categorizes pending requests by submitter role
+        
+        Filters requests by CEO's affiliate:
+        - Merban CEO sees Merban requests (all categories: staff, hod_manager, hr)
+        - SDSL CEO sees SDSL requests (only staff category)
+        - SBL CEO sees SBL requests (only staff category)
+        """
+        from .services import ApprovalWorkflowService
         user = request.user
         user_role = getattr(user, 'role', None)
         
@@ -667,9 +690,30 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': 'Only CEOs can access this endpoint'}, 
                           status=status.HTTP_403_FORBIDDEN)
         
-        # Get all requests pending CEO approval
-        pending_requests = self.get_queryset().filter(status='hr_approved').exclude(employee__role='admin')
-        serializer = self.get_serializer(pending_requests, many=True)
+        # Get CEO's affiliate for filtering
+        ceo_affiliate = getattr(user, 'affiliate', None)
+        ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
+        
+        # Get requests that this CEO can approve (filtered by affiliate and workflow stage)
+        candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
+        
+        # Filter to only requests this CEO can actually approve
+        filtered_requests = []
+        for req in candidate_qs:
+            handler = ApprovalWorkflowService.get_handler(req)
+            if handler.can_approve(user, req.status):
+                # Double-check affiliate matching for safety
+                req_affiliate_name = ''
+                if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
+                    req_affiliate_name = req.employee.affiliate.name.strip().upper()
+                elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
+                    req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
+                
+                # Only include if affiliates match (or admin/superuser)
+                if getattr(user, 'is_superuser', False) or not ceo_affiliate_name or req_affiliate_name == ceo_affiliate_name:
+                    filtered_requests.append(req)
+        
+        serializer = self.get_serializer(filtered_requests, many=True)
         
         # Categorize by submitter role
         categorized = {
@@ -696,7 +740,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 'hod_manager': len(categorized['hod_manager']),
                 'hr': len(categorized['hr']),
                 'staff': len(categorized['staff'])
-            }
+            },
+            'ceo_affiliate': ceo_affiliate_name  # Include for frontend filtering
         }
         
         return Response(response_data)
@@ -872,7 +917,11 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 
                 logger.info(f'Leave request {pk} approved by {user.username}, new status: {leave_request.status}')
                 
+            except (PermissionDenied, ValidationError) as ve:
+                logger.warning(f'Approval validation failed for request {pk}: {str(ve)}')
+                return Response({'error': str(ve)}, status=status.HTTP_403_FORBIDDEN)
             except ValueError as ve:
+                # Legacy exception for backward compatibility
                 logger.warning(f'Approval validation failed for request {pk}: {str(ve)}')
                 return Response({'error': str(ve)}, status=status.HTTP_403_FORBIDDEN)
             

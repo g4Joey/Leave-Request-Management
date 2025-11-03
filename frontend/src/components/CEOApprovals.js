@@ -14,7 +14,8 @@ function CEOApprovals() {
   const [loading, setLoading] = useState(true);
   const [loadingActionById, setLoadingActionById] = useState({});
   const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
-  const [activeTab, setActiveTab] = useState('hod_manager');
+  const [activeTab, setActiveTab] = useState('staff'); // Default to staff tab
+  const [ceoAffiliate, setCeoAffiliate] = useState(''); // Store CEO's affiliate
 
   const fetchCEORequests = useCallback(async () => {
     try {
@@ -27,6 +28,25 @@ function CEOApprovals() {
         hr: [],
         staff: []
       });
+      
+      // Store CEO's affiliate from response
+      setCeoAffiliate(response.data.ceo_affiliate || '');
+      
+      // Set active tab based on affiliate and available requests
+      const affiliate = (response.data.ceo_affiliate || '').toUpperCase();
+      if (affiliate === 'SDSL' || affiliate === 'SBL') {
+        // SDSL and SBL CEOs should only see staff tab
+        setActiveTab('staff');
+      } else {
+        // Merban CEO: default to first tab with requests
+        if (response.data.categories.hod_manager?.length > 0) {
+          setActiveTab('hod_manager');
+        } else if (response.data.categories.hr?.length > 0) {
+          setActiveTab('hr');
+        } else {
+          setActiveTab('staff');
+        }
+      }
     } catch (error) {
       console.error('Error fetching CEO requests:', error);
       showToast({ type: 'error', message: 'Failed to load approval requests' });
@@ -257,6 +277,12 @@ function CEOApprovals() {
       description: 'Leave requests from regular staff members'
     }
   ];
+  
+  // Filter tabs for SDSL and SBL CEOs - they should only see staff tab
+  const affiliate = ceoAffiliate.toUpperCase();
+  const visibleTabs = (affiliate === 'SDSL' || affiliate === 'SBL') 
+    ? tabs.filter(tab => tab.key === 'staff')
+    : tabs;
 
   const totalPending = requests.hod_manager.length + requests.hr.length + requests.staff.length;
 
@@ -283,7 +309,7 @@ function CEOApprovals() {
       <div className="bg-white shadow rounded-lg">
         <div className="border-b border-gray-200">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
-            {tabs.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -310,7 +336,7 @@ function CEOApprovals() {
 
         {/* Tab Content */}
         <div className="p-6">
-          {tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <div key={tab.key} className={activeTab === tab.key ? 'block' : 'hidden'}>
               <div className="mb-4">
                 <p className="text-sm text-gray-600">{tab.description}</p>

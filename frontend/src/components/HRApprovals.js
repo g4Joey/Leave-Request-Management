@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import api from '../services/api';
 import OverlapAdvisory from './OverlapAdvisory';
 
 function HRApprovals() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -70,9 +72,17 @@ function HRApprovals() {
         await api.put(`/leaves/manager/${requestId}/approve/`, {
           approval_comments: comments
         });
+        showToast({ 
+          type: 'success', 
+          message: 'Leave request approved successfully by HR.' 
+        });
       } else if (action === 'reject') {
         await api.put(`/leaves/manager/${requestId}/reject/`, {
           rejection_comments: comments
+        });
+        showToast({ 
+          type: 'success', 
+          message: 'Leave request rejected successfully.' 
         });
       }
       
@@ -82,6 +92,11 @@ function HRApprovals() {
       setSelectedRequest(null);
     } catch (error) {
       console.error(`Error ${action}ing request:`, error);
+      const detail = error?.response?.data?.error || error?.response?.data?.detail || '';
+      showToast({ 
+        type: 'error', 
+        message: `Failed to ${action} request${detail ? `: ${detail}` : ''}` 
+      });
     }
     finally {
       setActingId(null);
