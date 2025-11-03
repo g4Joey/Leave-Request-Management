@@ -66,12 +66,12 @@ function HRApprovals() {
     try {
       setActingId(requestId);
       if (action === 'approve') {
-        // Use the LeaveRequestViewSet approve action
-        await api.put(`/leaves/requests/${requestId}/approve/`, {
+        // Approver endpoints live under /leaves/manager/
+        await api.put(`/leaves/manager/${requestId}/approve/`, {
           approval_comments: comments
         });
       } else if (action === 'reject') {
-        await api.put(`/leaves/requests/${requestId}/reject/`, {
+        await api.put(`/leaves/manager/${requestId}/reject/`, {
           rejection_comments: comments
         });
       }

@@ -12,8 +12,8 @@ export const useApprovalCounts = () => {
 
   const fetchCounts = async () => {
     try {
-  // Counts endpoint lives under the requests viewset
-  const response = await api.get('/leaves/requests/approval_counts/');
+  // Counts endpoint lives under the manager viewset for approvers
+  const response = await api.get('/leaves/manager/approval_counts/');
       setCounts(response.data);
     } catch (error) {
       console.error('Error fetching approval counts:', error);
