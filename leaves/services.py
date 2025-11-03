@@ -5,7 +5,9 @@ Uses Strategy Pattern and Inheritance for different approval workflows.
 """
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
-from django.db import models
+from django.db import models, transaction
+import logging
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth import get_user_model
 from users.models import Affiliate, CustomUser
 
@@ -15,41 +17,52 @@ User = get_user_model()
 
 class ApprovalRoutingService:
     """
-    Encapsulates CEO routing logic based on employee's department affiliate.
+    Encapsulates CEO routing logic based on employee's affiliate (with Merban department override).
     """
     
     @classmethod
     def get_ceo_for_employee(cls, employee: CustomUser) -> Optional[CustomUser]:
         """
-        Determine the appropriate CEO for an employee based on their department's affiliate.
-        
-        Rules:
-        - Merban Capital departments → Benjamin Ackah (merban CEO)  
-        - SDSL departments → Kofi Ameyaw (SDSL CEO)
-        - SBL departments → Winslow Sackey (SBL CEO)
-        - Default/No affiliate → Benjamin Ackah
+        Determine the appropriate CEO for an employee based on affiliate.
+
+        Rules (case-insensitive):
+        - Merban Capital: employees (including those in any Merban department) → Merban CEO
+        - SDSL: employees → SDSL CEO
+        - SBL: employees → SBL CEO
+        - Default/No affiliate → default CEO (first active CEO)
+
+        CEOs are attached to Affiliates (not departments). Only Merban uses departments.
         """
+        logger = logging.getLogger('leaves')
+
         if not employee:
             return cls._get_default_ceo()
-        # Prefer department affiliate when present; otherwise fall back to user's own affiliate
-        affiliate = None
-        if hasattr(employee, 'department') and employee.department:
-            affiliate = getattr(employee.department, 'affiliate', None)
-        if not affiliate and hasattr(employee, 'affiliate'):
-            affiliate = getattr(employee, 'affiliate', None)
+
+        affiliate = getattr(employee, 'affiliate', None)
+
+        # Merban-only department override: if no user.affiliate, but department.affiliate is Merban, use that
+        try:
+            if not affiliate and getattr(employee, 'department', None) and getattr(employee.department, 'affiliate', None):
+                dep_aff = employee.department.affiliate
+                name = (getattr(dep_aff, 'name', '') or '').strip().lower()
+                if name in ('merban capital', 'merban'):
+                    affiliate = dep_aff
+        except Exception as e:
+            logger.exception("Failed to evaluate department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
 
         if not affiliate:
             return cls._get_default_ceo()
 
-        # Prefer dynamic lookup: a user with role 'ceo' whose department belongs to this affiliate or whose own affiliate matches
+        # CEOs are looked up strictly by their affiliate
         try:
             ceo = (
-                User.objects.filter(role='ceo', is_active=True)
-                .filter(models.Q(department__affiliate=affiliate) | models.Q(affiliate=affiliate))
+                User.objects.filter(role__iexact='ceo', is_active=True)
+                .filter(affiliate=affiliate)
                 .first()
             )
             return ceo or cls._get_default_ceo()
-        except Exception:
+        except Exception as e:
+            logger.exception("Failed to determine CEO for employee %s: %s", getattr(employee, 'id', None), e)
             return cls._get_default_ceo()
     
     @classmethod
@@ -108,7 +121,7 @@ class ApprovalHandler(ABC):
         # For CEO approval, ensure it's the correct CEO for the employee's affiliate
         if required_role == 'ceo':
             expected_ceo = ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
-            return user == expected_ceo
+            return bool(expected_ceo and getattr(user, 'id', None) == getattr(expected_ceo, 'id', None))
             
         return True
     
@@ -253,30 +266,40 @@ class ApprovalWorkflowService:
     
     @classmethod
     def approve_request(cls, leave_request, approver: CustomUser, comments: str = ""):
-        """Approve request using appropriate workflow."""
+        """Approve request using appropriate workflow with row locking and explicit permission errors."""
+        logger = logging.getLogger('leaves')
         handler = cls.get_handler(leave_request)
-        
-        if not handler.can_approve(approver, leave_request.status):
-            raise ValueError(f"User {approver} cannot approve request in status {leave_request.status}")
-        
-        # Determine required role for this status
-        flow = handler.get_approval_flow()
-        required_role = flow.get(leave_request.status)
 
-        # Apply the appropriate stage based on required_role
-        if required_role == 'manager':
-            leave_request.manager_approve(approver, comments)
-        elif required_role == 'hr':
-            leave_request.hr_approve(approver, comments)
-        elif required_role == 'ceo':
-            # SDSL/SBL: CEO approval moves to ceo_approved; Merban: final approve if HR already approved
-            leave_request.ceo_approve(approver, comments)
-        else:
-            # Fallback for unexpected mapping; progress using default status transition
-            next_status = handler.get_next_status(leave_request.status)
-            if next_status == 'manager_approved':
-                leave_request.manager_approve(approver, comments)
-            elif next_status == 'hr_approved':
-                leave_request.hr_approve(approver, comments)
+        with transaction.atomic():
+            # Lock the row to prevent concurrent approvals
+            lr = leave_request.__class__.objects.select_for_update().get(pk=leave_request.pk)
+
+            # Re-evaluate handler against locked state
+            handler = cls.get_handler(lr)
+
+            if not handler.can_approve(approver, lr.status):
+                raise PermissionDenied(f"User {getattr(approver,'email',approver)} cannot approve request in status {lr.status}")
+
+            # Determine required role for this status
+            flow = handler.get_approval_flow()
+            required_role = flow.get(lr.status)
+            if required_role is None:
+                raise ValidationError(f"No approval mapping for status {lr.status} in {handler.__class__.__name__}")
+
+            # Apply the appropriate stage based on required_role
+            if required_role == 'manager':
+                lr.manager_approve(approver, comments)
+            elif required_role == 'hr':
+                lr.hr_approve(approver, comments)
+            elif required_role == 'ceo':
+                # SDSL/SBL: CEO approval moves to ceo_approved; Merban: final approve if HR already approved
+                lr.ceo_approve(approver, comments)
             else:
-                leave_request.ceo_approve(approver, comments)
+                # Fallback for unexpected mapping; progress using default status transition
+                next_status = handler.get_next_status(lr.status)
+                if next_status == 'manager_approved':
+                    lr.manager_approve(approver, comments)
+                elif next_status == 'hr_approved':
+                    lr.hr_approve(approver, comments)
+                else:
+                    lr.ceo_approve(approver, comments)
