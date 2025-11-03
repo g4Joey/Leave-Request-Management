@@ -78,6 +78,7 @@ function Navbar() {
                   My Profile
                 </Link>
               )}
+
               {(() => {
                 const role = user?.role;
                 const canSeeHRApprovals = !!user && (role === 'hr' || user.is_superuser === true);
@@ -95,6 +96,7 @@ function Navbar() {
                   </Link>
                 );
               })()}
+
               {(() => {
                 const role = user?.role;
                 const canSeeManager = !!user && (role === 'manager' || user.is_superuser === true);
@@ -149,16 +151,28 @@ function Navbar() {
                 const role = user?.role;
                 const canSeeAdmin = !!user && (role === 'admin' || user.is_superuser === true);
                 return canSeeAdmin && (
-                  <Link
-                    to="/admin/system-reset"
-                    className={`${
-                      isActive('/admin/system-reset')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    Admin Reset
-                  </Link>
+                  <>
+                    <Link
+                      to="/admin/settings"
+                      className={`${
+                        isActive('/admin/settings')
+                          ? 'border-primary-500 text-gray-900'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                    >
+                      Admin Settings
+                    </Link>
+                    <Link
+                      to="/admin/system-reset"
+                      className={`${
+                        isActive('/admin/system-reset')
+                          ? 'border-primary-500 text-gray-900'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                    >
+                      Admin Reset
+                    </Link>
+                  </>
                 );
               })()}
             </div>

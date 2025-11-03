@@ -449,6 +449,39 @@ class StaffManagementView(APIView):
                         
             except Affiliate.DoesNotExist:
                 pass
+
+        # Global view: include individual employees (no department) across all affiliates
+        if not affiliate_id:
+            individuals_qs = CustomUser.objects.filter(department__isnull=True, is_active=True).exclude(role='ceo')
+            if exclude_demo:
+                individuals_qs = individuals_qs.exclude(is_demo=True)
+            individuals_list = []
+            for staff in individuals_qs:
+                manager_info = None
+                if staff.manager:
+                    manager_info = {
+                        'id': staff.manager.pk,
+                        'name': staff.manager.get_full_name(),
+                        'employee_id': staff.manager.employee_id
+                    }
+                individuals_list.append({
+                    'id': staff.pk,
+                    'employee_id': staff.employee_id,
+                    'name': staff.get_full_name(),
+                    'email': staff.email,
+                    'role': staff.role,
+                    'hire_date': staff.hire_date,
+                    'manager': manager_info,
+                })
+            if individuals_list:
+                data.append({
+                    'id': 'individuals',
+                    'name': 'Individual Employees',
+                    'description': 'Employees not assigned to a department',
+                    'staff_count': len(individuals_list),
+                    'staff': individuals_list,
+                    'manager': None
+                })
         
         # Additionally include CEOs (executives) as a top-level section so they appear
         # in the staff/department view even when they are individual entities (department=None).

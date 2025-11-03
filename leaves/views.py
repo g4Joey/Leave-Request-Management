@@ -611,8 +611,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             merban_qs = self.get_queryset().filter(status='manager_approved').exclude(
                 Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
                 Q(employee__affiliate__name__in=['SDSL', 'SBL'])
-            )
-            ceo_approved_qs = self.get_queryset().filter(status='ceo_approved')
+            ).exclude(employee__role='admin')
+            ceo_approved_qs = self.get_queryset().filter(status='ceo_approved').exclude(employee__role='admin')
             pending_requests = merban_qs.union(ceo_approved_qs)
         elif user_role == 'ceo':
             # CEO sees requests that require their approval - filtered by affiliate and workflow
@@ -661,7 +661,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                           status=status.HTTP_403_FORBIDDEN)
         
         # Get all requests pending CEO approval
-        pending_requests = self.get_queryset().filter(status='hr_approved')
+        pending_requests = self.get_queryset().filter(status='hr_approved').exclude(employee__role='admin')
         serializer = self.get_serializer(pending_requests, many=True)
         
         # Categorize by submitter role

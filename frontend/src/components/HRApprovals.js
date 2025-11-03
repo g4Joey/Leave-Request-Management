@@ -34,7 +34,11 @@ function HRApprovals() {
         return acc;
       }, {});
       
-      setGroupedApprovals(grouped);
+  setGroupedApprovals(grouped);
+  // Auto-select first tab that has items
+  const orderedKeys = ['Merban Capital', 'SDSL', 'SBL'];
+  const firstWithItems = orderedKeys.find(k => (grouped[k] || []).length > 0);
+  if (firstWithItems) setActiveTab(firstWithItems);
     } catch (error) {
       console.error('Error fetching pending approvals:', error);
     } finally {

@@ -208,6 +208,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     employee_role = serializers.CharField(source='employee.role', read_only=True)
     employee_department = serializers.CharField(source='employee.department.name', read_only=True)
     employee_department_affiliate = serializers.SerializerMethodField()
+    employee_department_id = serializers.SerializerMethodField()
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
     # DRF will raise an AssertionError if `source` is identical to the field name.
     # Keep this as a plain read-only CharField to avoid redundant `source=` usage.
@@ -226,9 +227,27 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     
     def get_employee_department_affiliate(self, obj):
         """Get the affiliate name for the employee's department"""
-        if obj.employee and obj.employee.department and obj.employee.department.affiliate:
-            return obj.employee.department.affiliate.name
+        try:
+            # Prefer department's affiliate
+            if getattr(obj, 'employee', None) and getattr(obj.employee, 'department', None):
+                dept = obj.employee.department
+                if getattr(dept, 'affiliate', None) and getattr(dept.affiliate, 'name', None):
+                    return dept.affiliate.name
+            # Fallback to user's affiliate
+            if getattr(obj, 'employee', None) and getattr(obj.employee, 'affiliate', None):
+                if getattr(obj.employee.affiliate, 'name', None):
+                    return obj.employee.affiliate.name
+        except Exception:
+            pass
         return 'Other'
+
+    def get_employee_department_id(self, obj):
+        try:
+            if getattr(obj, 'employee', None) and getattr(obj.employee, 'department', None):
+                return obj.employee.department.id
+        except Exception:
+            return None
+        return None
 
     def _get_affiliate_name(self, obj):
         emp = getattr(obj, 'employee', None)
@@ -281,7 +300,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
         model = LeaveRequest
         fields = [
             'id', 'employee_name', 'employee_email', 'employee_id', 'employee_role', 
-            'employee_department', 'employee_department_affiliate', 'leave_type_name', 
+            'employee_department', 'employee_department_id', 'employee_department_affiliate', 'leave_type_name', 
             'start_date', 'end_date', 'total_days', 'working_days', 'calendar_days', 'range_with_days',
             'status', 'status_display', 'stage_label', 'reason', 'manager_approval_comments', 'manager_comments', 'hr_comments', 
             'manager_approval_date', 'hr_approval_date', 'ceo_approval_date', 'created_at'
