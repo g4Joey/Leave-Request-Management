@@ -159,7 +159,11 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # CORS settings for frontend
-cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', 'https://takeabreak-app-38abv.ondigitalocean.app')
+# Include localhost defaults to enable local React dev server to call production API when needed.
+cors_origins = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'https://takeabreak-app-38abv.ondigitalocean.app,http://localhost:3000,http://127.0.0.1:3000'
+)
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
 

@@ -35,8 +35,9 @@ function AdminOverlapSettings() {
       await api.put('/notifications/settings/overlap/', { min_days: minDays, enabled });
       setSuccess('Settings saved');
     } catch (err) {
-      setError('Failed to save settings');
-      console.error(err);
+      const detail = err?.response?.data?.detail || err?.message || 'Unknown error';
+      setError(`Failed to save settings: ${detail}`);
+      console.error('Failed to save settings:', err);
     } finally {
       setSaving(false);
     }
@@ -62,14 +63,16 @@ function AdminOverlapSettings() {
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Minimum overlapping days: <span className="font-semibold">{minDays}</span>
         </label>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={minDays}
-          onChange={(e) => setMinDays(parseInt(e.target.value, 10))}
-          className="w-full"
-        />
+        <div className="flex items-center">
+          <input
+            type="range"
+            min={min}
+            max={max}
+            value={minDays}
+            onChange={(e) => setMinDays(parseInt(e.target.value, 10))}
+            className="w-64 md:w-72"
+          />
+        </div>
         <div className="flex justify-between text-xs text-gray-500">
           <span>{min}</span>
           <span>{max}</span>

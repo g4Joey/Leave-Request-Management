@@ -86,7 +86,7 @@ services:
       - key: ALLOWED_HOSTS
         value: "takeabreak-app-38abv.ondigitalocean.app,127.0.0.1,localhost"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://takeabreak-app-38abv.ondigitalocean.app"
+        value: "https://takeabreak-app-38abv.ondigitalocean.app,http://localhost:3000,http://127.0.0.1:3000"
       - key: DJANGO_SUPERUSER_USERNAME
         value: "admin@company.com"
       - key: DJANGO_SUPERUSER_EMAIL

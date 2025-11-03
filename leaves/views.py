@@ -511,7 +511,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for Managers to view and approve leave requests - supports R4
     """
-    serializer_class = LeaveRequestSerializer
+    # Use list serializer for list-like endpoints to include affiliate/department details
+    serializer_class = LeaveRequestListSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['status', 'leave_type', 'start_date', 'employee']
@@ -598,12 +599,13 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         """Get leave requests pending approval for current user's role"""
         user = request.user
         user_role = getattr(user, 'role', None)
+        stage_override = (request.query_params.get('stage') or '').lower().strip()
         
         # Filter requests based on user's role and approval stage
         if user_role == 'manager':
             # Managers see requests pending their approval
             pending_requests = self.get_queryset().filter(status='pending')
-        elif user_role == 'hr':
+        elif user_role == 'hr' or (stage_override == 'hr' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # HR sees:
             # - Merban: manager_approved (exclude SDSL/SBL)
             # - SDSL/SBL: ceo_approved (CEO already approved first)
@@ -614,7 +616,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             ).exclude(employee__role='admin')
             ceo_approved_qs = self.get_queryset().filter(status='ceo_approved').exclude(employee__role='admin')
             pending_requests = merban_qs.union(ceo_approved_qs)
-        elif user_role == 'ceo':
+        elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # CEO sees requests that require their approval - filtered by affiliate and workflow
             from .services import ApprovalWorkflowService
             # Standard (Merban): hr_approved; SDSL/SBL: pending

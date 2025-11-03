@@ -19,8 +19,9 @@ function HRApprovals() {
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      // Fetch HR pending approvals via manager endpoint action (stage-aware server filtering)
-  const response = await api.get('/leaves/manager/pending_approvals/');
+    // Fetch HR pending approvals via manager endpoint action (stage-aware server filtering)
+    // Use stage=hr so admin/superuser can also view the HR queue
+    const response = await api.get('/leaves/manager/pending_approvals/?stage=hr');
       const requests = response.data.requests || [];
       setPendingApprovals(requests);
       
