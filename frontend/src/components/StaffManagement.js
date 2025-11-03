@@ -189,13 +189,20 @@ function StaffManagement() {
           const roleNorm = (s.role === 'employee' || s.role === 'staff') ? 'junior_staff' : (s.role === 'hod' ? 'manager' : s.role);
           const isCeo = roleNorm === 'ceo';
           const isExecDept = /^executive(s)?$/i.test(deptName);
-          const deptDisplay = isCeo || isExecDept ? '—' : deptName;
+          const isIndividuals = /^individual employees$/i.test(deptName);
+          const deptDisplay = (isCeo || isExecDept || isIndividuals) ? '—' : deptName;
+
+          // Frontend safety: never show admin users in the Employees table
+          if (roleNorm === 'admin') {
+            return; // skip
+          }
 
           const record = {
             id: s.id,
             name: cleanName(s.name),
             email: s.email,
-            affiliate: s.affiliate || '—',  // Backend now sends affiliate as string
+            // Backend sends affiliate as string; fallback to em dash
+            affiliate: (typeof s.affiliate === 'string' && s.affiliate.trim()) ? s.affiliate : '—',
             department: deptDisplay,
             employee_id: s.employee_id,
             role: roleNorm,

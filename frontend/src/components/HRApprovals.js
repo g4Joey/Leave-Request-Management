@@ -48,12 +48,17 @@ function HRApprovals() {
   };
 
   const getEmployeeAffiliate = (request) => {
-    // Extract affiliate information from request
-    if (request.employee_department_affiliate) {
-      return request.employee_department_affiliate;
+    // Extract affiliate information from request and normalize to tab keys
+    const raw = request.employee_department_affiliate || request.employee_affiliate || request.affiliate || '';
+    const name = (raw || '').toString().trim();
+    if (!name) return 'Other';
+    // Normalize common variants/casing
+    if (/^merban(\s+capital)?$/i.test(name) || /^merban\s*capital$/i.test(name) || name.toUpperCase() === 'MERBAN CAPITAL') {
+      return 'Merban Capital';
     }
-    // Default grouping
-    return 'Other';
+    if (name.toUpperCase() === 'SDSL') return 'SDSL';
+    if (name.toUpperCase() === 'SBL') return 'SBL';
+    return name; // fallback: show as-is
   };
 
   const handleAction = async (requestId, action, comments = '') => {
