@@ -50,6 +50,7 @@ const mapStaffRecord = (staff, context = {}) => {
     id: staff.id,
     name: staff.name || fallbackName || staff.email || 'Staff member',
     email: staff.email || '',
+    affiliate: affiliateName,
     department: departmentName,
     employee_id: staff.employee_id,
     role: staff.role,
@@ -194,6 +195,7 @@ function StaffManagement() {
             id: s.id,
             name: cleanName(s.name),
             email: s.email,
+            affiliate: s.affiliate || '—',  // Backend now sends affiliate as string
             department: deptDisplay,
             employee_id: s.employee_id,
             role: roleNorm,
@@ -1059,9 +1061,9 @@ function StaffManagement() {
 
   const handleExportCSV = () => {
     const csv = [
-      'name,email,department,employee_id,role',
+      'name,email,affiliate,department,employee_id,role',
       ...employees.map(
-        (e) => `${e.name || ''},${e.email || ''},${e.department || ''},${e.employee_id || ''},${e.role || ''}`
+        (e) => `${e.name || ''},${e.email || ''},${e.affiliate || ''},${e.department || ''},${e.employee_id || ''},${e.role || ''}`
       ),
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -1387,6 +1389,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                       <tr>
                         <th className="px-3 py-2">Name</th>
                         <th className="px-3 py-2">Email</th>
+                        <th className="px-3 py-2">Affiliate</th>
                         <th className="px-3 py-2">Department</th>
                         <th className="px-3 py-2">Employee ID</th>
                         <th className="px-3 py-2">Role</th>
@@ -1398,6 +1401,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         <tr key={emp.id} className="border-t">
                           <td className="px-3 py-2">{emp.name}</td>
                           <td className="px-3 py-2">{emp.email}</td>
+                          <td className="px-3 py-2">{emp.affiliate}</td>
                           <td className="px-3 py-2">{emp.department}</td>
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>

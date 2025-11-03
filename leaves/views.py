@@ -610,12 +610,18 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # - Merban: manager_approved (exclude SDSL/SBL)
             # - SDSL/SBL: ceo_approved (CEO already approved first)
             from django.db.models import Q
+            from itertools import chain
+            
             merban_qs = self.get_queryset().filter(status='manager_approved').exclude(
                 Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
                 Q(employee__affiliate__name__in=['SDSL', 'SBL'])
             ).exclude(employee__role='admin')
+            
             ceo_approved_qs = self.get_queryset().filter(status='ceo_approved').exclude(employee__role='admin')
-            pending_requests = merban_qs.union(ceo_approved_qs)
+            
+            # Use list() and chain() instead of union() to avoid ORDER BY issues
+            # Union doesn't work with select_related and ordering
+            pending_requests = list(chain(merban_qs, ceo_approved_qs))
         elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # CEO sees requests that require their approval - filtered by affiliate and workflow
             from .services import ApprovalWorkflowService

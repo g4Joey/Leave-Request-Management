@@ -345,6 +345,7 @@ class StaffManagementView(APIView):
                     'employee_id': getattr(ceo, 'employee_id', None),
                     'name': ceo.get_full_name(),
                     'email': ceo.email,
+                    'affiliate': ceo.affiliate.name if ceo.affiliate else None,
                     'role': ceo.role,
                     'hire_date': ceo.hire_date,
                 })
@@ -364,7 +365,7 @@ class StaffManagementView(APIView):
             staff_qs = CustomUser.objects.filter(
                 department=dept,
                 is_active=True,
-            )
+            ).exclude(role='admin')  # Exclude admin users from staff list
             # Apply demo exclusion policy decided above
             if exclude_demo:
                 staff_qs = staff_qs.exclude(is_demo=True)
@@ -379,12 +380,20 @@ class StaffManagementView(APIView):
                         'name': staff.manager.get_full_name(),
                         'employee_id': staff.manager.employee_id
                     }
+                
+                # Get affiliate name - prefer department's affiliate, fall back to user's affiliate
+                affiliate_name = None
+                if dept.affiliate:
+                    affiliate_name = dept.affiliate.name
+                elif staff.affiliate:
+                    affiliate_name = staff.affiliate.name
 
                 staff_data.append({
                     'id': staff.pk,
                     'employee_id': staff.employee_id,
                     'name': staff.get_full_name(),
                     'email': staff.email,
+                    'affiliate': affiliate_name,
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,
@@ -416,7 +425,7 @@ class StaffManagementView(APIView):
                         affiliate_id=affiliate_id,
                         department__isnull=True,  # No department assignment
                         is_active=True
-                    ).exclude(role='ceo')  # Exclude CEOs as they're handled separately
+                    ).exclude(role='ceo').exclude(role='admin')  # Exclude CEOs and admin
                     
                     if exclude_demo:
                         individual_qs = individual_qs.exclude(is_demo=True)
@@ -437,6 +446,7 @@ class StaffManagementView(APIView):
                             'employee_id': staff.employee_id,
                             'name': staff.get_full_name(),
                             'email': staff.email,
+                            'affiliate': staff.affiliate.name if staff.affiliate else None,
                             'role': staff.role,
                             'hire_date': staff.hire_date,
                             'manager': manager_info,
@@ -452,7 +462,10 @@ class StaffManagementView(APIView):
 
         # Global view: include individual employees (no department) across all affiliates
         if not affiliate_id:
-            individuals_qs = CustomUser.objects.filter(department__isnull=True, is_active=True).exclude(role='ceo')
+            individuals_qs = CustomUser.objects.filter(
+                department__isnull=True, 
+                is_active=True
+            ).exclude(role='ceo').exclude(role='admin')  # Exclude CEOs and admin
             if exclude_demo:
                 individuals_qs = individuals_qs.exclude(is_demo=True)
             individuals_list = []
@@ -469,6 +482,7 @@ class StaffManagementView(APIView):
                     'employee_id': staff.employee_id,
                     'name': staff.get_full_name(),
                     'email': staff.email,
+                    'affiliate': staff.affiliate.name if staff.affiliate else None,
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,
@@ -505,6 +519,7 @@ class StaffManagementView(APIView):
                 'employee_id': getattr(ceo, 'employee_id', None),
                 'name': ceo.get_full_name(),
                 'email': ceo.email,
+                'affiliate': ceo.affiliate.name if ceo.affiliate else None,
                 'role': ceo.role,
                 'hire_date': ceo.hire_date,
                 'manager': manager_info,
