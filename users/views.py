@@ -531,20 +531,39 @@ class StaffManagementView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Handle department auto-creation if needed
+        # Handle department auto-creation if needed, but enforce no-department for SDSL/SBL
         data = request.data.copy()
+        # Determine affiliate name from incoming payload
+        aff_name_in = (data.get('affiliate_name') or '').strip()
+        aff_id_in = data.get('affiliate_id')
+        affiliate_name = None
+        try:
+            if aff_name_in:
+                affiliate_name = aff_name_in.upper()
+            elif aff_id_in:
+                from .models import Affiliate as _Aff
+                aff_obj = _Aff.objects.filter(pk=int(aff_id_in)).first()
+                affiliate_name = aff_obj.name.upper() if aff_obj and aff_obj.name else None
+        except Exception:
+            affiliate_name = None
+
         department_name = data.get('department_name')
-        if department_name and not data.get('department_id'):
-            # Try to find existing department
-            department_qs = Department.objects.filter(name__iexact=department_name)
-            department = department_qs.first()
-            if not department:
-                # Create new department
-                department = Department.objects.create(
-                    name=department_name,
-                    description=f"Auto-created during employee import"
-                )
-            data['department_id'] = department.id
+        # For SDSL/SBL staff, force no department assignment
+        if affiliate_name in ['SDSL', 'SBL']:
+            data.pop('department_id', None)
+            data.pop('department_name', None)
+        else:
+            if department_name and not data.get('department_id'):
+                # Try to find existing department
+                department_qs = Department.objects.filter(name__iexact=department_name)
+                department = department_qs.first()
+                if not department:
+                    # Create new department
+                    department = Department.objects.create(
+                        name=department_name,
+                        description=f"Auto-created during employee import"
+                    )
+                data['department_id'] = department.id
         
         serializer = UserSerializer(data=data)
         if serializer.is_valid():

@@ -1251,7 +1251,10 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         onClick={() => navigate(`/staff/affiliates/${aff.id}`)}
                         className="text-left border border-gray-200 rounded-lg p-4 bg-white hover:bg-gray-50 focus:outline-none"
                       >
-                        <div className="mt-2 space-y-1 text-sm text-gray-600">
+                        <div className="mb-2">
+                          <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
+                        </div>
+                        <div className="mt-1 space-y-1 text-sm text-gray-600">
                               <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || aff?.ceo?.name || aff?.ceo?.email || '—'}</p>
                               {aff.name === 'MERBAN CAPITAL' && (
                                 <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
@@ -2488,10 +2491,11 @@ function LeaveTypesList({ onConfigure }) {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [types, setTypes] = useState([]);
+  const [createModal, setCreateModal] = useState({ open: false, name: '', description: '', max_days_per_request: '', requires_medical_certificate: false, saving: false });
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get('/leaves/types/');
+      const res = await api.get('/leaves/types/?include_inactive=1');
       setTypes(res.data.results || res.data || []);
     } catch (e) {
       showToast({ type: 'error', message: 'Failed to load leave types' });
@@ -2504,27 +2508,160 @@ function LeaveTypesList({ onConfigure }) {
     load();
   }, [load]);
 
+  const toggleActive = async (type) => {
+    try {
+      const endpoint = type.is_active ? `/leaves/types/${type.id}/deactivate/` : `/leaves/types/${type.id}/activate/`;
+      await api.post(endpoint);
+      showToast({ type: 'success', message: `${type.name} ${type.is_active ? 'deactivated' : 'activated'}` });
+      await load();
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to update leave type';
+      showToast({ type: 'error', message: msg });
+    }
+  };
+
+  const createType = async () => {
+    const payload = {
+      name: createModal.name.trim(),
+      description: createModal.description.trim() || undefined,
+    };
+    if (createModal.max_days_per_request !== '') {
+      payload.max_days_per_request = parseInt(createModal.max_days_per_request, 10) || 0;
+    }
+    if (createModal.requires_medical_certificate) {
+      payload.requires_medical_certificate = true;
+    }
+    if (!payload.name) {
+      showToast({ type: 'warning', message: 'Name is required' });
+      return;
+    }
+    try {
+      setCreateModal(prev => ({ ...prev, saving: true }));
+      await api.post('/leaves/types/create_type/', payload);
+      showToast({ type: 'success', message: 'Leave type created' });
+      setCreateModal({ open: false, name: '', description: '', max_days_per_request: '', requires_medical_certificate: false, saving: false });
+      await load();
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to create leave type';
+      showToast({ type: 'error', message: msg });
+      setCreateModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
   if (loading) return <div className="text-sm text-gray-500">Loading leave types...</div>;
 
   if (!types.length) return <div className="text-sm text-gray-500">No leave types found.</div>;
 
   return (
-    <ul className="space-y-2">
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm text-gray-600">Active and inactive leave types</div>
+        <button
+          onClick={() => setCreateModal({ open: true, name: '', description: '', max_days_per_request: '', requires_medical_certificate: false, saving: false })}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200 text-sky-700 hover:bg-sky-50"
+        >
+          Add leave type
+        </button>
+      </div>
+      <ul className="space-y-2">
       {types.map((t) => (
         <li key={t.id} className="px-3 py-2 bg-gray-50 rounded-md flex justify-between items-center">
           <div>
-            <div className="font-medium">{t.name}</div>
+            <div className="font-medium flex items-center gap-2">
+              {t.name}
+              {!t.is_active && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">Inactive</span>
+              )}
+            </div>
             {t.description && <div className="text-xs text-gray-500">{t.description}</div>}
           </div>
-          <button
-            onClick={() => onConfigure(t)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
-          >
-            Configure
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onConfigure(t)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+            >
+              Configure
+            </button>
+            <button
+              onClick={() => toggleActive(t)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border ${t.is_active ? 'border-red-200 text-red-700 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'}`}
+            >
+              {t.is_active ? 'Deactivate' : 'Activate'}
+            </button>
+          </div>
         </li>
       ))}
-    </ul>
+      </ul>
+
+      {createModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-2">Add leave type</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                <input
+                  value={createModal.name}
+                  onChange={(e) => setCreateModal(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  placeholder="e.g., Compassionate Leave"
+                  disabled={createModal.saving}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <textarea
+                  value={createModal.description}
+                  onChange={(e) => setCreateModal(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2"
+                  rows={2}
+                  placeholder="Optional"
+                  disabled={createModal.saving}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Max days/request</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={createModal.max_days_per_request}
+                    onChange={(e) => setCreateModal(prev => ({ ...prev, max_days_per_request: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2"
+                    disabled={createModal.saving}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs mt-5">
+                  <input
+                    type="checkbox"
+                    checked={createModal.requires_medical_certificate}
+                    onChange={(e) => setCreateModal(prev => ({ ...prev, requires_medical_certificate: e.target.checked }))}
+                    disabled={createModal.saving}
+                  />
+                  Requires medical certificate
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setCreateModal({ open: false, name: '', description: '', max_days_per_request: '', requires_medical_certificate: false, saving: false })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                disabled={createModal.saving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createType}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50"
+                disabled={createModal.saving}
+              >
+                {createModal.saving ? 'Saving...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

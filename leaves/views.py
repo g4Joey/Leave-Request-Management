@@ -30,6 +30,7 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
     ViewSet for leave types - read only for employees.
     HR-only actions provided for configuring global entitlements per leave type.
     """
+    # Default queryset used when no request context yet
     queryset = LeaveType.objects.filter(is_active=True)
     serializer_class = LeaveTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -47,6 +48,18 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
         return getattr(user, 'is_superuser', False) or (
             hasattr(user, 'role') and getattr(user, 'role') in ['hr', 'admin']
         )
+
+    # Allow HR to optionally see inactive leave types in listings
+    def get_queryset(self):  # type: ignore[override]
+        qs = LeaveType.objects.all()
+        include_inactive = str(self.request.query_params.get('include_inactive', '')).strip().lower() in ['1', 'true', 'yes']
+        if not include_inactive:
+            qs = qs.filter(is_active=True)
+        else:
+            # Only HR/Admin can request inactive types
+            if not self._is_hr(self.request):
+                qs = qs.filter(is_active=True)
+        return qs.order_by('name')
 
     @action(detail=True, methods=['get'])
     def entitlement_summary(self, request, pk=None):
@@ -69,6 +82,62 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
             'total_balances': total,
             'common_entitled_days': common_entitled_days,
         })
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """
+        HR-only: Activate a leave type (make it selectable everywhere).
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
+        lt = self.get_object()
+        if not lt.is_active:
+            lt.is_active = True
+            lt.save(update_fields=['is_active', 'updated_at']) if hasattr(lt, 'updated_at') else lt.save(update_fields=['is_active'])
+        return Response({'message': 'Leave type activated', 'id': lt.id, 'name': lt.name, 'is_active': lt.is_active})
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """
+        HR-only: Deactivate a leave type (hide from dropdowns and lists for employees).
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
+        lt = self.get_object()
+        if lt.is_active:
+            lt.is_active = False
+            lt.save(update_fields=['is_active', 'updated_at']) if hasattr(lt, 'updated_at') else lt.save(update_fields=['is_active'])
+        return Response({'message': 'Leave type deactivated', 'id': lt.id, 'name': lt.name, 'is_active': lt.is_active})
+
+    @action(detail=False, methods=['post'])
+    def create_type(self, request):
+        """
+        HR-only: Create a new leave type. Initial entitlements remain 0 until configured.
+        Body: { name: string, description?: string, max_days_per_request?: int, requires_medical_certificate?: bool }
+        """
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({'error': 'name is required'}, status=status.HTTP_400_BAD_REQUEST)
+        description = (request.data.get('description') or '').strip() or ''
+        try:
+            max_days = request.data.get('max_days_per_request')
+            max_days = int(max_days) if max_days is not None and str(max_days).strip() != '' else None
+        except (TypeError, ValueError):
+            return Response({'error': 'max_days_per_request must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+        requires_med = bool(request.data.get('requires_medical_certificate') or False)
+        # Prevent duplicates by case-insensitive name match
+        if LeaveType.objects.filter(name__iexact=name).exists():
+            return Response({'error': 'A leave type with this name already exists'}, status=status.HTTP_400_BAD_REQUEST)
+        lt = LeaveType.objects.create(
+            name=name,
+            description=description,
+            is_active=True,
+            max_days_per_request=max_days if max_days is not None else 0,
+            requires_medical_certificate=requires_med,
+        )
+        return Response(self.get_serializer(lt).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def set_entitlement(self, request, pk=None):
@@ -532,9 +601,19 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
         if role == 'manager':
             # Direct reports or same department where user is HOD/Manager, but EXCLUDE own requests
-            return qs.filter(
-                Q(employee__manager=user) | Q(employee__department__hod=user)
-            ).exclude(employee=user)
+            # Additionally, exclude SDSL/SBL affiliates entirely because their flow is CEO-first (no manager stage)
+            return (
+                qs.filter(
+                    Q(employee__manager=user) | Q(employee__department__hod=user)
+                )
+                .exclude(employee=user)
+                .exclude(
+                    Q(employee__department__affiliate__name__iexact='SDSL') |
+                    Q(employee__department__affiliate__name__iexact='SBL') |
+                    Q(employee__affiliate__name__iexact='SDSL') |
+                    Q(employee__affiliate__name__iexact='SBL')
+                )
+            )
 
         if role == 'hr':
             # Items that have passed Manager stage or are pending (to allow visibility)
@@ -598,12 +677,22 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         if user_role == 'manager':
             # Managers see requests pending their approval
             # Safety: HR/admin requests should never be in manager queue
-            pending_requests = self.get_queryset().filter(status='pending').exclude(employee__role__in=['hr', 'admin'])
+            # Also, exclude SDSL/SBL affiliates entirely (CEO-first; manager should not see these)
+            pending_requests = (
+                self.get_queryset()
+                .filter(status='pending')
+                .exclude(employee__role__in=['hr', 'admin'])
+                .exclude(
+                    Q(employee__department__affiliate__name__iexact='SDSL') |
+                    Q(employee__department__affiliate__name__iexact='SBL') |
+                    Q(employee__affiliate__name__iexact='SDSL') |
+                    Q(employee__affiliate__name__iexact='SBL')
+                )
+            )
         elif user_role == 'hr' or (stage_override == 'hr' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # HR sees:
             # - Merban: manager_approved (strictly Merban by affiliate, whether set on department or user)
             # - SDSL/SBL: ceo_approved (CEO-first flow, HR is final)
-            from django.db.models import Q
             from itertools import chain
 
             # Build filters for Merban affiliate regardless of whether affiliate is on department or user
@@ -661,7 +750,19 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
             # Admins can still browse all requests via list endpoints
             # Safety: hide HR/admin submitters from manager-stage view
-            pending_requests = self.get_queryset().filter(status='pending').exclude(employee__role__in=['hr', 'admin'])
+            # Additionally, hide SDSL/SBL staff pending items (CEO-first affiliates) from the admin manager queue to reduce confusion
+            from django.db.models import Q as _Q
+            pending_requests = (
+                self.get_queryset()
+                .filter(status='pending')
+                .exclude(employee__role__in=['hr', 'admin'])
+                .exclude(
+                    _Q(employee__department__affiliate__name__iexact='SDSL') |
+                    _Q(employee__department__affiliate__name__iexact='SBL') |
+                    _Q(employee__affiliate__name__iexact='SDSL') |
+                    _Q(employee__affiliate__name__iexact='SBL')
+                )
+            )
         else:
             # No approval permissions
             pending_requests = self.get_queryset().none()

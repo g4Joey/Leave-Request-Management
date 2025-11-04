@@ -36,6 +36,9 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
 
         User = get_user_model()
         current_year = timezone.now().year
+        # If HR is tied to an affiliate, scope the counts to that affiliate (via department or direct affiliate)
+        user_affiliate = getattr(getattr(request.user, 'affiliate', None), 'id', None)
+        from django.db.models import Q
         
         # Get all role choices
         role_choices = CustomUser.ROLE_CHOICES
@@ -48,14 +51,15 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         }
         for role_code, role_display in role_choices:
             # Get users with this role, including legacy aliases
-            from django.db.models import Q
             legacy_aliases = legacy_map.get(role_code, [])
             role_filter = Q(role=role_code)
             for alias in legacy_aliases:
                 role_filter |= Q(role=alias)
-            users_with_role = User.objects.filter(
-                is_active=True,
-            ).filter(role_filter)
+            users_with_role = User.objects.filter(is_active=True).filter(role_filter)
+            if user_affiliate and not getattr(request.user, 'is_superuser', False):
+                users_with_role = users_with_role.filter(
+                    Q(department__affiliate_id=user_affiliate) | Q(affiliate_id=user_affiliate)
+                )
             user_count = users_with_role.count()
             
             # Get current entitlements for this role (sample from first user)
@@ -115,20 +119,24 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
 
         User = get_user_model()
         current_year = timezone.now().year
+        # Scope updates to HR's affiliate unless superuser
+        user_affiliate = getattr(getattr(request.user, 'affiliate', None), 'id', None)
+        from django.db.models import Q
         
         # Get all users with this role
         legacy_map = {
             'junior_staff': ['employee', 'staff'],
             'manager': ['hod'],
         }
-        from django.db.models import Q
         legacy_aliases = legacy_map.get(role_code, [])
         role_filter = Q(role=role_code)
         for alias in legacy_aliases:
             role_filter |= Q(role=alias)
-        users_with_role = User.objects.filter(
-            is_active=True,
-        ).filter(role_filter)
+        users_with_role = User.objects.filter(is_active=True).filter(role_filter)
+        if user_affiliate and not getattr(request.user, 'is_superuser', False):
+            users_with_role = users_with_role.filter(
+                Q(department__affiliate_id=user_affiliate) | Q(affiliate_id=user_affiliate)
+            )
         
         if users_with_role.count() == 0:
             return Response({'error': f'No active users found with role: {role_code}'}, status=status.HTTP_400_BAD_REQUEST)
@@ -205,19 +213,22 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
 
         User = get_user_model()
         current_year = timezone.now().year
+        user_affiliate = getattr(getattr(request.user, 'affiliate', None), 'id', None)
+        from django.db.models import Q
         
         legacy_map = {
             'junior_staff': ['employee', 'staff'],
             'manager': ['hod'],
         }
-        from django.db.models import Q
         legacy_aliases = legacy_map.get(role_code, [])
         role_filter = Q(role=role_code)
         for alias in legacy_aliases:
             role_filter |= Q(role=alias)
-        users_with_role = User.objects.filter(
-            is_active=True,
-        ).filter(role_filter)
+        users_with_role = User.objects.filter(is_active=True).filter(role_filter)
+        if user_affiliate and not getattr(request.user, 'is_superuser', False):
+            users_with_role = users_with_role.filter(
+                Q(department__affiliate_id=user_affiliate) | Q(affiliate_id=user_affiliate)
+            )
         
         role_display = dict(CustomUser.ROLE_CHOICES).get(role_code, role_code)
         
