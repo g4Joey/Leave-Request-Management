@@ -366,24 +366,15 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             
             # Log the validated data for debugging
             logger.info(f'Leave request data: {serializer.validated_data}')
-            
-            # Check if the user is a manager or HR - if so, bypass manager approval
-            # Also check if user has no manager assigned - if so, bypass manager approval
-            user_role = getattr(user, 'role', None)
-            has_manager = hasattr(user, 'manager') and user.manager is not None
-            
-            if user_role == 'manager':
-                # Manager's own request should bypass manager stage and go directly to HR
-                serializer.validated_data['status'] = 'manager_approved'
-                logger.info(f'Manager {user.username} submitting own request - bypassing manager approval, going directly to HR')
-            elif user_role == 'hr':
-                # HR's own request should bypass manager approval and go directly to CEO
-                serializer.validated_data['status'] = 'hr_approved'
-                logger.info(f'HR {user.username} submitting own request - bypassing manager and HR approval, going directly to CEO')
-            elif not has_manager:
-                # Employee has no manager assigned - bypass manager approval and go directly to HR
-                serializer.validated_data['status'] = 'manager_approved'
-                logger.info(f'Employee {user.username} has no manager assigned - bypassing manager approval, going directly to HR')
+            # IMPORTANT: Do NOT auto-advance any stage at creation time.
+            # All new requests must start at 'pending' to allow cancellation and follow the proper flow:
+            # - Merban staff: pending -> manager -> HR -> CEO
+            # - Merban manager/HOD: pending -> HR -> CEO
+            # - Merban HR: pending -> CEO
+            # - SDSL/SBL staff: pending -> CEO -> HR (final)
+            # - SDSL/SBL CEO self-requests: pending -> HR (final)
+            # The correct next approver is determined by ApprovalWorkflowService based on status and role.
+            serializer.validated_data['status'] = 'pending'
             
             leave_request = serializer.save(employee=user)
             logger.info(f'Leave request created successfully: ID={leave_request.id}, status={leave_request.status}')
@@ -550,8 +541,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
-            # Items that require or have passed CEO stage. Include manager_approved for SDSL flow.
-            return qs.filter(status__in=['manager_approved', 'hr_approved', 'approved', 'rejected'])
+            # For CEO, include items that are pending CEO action (pending for SDSL/SBL, hr_approved for Merban)
+            # and optionally previously acted ones for visibility.
+            return qs.filter(status__in=['pending', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()
