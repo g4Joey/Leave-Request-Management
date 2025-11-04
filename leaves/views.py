@@ -609,17 +609,35 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             pending_requests = self.get_queryset().filter(status='pending').exclude(employee__role__in=['hr', 'admin'])
         elif user_role == 'hr' or (stage_override == 'hr' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # HR sees:
-            # - Merban: manager_approved (exclude SDSL/SBL)
-            # - SDSL/SBL: ceo_approved (CEO already approved first)
+            # - Merban: manager_approved (strictly Merban by affiliate, whether set on department or user)
+            # - SDSL/SBL: ceo_approved (CEO-first flow, HR is final)
             from django.db.models import Q
             from itertools import chain
-            
-            merban_qs = self.get_queryset().filter(status='manager_approved').exclude(Q(employee__department__affiliate__name__iexact='SDSL') | Q(employee__department__affiliate__name__iexact='SBL')).exclude(employee__role='admin')
-            
+
+            # Build filters for Merban affiliate regardless of whether affiliate is on department or user
+            merban_filter = (
+                Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
+                Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
+            )
+            non_sdsl_sbl_filter = ~(
+                Q(employee__department__affiliate__name__iexact='SDSL') |
+                Q(employee__department__affiliate__name__iexact='SBL') |
+                Q(employee__affiliate__name__iexact='SDSL') |
+                Q(employee__affiliate__name__iexact='SBL')
+            )
+
+            # Merban manager-approved only (exclude admin submitters)
+            merban_qs = (
+                self.get_queryset()
+                .filter(status='manager_approved')
+                .filter(merban_filter)
+                .exclude(employee__role='admin')
+            )
+
+            # CEO-approved (for SDSL/SBL final HR review) - exclude admin submitters
             ceo_approved_qs = self.get_queryset().filter(status='ceo_approved').exclude(employee__role='admin')
-            
+
             # Use list() and chain() instead of union() to avoid ORDER BY issues
-            # Union doesn't work with select_related and ordering
             pending_requests = list(chain(merban_qs, ceo_approved_qs))
         elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # CEO sees requests that require their approval - filtered by affiliate and workflow
@@ -1142,11 +1160,12 @@ class IsManagerPermission(permissions.BasePermission):
         try:
             from users.models import CustomUser
             if isinstance(user, CustomUser):
-                return user.is_superuser or user.role in ['manager', 'hr', 'admin']
+                # Approver roles: manager, HR, CEO, admin, or superuser
+                return user.is_superuser or user.role in ['manager', 'hr', 'ceo', 'admin']
         except Exception:
             pass
         return getattr(user, 'is_superuser', False) or (
-            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'admin']
+            hasattr(user, 'role') and getattr(user, 'role') in ['manager', 'hr', 'ceo', 'admin']
         )
 
 
