@@ -1,0 +1,34 @@
+name: Deploy to DigitalOcean Droplet
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remote deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT || '22' }}
+          script: |
+            set -e
+            PROJECT_DIR="${PROJECT_DIR:-${{ secrets.PROJECT_DIR }}}"
+            if [ -z "$PROJECT_DIR" ]; then PROJECT_DIR="/opt/leave-management"; fi
+            echo "[gha] Using PROJECT_DIR=$PROJECT_DIR"
+            if [ -d "$PROJECT_DIR/.git" ]; then
+              cd "$PROJECT_DIR"
+            else
+              echo "[gha] ERROR: PROJECT_DIR not found: $PROJECT_DIR" >&2
+              exit 1
+            fi
+            echo "[gha] Fetch/reset to origin/main"
+            git fetch --all --prune
+            git reset --hard origin/main
+            chmod +x scripts/deploy.sh || true
+            echo "[gha] Running deploy script"
+            PROJECT_DIR="$PROJECT_DIR" GUNICORN_SERVICE="${{ secrets.GUNICORN_SERVICE }}" NGINX_SERVICE="${{ secrets.NGINX_SERVICE }}" bash scripts/deploy.sh
