@@ -711,16 +711,27 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         filtered_requests = []
         for req in candidate_qs:
             handler = ApprovalWorkflowService.get_handler(req)
-            if handler.can_approve(user, req.status):
-                # Double-check affiliate matching for safety
-                req_affiliate_name = ''
-                if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
-                    req_affiliate_name = req.employee.affiliate.name.strip().upper()
-                elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
-                    req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
-                
-                # Only include if affiliates match (or admin/superuser)
-                if getattr(user, 'is_superuser', False) or not ceo_affiliate_name or req_affiliate_name == ceo_affiliate_name:
+            can = handler.can_approve(user, req.status)
+
+            # Determine employee affiliate (user or department)
+            req_affiliate_name = ''
+            if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
+                req_affiliate_name = req.employee.affiliate.name.strip().upper()
+            elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
+                req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
+
+            same_aff = (req_affiliate_name == ceo_affiliate_name) if ceo_affiliate_name else True
+
+            if can and (getattr(user, 'is_superuser', False) or same_aff):
+                filtered_requests.append(req)
+                continue
+
+            # Fallback: If CEO is SDSL/SBL and the request is pending with no affiliate/department,
+            # surface it to that CEO to avoid hiding legitimate CEO-first items due to missing data.
+            if req.status == 'pending' and ceo_affiliate_name in ['SDSL', 'SBL']:
+                no_aff = not getattr(req.employee, 'affiliate', None)
+                no_dept = not getattr(req.employee, 'department', None)
+                if no_aff and no_dept:
                     filtered_requests.append(req)
         
         serializer = self.get_serializer(filtered_requests, many=True)
