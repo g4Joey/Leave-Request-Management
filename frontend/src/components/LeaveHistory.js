@@ -53,11 +53,11 @@ function LeaveHistory() {
       setRequests(response.data.results || response.data);
       
       setCancelModal({ open: false, request: null, comments: '', loading: false });
-      showToast('Leave request cancelled successfully', 'success');
+      showToast({ type: 'success', message: 'Leave request cancelled successfully' });
     } catch (error) {
       console.error('Error cancelling request:', error);
       setCancelModal(prev => ({ ...prev, loading: false }));
-      showToast(error.response?.data?.error || 'Failed to cancel request', 'error');
+      showToast({ type: 'error', message: error.response?.data?.error || 'Failed to cancel request' });
     }
   };
 
