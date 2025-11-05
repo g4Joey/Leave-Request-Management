@@ -136,10 +136,10 @@ class ApprovalHandler(ABC):
         return status_progression.get(current_status, 'approved')
 
 
-class StandardApprovalHandler(ApprovalHandler):
+class MerbanApprovalHandler(ApprovalHandler):
     """
-    Standard approval workflow: Manager → HR → CEO (of employee's affiliate)
-    Used for Merban Capital and SBL employees.
+    Merban approval workflow: Manager → HR → CEO (of employee's affiliate)
+    Used for Merban Capital employees.
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
@@ -285,9 +285,10 @@ class ApprovalWorkflowService:
             return SDSLApprovalHandler(leave_request)
         if affiliate_name == 'SBL':
             return SBLApprovalHandler(leave_request)
-        else:
-            # Standard workflow for Merban Capital, SBL, and others
-            return StandardApprovalHandler(leave_request)
+        if affiliate_name in ['MERBAN', 'MERBAN CAPITAL']:
+            return MerbanApprovalHandler(leave_request)
+        # Fallback for any other affiliates: treat as Merban-style flow by default
+        return MerbanApprovalHandler(leave_request)
     
     @classmethod
     def can_user_approve(cls, leave_request, user: CustomUser) -> bool:

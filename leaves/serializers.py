@@ -271,22 +271,30 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
         Examples: 'Pending HR approval', 'Pending CEO approval'."""
         status = getattr(obj, 'status', None)
         aff = (self._get_affiliate_name(obj) or '').upper()
+        def aff_ceo_label(a: str) -> str:
+            if a == 'SDSL':
+                return 'Pending SDSL CEO Approval'
+            if a == 'SBL':
+                return 'Pending SBL CEO Approval'
+            if a in ['MERBAN', 'MERBAN CAPITAL']:
+                return 'Pending Merban CEO Approval'
+            return 'Pending CEO Approval'
         if status == 'manager_approved':
             # SDSL/SBL flow: CEO comes before HR. Standard (Merban): HR next.
             if aff in ['SDSL', 'SBL']:
-                return 'Pending CEO approval'
+                return aff_ceo_label(aff)
             return 'Pending HR approval'
         if status == 'hr_approved':
             # After HR, next is CEO in standard; in SDSL, HR_approved means CEO already acted and HR will finalize next
             if aff in ['SDSL', 'SBL']:
                 return 'Pending HR final approval'
-            return 'Pending CEO approval'
+            return aff_ceo_label(aff)
         if status == 'ceo_approved':
             return 'Pending HR approval'
         if status == 'pending':
             # For SDSL/SBL there is no manager step; CEO is first approver
             if aff in ['SDSL', 'SBL']:
-                return 'Pending CEO approval'
+                return aff_ceo_label(aff)
             return 'Pending Manager approval'
         if status == 'approved':
             return 'Approved'
