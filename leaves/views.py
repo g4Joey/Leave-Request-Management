@@ -730,22 +730,38 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             
             # Standard (Merban): hr_approved; SDSL/SBL: pending
             candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
-            filtered_ids = []
+            filtered_ids = set()
             for req in candidate_qs:
                 handler = ApprovalWorkflowService.get_handler(req)
-                if handler.can_approve(user, req.status):
-                    # Double-check affiliate matching for safety
-                    req_affiliate_name = ''
-                    if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
-                        req_affiliate_name = req.employee.affiliate.name.strip().upper()
-                    elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
-                        req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
-                    
-                    # Only include if affiliates match (or admin/superuser)
-                    if getattr(user, 'is_superuser', False) or not ceo_affiliate_name or req_affiliate_name == ceo_affiliate_name:
-                        filtered_ids.append(req.id)
-            
-            pending_requests = self.get_queryset().filter(id__in=filtered_ids)
+
+                # Determine employee affiliate for matching
+                req_affiliate_name = ''
+                if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
+                    req_affiliate_name = req.employee.affiliate.name.strip().upper()
+                elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
+                    req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
+
+                can = handler.can_approve(user, req.status)
+                same_aff = (req_affiliate_name == ceo_affiliate_name) if ceo_affiliate_name else True
+
+                # Primary include rule: handler says this CEO can approve and affiliate matches (or admin/superuser)
+                if can and (getattr(user, 'is_superuser', False) or same_aff):
+                    filtered_ids.add(req.id)
+                    continue
+
+                # Robust fallback for SDSL/SBL CEOs: include pending items from their affiliate even if handler misclassified
+                if req.status == 'pending' and ceo_affiliate_name in ['SDSL', 'SBL']:
+                    # If the request affiliate matches CEO affiliate, include
+                    if same_aff and ceo_affiliate_name:
+                        filtered_ids.add(req.id)
+                        continue
+                    # Or if affiliate/department is missing entirely, include to avoid hiding CEO-first items
+                    no_aff = not getattr(req.employee, 'affiliate', None)
+                    no_dept = not getattr(req.employee, 'department', None)
+                    if no_aff and no_dept:
+                        filtered_ids.add(req.id)
+
+            pending_requests = self.get_queryset().filter(id__in=list(filtered_ids))
         elif user_role == 'admin':
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
             # Admins can still browse all requests via list endpoints
@@ -827,13 +843,18 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 filtered_requests.append(req)
                 continue
 
-            # Fallback: If CEO is SDSL/SBL and the request is pending with no affiliate/department,
-            # surface it to that CEO to avoid hiding legitimate CEO-first items due to missing data.
-            if req.status == 'pending' and ceo_affiliate_name in ['SDSL', 'SBL']:
-                no_aff = not getattr(req.employee, 'affiliate', None)
-                no_dept = not getattr(req.employee, 'department', None)
-                if no_aff and no_dept:
+            # Fallbacks for SDSL/SBL CEOs
+            if ceo_affiliate_name in ['SDSL', 'SBL']:
+                # Include pending items explicitly from CEO's affiliate even if handler/can check failed
+                if req.status == 'pending' and same_aff:
                     filtered_requests.append(req)
+                    continue
+                # Or include when both affiliate and department are missing
+                if req.status == 'pending':
+                    no_aff = not getattr(req.employee, 'affiliate', None)
+                    no_dept = not getattr(req.employee, 'department', None)
+                    if no_aff and no_dept:
+                        filtered_requests.append(req)
         
         serializer = self.get_serializer(filtered_requests, many=True)
         

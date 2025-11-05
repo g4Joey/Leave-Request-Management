@@ -108,8 +108,26 @@ function CEOApprovals() {
     return request?.employee_name || request?.employee_email || 'Unknown Employee';
   };
 
-  const getEmployeeDepartment = (request) => {
-    return request?.employee_department || 'Unknown Department';
+  const getAffiliate = (request) => {
+    return (request?.employee_department_affiliate || '').toUpperCase();
+  };
+
+  const getEmployeeDepartmentOrAffiliateLabel = (request) => {
+    const affiliate = getAffiliate(request);
+    const dept = request?.employee_department;
+    // For SDSL/SBL, show Affiliate and hide Department entirely
+    if (affiliate === 'SDSL' || affiliate === 'SBL') {
+      return { label: 'Affiliate', value: affiliate || 'SDSL/SBL' };
+    }
+    // For others: show Department if available, otherwise show Affiliate if present
+    if (dept) {
+      return { label: 'Department', value: dept };
+    }
+    if (affiliate) {
+      return { label: 'Affiliate', value: affiliate };
+    }
+    // Last resort fallback
+    return { label: 'Department', value: 'Unknown Department' };
   };
 
   const formatDate = (dateString) => {
@@ -147,7 +165,14 @@ function CEOApprovals() {
               {getEmployeeName(request)}
             </h3>
             <div className="text-sm text-gray-600 space-y-1 mt-2">
-              <p><span className="font-medium">Department:</span> {getEmployeeDepartment(request)}</p>
+              {(() => {
+                const info = getEmployeeDepartmentOrAffiliateLabel(request);
+                return (
+                  <p>
+                    <span className="font-medium">{info.label}:</span> {info.value}
+                  </p>
+                );
+              })()}
               <p><span className="font-medium">Employee ID:</span> {request.employee_id || 'N/A'}</p>
               <p><span className="font-medium">Role:</span> 
                 <span className={`ml-1 px-2 py-1 rounded-full text-xs font-medium ${
