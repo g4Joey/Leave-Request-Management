@@ -201,7 +201,7 @@ class StandardApprovalHandler(ApprovalHandler):
 
 class SDSLApprovalHandler(ApprovalHandler):
     """
-    SDSL special workflow: Manager → SDSL CEO (Kofi) → HR (final approval)
+    SDSL special workflow: Staff → SDSL CEO (first) → HR (final approval)
     No final CEO step - HR gives final approval after SDSL CEO.
     """
     
@@ -234,6 +234,41 @@ class SDSLApprovalHandler(ApprovalHandler):
         return 'approved'
 
 
+class SBLApprovalHandler(ApprovalHandler):
+    """
+    SBL special workflow: Staff → SBL CEO (first) → HR (final approval)
+    No final CEO step - HR gives final approval after SBL CEO.
+    """
+
+    def get_approval_flow(self) -> Dict[str, str]:
+        """SBL flow has no manager/HOD step: CEO -> HR (final)."""
+        return {
+            'pending': 'ceo',        # CEO first
+            'ceo_approved': 'hr'     # HR final approval
+        }
+
+    def can_approve(self, user: CustomUser, current_status: str) -> bool:
+        """CEO approves at pending stage for SBL; rely on base affiliate-CEO check."""
+        return super().can_approve(user, current_status)
+
+    def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
+        if current_status == 'pending':
+            # CEO based on employee's affiliate (SBL)
+            return ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
+        elif current_status == 'ceo_approved':
+            # HR for final approval
+            return User.objects.filter(role='hr', is_active=True).first()
+        return None
+
+    def get_next_status(self, current_status: str) -> str:
+        """SBL status progression: pending -> ceo_approved -> approved (HR final)."""
+        if current_status == 'pending':
+            return 'ceo_approved'
+        elif current_status == 'ceo_approved':
+            return 'approved'
+        return 'approved'
+
+
 class ApprovalWorkflowService:
     """
     Factory service to get appropriate approval handler based on employee's affiliate.
@@ -246,8 +281,10 @@ class ApprovalWorkflowService:
         employee = leave_request.employee
         affiliate_name = ApprovalRoutingService.get_employee_affiliate_name(employee)
         
-        if affiliate_name in ['SDSL', 'SBL']:
+        if affiliate_name == 'SDSL':
             return SDSLApprovalHandler(leave_request)
+        if affiliate_name == 'SBL':
+            return SBLApprovalHandler(leave_request)
         else:
             # Standard workflow for Merban Capital, SBL, and others
             return StandardApprovalHandler(leave_request)
