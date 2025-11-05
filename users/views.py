@@ -427,12 +427,13 @@ class StaffManagementView(APIView):
                         is_active=True
                     ).exclude(role='admin')  # Exclude admin only
                     
+                    # Apply demo exclusion policy if needed
                     if exclude_demo:
-                        individual_qs = individual_qs.exclude(is_demo=True)
+                        individuals_qs = individuals_qs.exclude(is_demo=True)
                     
                     # Convert to list format similar to departments
                     individual_staff = []
-                    for staff in individual_qs:
+                    for staff in individuals_qs:
                         manager_info = None
                         if staff.manager:
                             manager_info = {
@@ -443,20 +444,28 @@ class StaffManagementView(APIView):
                         
                         # Prefer department affiliate when present; fallback to user's affiliate
                         aff_name = None
+                        aff_id_val = None
                         try:
                             if getattr(staff, 'department', None) and getattr(staff.department, 'affiliate', None):
                                 aff_name = staff.department.affiliate.name
+                                aff_id_val = getattr(getattr(staff.department, 'affiliate', None), 'id', None)
                             elif getattr(staff, 'affiliate', None):
                                 aff_name = staff.affiliate.name
+                                aff_id_val = getattr(staff.affiliate, 'id', None)
                         except Exception:
-                            aff_name = getattr(getattr(staff, 'affiliate', None), 'name', None)
+                            aff_obj = getattr(staff, 'affiliate', None)
+                            aff_name = getattr(aff_obj, 'name', None)
+                            aff_id_val = getattr(aff_obj, 'id', None)
 
                         individual_staff.append({
                             'id': staff.pk,
                             'employee_id': staff.employee_id,
                             'name': staff.get_full_name(),
                             'email': staff.email,
-                            'affiliate': aff_name,
+                            # Provide affiliate metadata in both id and name for frontend normalization
+                            'affiliate_id': aff_id_val or int(affiliate_id),
+                            'affiliate_name': aff_name or affiliate.name,
+                            'affiliate': aff_name,  # keep string for backward compatibility
                             'role': staff.role,
                             'hire_date': staff.hire_date,
                             'manager': manager_info,
@@ -489,20 +498,28 @@ class StaffManagementView(APIView):
                     }
                 # Prefer department affiliate when present; fallback to user's affiliate
                 aff_name = None
+                aff_id_val = None
                 try:
                     if getattr(staff, 'department', None) and getattr(staff.department, 'affiliate', None):
                         aff_name = staff.department.affiliate.name
+                        aff_id_val = getattr(getattr(staff.department, 'affiliate', None), 'id', None)
                     elif getattr(staff, 'affiliate', None):
                         aff_name = staff.affiliate.name
+                        aff_id_val = getattr(staff.affiliate, 'id', None)
                 except Exception:
-                    aff_name = getattr(getattr(staff, 'affiliate', None), 'name', None)
+                    aff_obj = getattr(staff, 'affiliate', None)
+                    aff_name = getattr(aff_obj, 'name', None)
+                    aff_id_val = getattr(aff_obj, 'id', None)
 
                 individuals_list.append({
                     'id': staff.pk,
                     'employee_id': staff.employee_id,
                     'name': staff.get_full_name(),
                     'email': staff.email,
-                    'affiliate': aff_name,
+                    # Provide affiliate metadata in both id and name for frontend normalization
+                    'affiliate_id': aff_id_val,
+                    'affiliate_name': aff_name,
+                    'affiliate': aff_name,  # keep string for backward compatibility
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,

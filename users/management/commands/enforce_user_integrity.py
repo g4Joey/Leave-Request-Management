@@ -25,6 +25,10 @@ class Command(BaseCommand):
             for u in User.objects.select_related('affiliate', 'department__affiliate').all():
                 before = (getattr(u.affiliate, 'name', None), getattr(u.department, 'id', None), getattr(u.manager, 'id', None))
                 try:
+                    # Superusers may not have an affiliate by design; skip strict checks
+                    if getattr(u, 'is_superuser', False) and not u.affiliate:
+                        vprint(f"Superuser {u.id} has no affiliate (allowed)")
+                        continue
                     # Affiliate must exist; if missing, try infer from department
                     if not u.affiliate:
                         if u.department and u.department.affiliate:
@@ -56,7 +60,7 @@ class Command(BaseCommand):
                                 self.stdout.write(f"DEPT AFFILIATE MISMATCH: user {u.id} dept_aff={dept_aff}")
                                 continue
 
-                    # Validate via model clean
+                    # Validate via model clean (superuser case is bypassed inside clean)
                     u.clean()
 
                     if fix:

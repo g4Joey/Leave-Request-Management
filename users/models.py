@@ -152,6 +152,9 @@ class CustomUser(AbstractUser):
     # --- Data integrity enforcement ---
     def clean(self):  # type: ignore[override]
         from django.core.exceptions import ValidationError
+        # Superusers can be global and need not belong to an affiliate
+        if getattr(self, 'is_superuser', False):
+            return
         # Ensure affiliate is always present
         if not getattr(self, 'affiliate', None):
             # If department has an affiliate, adopt it

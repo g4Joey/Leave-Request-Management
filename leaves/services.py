@@ -29,14 +29,14 @@ class ApprovalRoutingService:
         - Merban Capital: employees (including those in any Merban department) → Merban CEO
         - SDSL: employees → SDSL CEO
         - SBL: employees → SBL CEO
-        - Default/No affiliate → default CEO (first active CEO)
+    - Default/No affiliate → no CEO (must match by affiliate; no fallback)
 
         CEOs are attached to Affiliates (not departments). Only Merban uses departments.
         """
         logger = logging.getLogger('leaves')
 
         if not employee:
-            return cls._get_default_ceo()
+            return None
 
         affiliate = getattr(employee, 'affiliate', None)
 
@@ -51,7 +51,7 @@ class ApprovalRoutingService:
             logger.exception("Failed to evaluate department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
 
         if not affiliate:
-            return cls._get_default_ceo()
+            return None
 
         # CEOs are looked up strictly by their affiliate
         try:
@@ -60,15 +60,15 @@ class ApprovalRoutingService:
                 .filter(affiliate=affiliate)
                 .first()
             )
-            return ceo or cls._get_default_ceo()
+            return ceo
         except Exception as e:
             logger.exception("Failed to determine CEO for employee %s: %s", getattr(employee, 'id', None), e)
-            return cls._get_default_ceo()
+            return None
     
     @classmethod
     def _get_default_ceo(cls) -> Optional[CustomUser]:
-        """Fallback CEO: any active CEO user (first)."""
-        return User.objects.filter(role='ceo', is_active=True).first()
+        """Deprecated: No default CEO fallback. Return None to enforce strict affiliate matching."""
+        return None
     
     @classmethod
     def get_employee_affiliate_name(cls, employee: CustomUser) -> str:
@@ -183,7 +183,8 @@ class MerbanApprovalHandler(ApprovalHandler):
                         return User.objects.filter(role='ceo', is_active=True, department__affiliate=merban).first()
                 except Exception:
                     pass
-                return ApprovalRoutingService._get_default_ceo()
+                # Strict: no fallback CEO
+                return None
             # Default: staff -> manager
             if hasattr(emp, 'manager') and emp.manager:
                 return emp.manager
