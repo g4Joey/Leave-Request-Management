@@ -148,6 +148,38 @@ class CustomUser(AbstractUser):
     def can_approve_leaves(self):
         """Check if user can approve leave requests"""
         return self.role in ['manager', 'hr', 'ceo', 'admin']
+
+    # --- Data integrity enforcement ---
+    def clean(self):  # type: ignore[override]
+        from django.core.exceptions import ValidationError
+        # Ensure affiliate is always present
+        if not getattr(self, 'affiliate', None):
+            # If department has an affiliate, adopt it
+            if getattr(self, 'department', None) and getattr(self.department, 'affiliate', None):
+                self.affiliate = self.department.affiliate
+            else:
+                raise ValidationError({'affiliate': 'Affiliate is required for all users.'})
+
+        aff_name = (getattr(self.affiliate, 'name', '') or '').strip().upper()
+
+        # SDSL/SBL: no departments or managers apply
+        if aff_name in ['SDSL', 'SBL']:
+            # Clear department/manager for non-admin users to avoid manager-stage routing
+            if getattr(self, 'department', None) is not None:
+                self.department = None
+            if getattr(self, 'manager', None) is not None:
+                self.manager = None
+
+        # MERBAN: department required (except perhaps CEOs/admins)
+        if aff_name in ['MERBAN', 'MERBAN CAPITAL']:
+            # CEOs may not belong to a department; allow CEO/admin without department
+            if self.role not in ['ceo', 'admin']:
+                if not getattr(self, 'department', None):
+                    raise ValidationError({'department': 'Department is required for Merban Capital users.'})
+                # Department affiliate must match user affiliate
+                dept_aff = getattr(getattr(self.department, 'affiliate', None), 'name', None)
+                if (dept_aff or '').strip().upper() not in ['MERBAN', 'MERBAN CAPITAL']:
+                    raise ValidationError({'department': 'Department must belong to Merban Capital.'})
     
     class Meta:
         ordering = ['employee_id']
