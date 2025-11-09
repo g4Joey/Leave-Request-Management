@@ -442,30 +442,19 @@ class StaffManagementView(APIView):
                                 'employee_id': staff.manager.employee_id
                             }
                         
-                        # Prefer department affiliate when present; fallback to user's affiliate
-                        aff_name = None
-                        aff_id_val = None
-                        try:
-                            if getattr(staff, 'department', None) and getattr(staff.department, 'affiliate', None):
-                                aff_name = staff.department.affiliate.name
-                                aff_id_val = getattr(getattr(staff.department, 'affiliate', None), 'id', None)
-                            elif getattr(staff, 'affiliate', None):
-                                aff_name = staff.affiliate.name
-                                aff_id_val = getattr(staff.affiliate, 'id', None)
-                        except Exception:
-                            aff_obj = getattr(staff, 'affiliate', None)
-                            aff_name = getattr(aff_obj, 'name', None)
-                            aff_id_val = getattr(aff_obj, 'id', None)
-
+                        # Use UserSerializer for consistent affiliate data
+                        from .serializers import UserSerializer
+                        staff_data = UserSerializer(staff).data
+                        
                         individual_staff.append({
                             'id': staff.pk,
                             'employee_id': staff.employee_id,
                             'name': staff.get_full_name(),
                             'email': staff.email,
-                            # Provide affiliate metadata in both id and name for frontend normalization
-                            'affiliate_id': aff_id_val or int(affiliate_id),
-                            'affiliate_name': aff_name or affiliate.name,
-                            'affiliate': aff_name,  # keep string for backward compatibility
+                            # Use consistent affiliate data from UserSerializer
+                            'affiliate_id': staff_data.get('affiliate', {}).get('id'),
+                            'affiliate_name': staff_data.get('affiliate_name'),
+                            'affiliate': staff_data.get('affiliate_name'),  # backward compatibility
                             'role': staff.role,
                             'hire_date': staff.hire_date,
                             'manager': manager_info,
@@ -496,30 +485,19 @@ class StaffManagementView(APIView):
                         'name': staff.manager.get_full_name(),
                         'employee_id': staff.manager.employee_id
                     }
-                # Prefer department affiliate when present; fallback to user's affiliate
-                aff_name = None
-                aff_id_val = None
-                try:
-                    if getattr(staff, 'department', None) and getattr(staff.department, 'affiliate', None):
-                        aff_name = staff.department.affiliate.name
-                        aff_id_val = getattr(getattr(staff.department, 'affiliate', None), 'id', None)
-                    elif getattr(staff, 'affiliate', None):
-                        aff_name = staff.affiliate.name
-                        aff_id_val = getattr(staff.affiliate, 'id', None)
-                except Exception:
-                    aff_obj = getattr(staff, 'affiliate', None)
-                    aff_name = getattr(aff_obj, 'name', None)
-                    aff_id_val = getattr(aff_obj, 'id', None)
+                # Use UserSerializer for consistent affiliate data
+                from .serializers import UserSerializer
+                staff_data = UserSerializer(staff).data
 
                 individuals_list.append({
                     'id': staff.pk,
                     'employee_id': staff.employee_id,
                     'name': staff.get_full_name(),
                     'email': staff.email,
-                    # Provide affiliate metadata in both id and name for frontend normalization
-                    'affiliate_id': aff_id_val,
-                    'affiliate_name': aff_name,
-                    'affiliate': aff_name,  # keep string for backward compatibility
+                    # Use consistent affiliate data from UserSerializer
+                    'affiliate_id': staff_data.get('affiliate', {}).get('id'),
+                    'affiliate_name': staff_data.get('affiliate_name'),
+                    'affiliate': staff_data.get('affiliate_name'),  # backward compatibility
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,

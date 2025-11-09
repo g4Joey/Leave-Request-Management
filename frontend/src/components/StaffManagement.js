@@ -201,8 +201,8 @@ function StaffManagement() {
             id: s.id,
             name: cleanName(s.name),
             email: s.email,
-            // Backend sends affiliate as string; fallback to em dash
-            affiliate: (typeof s.affiliate === 'string' && s.affiliate.trim()) ? s.affiliate : '—',
+            // Use consistent affiliate data from UserSerializer
+            affiliate: s.affiliate?.name || s.affiliate_name || 'No Affiliate',
             department: deptDisplay,
             employee_id: s.employee_id,
             role: roleNorm,
@@ -1255,7 +1255,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                           <h3 className="text-base font-semibold text-gray-900">{aff.name}</h3>
                         </div>
                         <div className="mt-1 space-y-1 text-sm text-gray-600">
-                              <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || aff?.ceo?.name || aff?.ceo?.email || '—'}</p>
+                              <p><span className="text-gray-700 font-medium">CEO:</span> {aff?.ceo?.name || aff?.ceo?.email || affiliateInfo[aff.id]?.ceo || '—'}</p>
                               {aff.name === 'MERBAN CAPITAL' && (
                                 <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
                               )}

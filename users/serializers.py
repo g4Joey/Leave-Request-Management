@@ -68,6 +68,8 @@ class UserSerializer(serializers.ModelSerializer):
     department = DepartmentSerializer(read_only=True)
     department_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     affiliate_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    affiliate = serializers.SerializerMethodField(read_only=True)
+    affiliate_name = serializers.SerializerMethodField(read_only=True)
     password = serializers.CharField(write_only=True, required=False)
     is_superuser = serializers.BooleanField(read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
@@ -76,11 +78,35 @@ class UserSerializer(serializers.ModelSerializer):
     def get_role_display(self, obj):
         return obj.get_role_display_name()
 
+    def get_affiliate(self, obj):
+        """Get user's affiliate with consistent logic: department affiliate first, then direct affiliate"""
+        affiliate = None
+        if obj.department and obj.department.affiliate:
+            affiliate = obj.department.affiliate
+        elif obj.affiliate:
+            affiliate = obj.affiliate
+        
+        if affiliate:
+            return {
+                'id': affiliate.id,
+                'name': affiliate.name
+            }
+        return None
+
+    def get_affiliate_name(self, obj):
+        """Get user's affiliate name - simplified for frontend compatibility"""
+        if obj.department and obj.department.affiliate:
+            return obj.department.affiliate.name
+        elif obj.affiliate:
+            return obj.affiliate.name
+        return None
+
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'employee_id', 'role', 'role_display', 'department', 'department_id', 'affiliate_id',
+            'affiliate', 'affiliate_name',  # Added affiliate information
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser'

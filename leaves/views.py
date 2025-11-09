@@ -90,7 +90,14 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
         """
         if not self._is_hr(request):
             return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
-        lt = self.get_object()
+        # Important: self.get_object() would use the default queryset which
+        # filters is_active=True for non-HR requests. When re-activating an
+        # inactive type, that lookup would fail. Fetch directly from the base
+        # manager to include inactive records.
+        try:
+            lt = LeaveType.objects.get(pk=pk)
+        except LeaveType.DoesNotExist:
+            return Response({'detail': 'Leave type not found'}, status=status.HTTP_404_NOT_FOUND)
         if not lt.is_active:
             lt.is_active = True
             lt.save(update_fields=['is_active', 'updated_at']) if hasattr(lt, 'updated_at') else lt.save(update_fields=['is_active'])

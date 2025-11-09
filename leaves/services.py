@@ -22,14 +22,13 @@ class ApprovalRoutingService:
     
     @classmethod
     def get_ceo_for_employee(cls, employee: CustomUser) -> Optional[CustomUser]:
-        """
-        Determine the appropriate CEO for an employee based on affiliate.
+        """Determine the appropriate CEO strictly by affiliate (no fallback).
 
         Rules (case-insensitive):
         - Merban Capital: employees (including those in any Merban department) → Merban CEO
         - SDSL: employees → SDSL CEO
         - SBL: employees → SBL CEO
-    - Default/No affiliate → no CEO (must match by affiliate; no fallback)
+        - Missing/No affiliate → None (request will not appear in any CEO queue until data is fixed)
 
         CEOs are attached to Affiliates (not departments). Only Merban uses departments.
         """
@@ -38,13 +37,9 @@ class ApprovalRoutingService:
         if not employee:
             return None
 
-        # Read strictness from env: when falsey, allow a sensible fallback CEO if affiliate cannot be resolved
-        strict_env = os.getenv('STRICT_CEO_AFFILIATE', '1').strip().lower()
-        is_strict = strict_env in ['1', 'true', 'yes']
-
         affiliate = getattr(employee, 'affiliate', None)
 
-        # Merban-only department override: if no user.affiliate, but department.affiliate is Merban, use that
+        # Merban-only department override: if no user affiliate but department affiliate is Merban, adopt it
         try:
             if not affiliate and getattr(employee, 'department', None) and getattr(employee.department, 'affiliate', None):
                 dep_aff = employee.department.affiliate
@@ -52,28 +47,22 @@ class ApprovalRoutingService:
                 if name in ('merban capital', 'merban'):
                     affiliate = dep_aff
         except Exception as e:
-            logger.exception("Failed to evaluate department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
+            logger.exception("Failed department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
 
         if not affiliate:
-            # If strict matching is disabled, return default CEO (Merban) so CEO queues remain functional
-            return cls._get_default_ceo() if not is_strict else None
+            return None
 
-        # CEOs are looked up strictly by their affiliate
+        # CEOs are looked up strictly by affiliate name (with synonym grouping for Merban)
         try:
-            # Normalize affiliate name and treat common synonyms as the same logical affiliate
             aff_name = (getattr(affiliate, 'name', '') or '').strip().upper()
-
-            # Map synonyms for robust matching
             if aff_name in ('MERBAN', 'MERBAN CAPITAL'):
                 aff_names = ['MERBAN', 'MERBAN CAPITAL']
-            elif aff_name in ('SDSL',):
+            elif aff_name == 'SDSL':
                 aff_names = ['SDSL']
-            elif aff_name in ('SBL',):
+            elif aff_name == 'SBL':
                 aff_names = ['SBL']
             else:
-                # Default to exact affiliate name
                 aff_names = [getattr(affiliate, 'name', '')]
-
             ceo = (
                 User.objects.filter(role__iexact='ceo', is_active=True)
                 .filter(affiliate__name__in=aff_names)
@@ -84,24 +73,28 @@ class ApprovalRoutingService:
             logger.exception("Failed to determine CEO for employee %s: %s", getattr(employee, 'id', None), e)
             return None
     
-    @classmethod
-    def _get_default_ceo(cls) -> Optional[CustomUser]:
-        """Deprecated: No default CEO fallback. Return None to enforce strict affiliate matching."""
-        return None
+    # Removed fallback helper: strict routing only; requests with missing affiliate yield None
     
     @classmethod
     def get_employee_affiliate_name(cls, employee: CustomUser) -> str:
-        """Get the affiliate name for an employee, or 'DEFAULT' if none."""
-        if employee:
-            if (
-                hasattr(employee, 'department') and employee.department and 
-                hasattr(employee.department, 'affiliate') and employee.department.affiliate
-            ):
-                return employee.department.affiliate.name
-            # Fallback to user's affiliate when no department is assigned (SDSL/SBL individual users)
-            if hasattr(employee, 'affiliate') and getattr(employee, 'affiliate', None):
-                return employee.affiliate.name
-        return 'DEFAULT'
+        """Get the affiliate name for an employee, or '' if none.
+
+        Strict mode: We do not fabricate a placeholder affiliate. Missing or unknown affiliate
+        should prevent routing/approval until data is corrected. Previously a 'DEFAULT' fallback
+        implicitly treated requests as Merban; this has been removed.
+        """
+        if not employee:
+            return ''
+        # Prefer department affiliate for Merban department override (matches CEO routing logic)
+        if (
+            hasattr(employee, 'department') and employee.department and 
+            hasattr(employee.department, 'affiliate') and employee.department.affiliate
+        ):
+            return (employee.department.affiliate.name or '').strip().upper()
+        # Fall back to user's own affiliate if present
+        if hasattr(employee, 'affiliate') and getattr(employee, 'affiliate', None):
+            return (employee.affiliate.name or '').strip().upper()
+        return ''
 
 
 class ApprovalHandler(ABC):
@@ -289,6 +282,24 @@ class SBLApprovalHandler(ApprovalHandler):
         return 'approved'
 
 
+class UnknownAffiliateHandler(ApprovalHandler):
+    """Handler used when an employee's affiliate is missing or unrecognized.
+
+    Strict routing policy: Requests with unknown affiliates are not routable and cannot be
+    approved until the user's affiliate (or department affiliate) is corrected. All approval
+    checks will fail and attempts to approve will raise a validation error upstream.
+    """
+
+    def get_approval_flow(self) -> Dict[str, str]:
+        return {}
+
+    def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
+        return None
+
+    def get_next_status(self, current_status: str) -> str:
+        return current_status
+
+
 class ApprovalWorkflowService:
     """
     Factory service to get appropriate approval handler based on employee's affiliate.
@@ -300,15 +311,16 @@ class ApprovalWorkflowService:
         """Get appropriate approval handler based on employee's affiliate."""
         employee = leave_request.employee
         affiliate_name = ApprovalRoutingService.get_employee_affiliate_name(employee)
-        
+        if not affiliate_name:
+            return UnknownAffiliateHandler(leave_request)
         if affiliate_name == 'SDSL':
             return SDSLApprovalHandler(leave_request)
         if affiliate_name == 'SBL':
             return SBLApprovalHandler(leave_request)
         if affiliate_name in ['MERBAN', 'MERBAN CAPITAL']:
             return MerbanApprovalHandler(leave_request)
-        # Fallback for any other affiliates: treat as Merban-style flow by default
-        return MerbanApprovalHandler(leave_request)
+        # Unknown affiliate: strict mode returns handler that blocks approval
+        return UnknownAffiliateHandler(leave_request)
     
     @classmethod
     def can_user_approve(cls, leave_request, user: CustomUser) -> bool:
@@ -327,6 +339,9 @@ class ApprovalWorkflowService:
         """Approve request using appropriate workflow with row locking and explicit permission errors."""
         logger = logging.getLogger('leaves')
         handler = cls.get_handler(leave_request)
+
+        if isinstance(handler, UnknownAffiliateHandler):
+            raise ValidationError("Leave request cannot be approved: employee affiliate is missing or unrecognized. Fix the user's affiliate and retry.")
 
         with transaction.atomic():
             # Lock the row to prevent concurrent approvals
