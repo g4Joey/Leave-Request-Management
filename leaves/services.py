@@ -55,11 +55,25 @@ class ApprovalRoutingService:
 
         # CEOs are looked up strictly by their affiliate
         try:
+            # Normalize affiliate name and treat common synonyms as the same logical affiliate
+            aff_name = (getattr(affiliate, 'name', '') or '').strip().upper()
+
+            # Map synonyms for robust matching
+            if aff_name in ('MERBAN', 'MERBAN CAPITAL'):
+                aff_names = ['MERBAN', 'MERBAN CAPITAL']
+            elif aff_name in ('SDSL',):
+                aff_names = ['SDSL']
+            elif aff_name in ('SBL',):
+                aff_names = ['SBL']
+            else:
+                # Default to exact affiliate name
+                aff_names = [getattr(affiliate, 'name', '')]
+
             ceo = (
                 User.objects.filter(role__iexact='ceo', is_active=True)
-                .filter(affiliate=affiliate)
-                .first()
-            )
+                .filter(affiliate__name__in=aff_names)
+                .order_by('id')
+            ).first()
             return ceo
         except Exception as e:
             logger.exception("Failed to determine CEO for employee %s: %s", getattr(employee, 'id', None), e)
@@ -175,16 +189,16 @@ class MerbanApprovalHandler(ApprovalHandler):
                 return User.objects.filter(role='hr', is_active=True).first()
             # HR requests go to Merban CEO directly
             if role == 'hr':
-                # Find Merban affiliate CEO
+                # Find Merban affiliate CEO (treat MERBAN and MERBAN CAPITAL as synonyms)
                 try:
-                    from users.models import Affiliate
-                    merban = Affiliate.objects.filter(name__iexact='MERBAN CAPITAL').first()
-                    if merban:
-                        return User.objects.filter(role='ceo', is_active=True, department__affiliate=merban).first()
+                    return (
+                        User.objects.filter(role__iexact='ceo', is_active=True)
+                        .filter(affiliate__name__in=['MERBAN', 'MERBAN CAPITAL'])
+                        .order_by('id')
+                    ).first()
                 except Exception:
-                    pass
-                # Strict: no fallback CEO
-                return None
+                    # Strict: no fallback CEO
+                    return None
             # Default: staff -> manager
             if hasattr(emp, 'manager') and emp.manager:
                 return emp.manager

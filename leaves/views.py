@@ -721,31 +721,16 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # Use list() and chain() instead of union() to avoid ORDER BY issues
             pending_requests = list(chain(merban_qs, ceo_approved_qs))
         elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
-            # CEO sees requests that require their approval - filtered by affiliate and workflow
+            # CEO sees requests that require their approval - rely on workflow's can_approve which already enforces
+            # the correct CEO based on employee affiliate (handles Merban/SDSL/SBL synonyms robustly).
             from .services import ApprovalWorkflowService
-            
-            # Get CEO's affiliate for filtering
-            ceo_affiliate = getattr(user, 'affiliate', None)
-            ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
-            
+
             # Standard (Merban): hr_approved; SDSL/SBL: pending
             candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
             filtered_ids = set()
             for req in candidate_qs:
                 handler = ApprovalWorkflowService.get_handler(req)
-
-                # Determine employee affiliate for matching
-                req_affiliate_name = ''
-                if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
-                    req_affiliate_name = req.employee.affiliate.name.strip().upper()
-                elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
-                    req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
-
-                can = handler.can_approve(user, req.status)
-                same_aff = (req_affiliate_name == ceo_affiliate_name) if ceo_affiliate_name else True
-
-                # Strict rule: include only if handler allows and affiliate matches (or admin/superuser)
-                if can and (getattr(user, 'is_superuser', False) or same_aff):
+                if handler.can_approve(user, req.status):
                     filtered_ids.add(req.id)
 
             pending_requests = self.get_queryset().filter(id__in=list(filtered_ids))
@@ -804,10 +789,6 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': 'Only CEOs can access this endpoint'}, 
                           status=status.HTTP_403_FORBIDDEN)
         
-        # Get CEO's affiliate for filtering
-        ceo_affiliate = getattr(user, 'affiliate', None)
-        ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
-        
         # Get requests that this CEO can approve (filtered by affiliate and workflow stage)
         candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
         
@@ -815,19 +796,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         filtered_requests = []
         for req in candidate_qs:
             handler = ApprovalWorkflowService.get_handler(req)
-            can = handler.can_approve(user, req.status)
-
-            # Determine employee affiliate (user or department)
-            req_affiliate_name = ''
-            if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
-                req_affiliate_name = req.employee.affiliate.name.strip().upper()
-            elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
-                req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
-
-            same_aff = (req_affiliate_name == ceo_affiliate_name) if ceo_affiliate_name else True
-
-            # Strict rule: include only if handler allows and affiliate matches (or admin/superuser)
-            if can and (getattr(user, 'is_superuser', False) or same_aff):
+            # Rely solely on handler.can_approve which already checks the exact CEO for the employee's affiliate
+            if handler.can_approve(user, req.status):
                 filtered_requests.append(req)
         
         serializer = self.get_serializer(filtered_requests, many=True)
@@ -858,7 +828,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 'hr': len(categorized['hr']),
                 'staff': len(categorized['staff'])
             },
-            'ceo_affiliate': ceo_affiliate_name  # Include for frontend filtering
+            # Keep affiliate info minimal here; handler.can_approve already scoped visibility correctly
         }
         
         return Response(response_data)

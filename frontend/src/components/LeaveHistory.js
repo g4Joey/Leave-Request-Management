@@ -12,7 +12,15 @@ function LeaveHistory() {
     const fetchRequests = async () => {
       try {
         const response = await api.get('/leaves/requests/history/');
-        setRequests(response.data.results || response.data);
+        const toArray = (data) => {
+          if (Array.isArray(data)) return data;
+          if (Array.isArray(data?.results)) return data.results;
+          if (Array.isArray(data?.items)) return data.items;
+          if (Array.isArray(data?.requests)) return data.requests;
+          if (Array.isArray(data?.data)) return data.data;
+          return [];
+        };
+        setRequests(toArray(response.data));
       } catch (error) {
         console.error('Error fetching leave history:', error);
       } finally {
@@ -50,7 +58,15 @@ function LeaveHistory() {
       
       // Refresh the requests list
       const response = await api.get('/leaves/requests/history/');
-      setRequests(response.data.results || response.data);
+      const toArray = (data) => {
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.results)) return data.results;
+        if (Array.isArray(data?.items)) return data.items;
+        if (Array.isArray(data?.requests)) return data.requests;
+        if (Array.isArray(data?.data)) return data.data;
+        return [];
+      };
+      setRequests(toArray(response.data));
       
       setCancelModal({ open: false, request: null, comments: '', loading: false });
       showToast({ type: 'success', message: 'Leave request cancelled successfully' });

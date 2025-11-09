@@ -1,25 +1,27 @@
 import axios from 'axios';
 
 function resolveApiBaseUrl() {
-  // Prefer explicit env var when provided (build-time)
-  const fromEnv = process.env.REACT_APP_API_URL;
-  if (fromEnv) return fromEnv;
-
-  // Fallback: use current host (so it works over LAN/IP) but port 8000 for Django
+  // Priority order:
+  // 1. Explicit target override (REACT_APP_API_TARGET) – useful to force direct backend hitting bypassing proxy.
+  // 2. Explicit full base URL (REACT_APP_API_URL) – production / remote DigitalOcean.
+  // 3. Local dev proxy when on CRA dev server port (3000/3001) – relative '/api'.
+  // 4. Fallback: same-origin '/api'.
   try {
-    const { protocol, hostname } = window.location;
-    const port = window.location.port;
-    // If running the React dev server (commonly port 3000), default to Django on :8000
-    if (port === '3000') {
-      return 'http://127.0.0.1:8000/api';
+    const target = process.env.REACT_APP_API_TARGET || process.env.REACT_APP_API_URL;
+    if (target) {
+      // Normalize: allow providing host without trailing /api
+      if (/\/api\/?$/.test(target)) return target.replace(/\/$/, '');
+      return target.replace(/\/$/, '') + '/api';
     }
-    // In production (unified Docker) Django lives on the same origin.
-    // Use same-origin /api.
+    const { protocol, hostname, port } = window.location;
+    const isLocal = ['localhost', '127.0.0.1'].includes(hostname);
+    if (isLocal && (port === '3000' || port === '3001')) {
+      return '/api';
+    }
     const portPart = port ? `:${port}` : '';
     return `${protocol}//${hostname}${portPart}/api`;
   } catch (e) {
-    // SSR or unexpected context: default to localhost
-    return 'http://localhost:8000/api';
+    return '/api';
   }
 }
 

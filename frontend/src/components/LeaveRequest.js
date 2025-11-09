@@ -25,7 +25,14 @@ function LeaveRequest() {
     const fetchLeaveTypes = async () => {
       try {
         const response = await api.get('/leaves/types/');
-        setLeaveTypes(response.data.results || response.data);
+        const toArray = (data) => {
+          if (Array.isArray(data)) return data;
+          if (Array.isArray(data?.results)) return data.results;
+          if (Array.isArray(data?.items)) return data.items;
+          if (Array.isArray(data?.data)) return data.data;
+          return [];
+        };
+        setLeaveTypes(toArray(response.data));
       } catch (error) {
         console.error('Error fetching leave types:', error);
       }

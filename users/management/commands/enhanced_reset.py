@@ -114,47 +114,88 @@ class Command(BaseCommand):
                 )
                 self.stdout.write(f"LeaveType: {name} ({'created' if created else 'exists'})")
             
-            # 6. Create CEOs as individual entities
-            ceo_assignments = [
-                {
-                    'email': 'ceo@umbcapital.com',
-                    'username': 'benja_ceo',
-                    'first_name': 'Benjamin',
-                    'last_name': 'Ackah'
-                },
-                {
-                    'email': 'sdslceo@umbcapital.com',
-                    'username': 'kofi_ceo', 
-                    'first_name': 'Kofi',
-                    'last_name': 'Ameyaw'
-                },
-                {
-                    'email': 'sblceo@umbcapital.com',
-                    'username': 'winslow_ceo',
-                    'first_name': 'Winslow',
-                    'last_name': 'Sackey'
-                }
+            # 6. Create 9 demo users across affiliates with env overrides (no past requests recreated)
+
+            def env(name: str, default: str) -> str:
+                return os.getenv(name, default).strip()
+
+            def username_from_email(email: str, fallback: str) -> str:
+                return (email.split('@')[0] if '@' in email and email.split('@')[0] else fallback)
+
+            # Defaults per your specification, can be overridden via environment variables
+            merban_ceo_email = env('MERBAN_CEO_EMAIL', 'ceo@umbcapital.com')
+            merban_ceo_first = env('MERBAN_CEO_FIRST', 'Benjamin')
+            merban_ceo_last  = env('MERBAN_CEO_LAST',  'Ackah')
+
+            # Updated default HR email per request (previously hr@merban.com)
+            merban_hr_email = env('MERBAN_HR_EMAIL', 'hradmin@umbcapital.com')
+            merban_hr_first = env('MERBAN_HR_FIRST', 'Nana Ama')
+            merban_hr_last  = env('MERBAN_HR_LAST',  'Daatano')
+
+            merban_mgr_email = env('MERBAN_MANAGER_EMAIL', 'jmankoe@umbcapital.com')
+            merban_mgr_first = env('MERBAN_MANAGER_FIRST', 'Joseph')
+            merban_mgr_last  = env('MERBAN_MANAGER_LAST',  'Mankoe')
+
+            merban_staff_email = env('MERBAN_STAFF_EMAIL', 'aakorfu@umbcapital.com')
+            merban_staff_first = env('MERBAN_STAFF_FIRST', 'Augustine')
+            merban_staff_last  = env('MERBAN_STAFF_LAST',  'Akorfu')
+
+            merban_senior_email = env('MERBAN_SENIOR_STAFF_EMAIL', 'gsafo@umbcapital.com')
+            merban_senior_first = env('MERBAN_SENIOR_STAFF_FIRST', 'George')
+            merban_senior_last  = env('MERBAN_SENIOR_STAFF_LAST',  'Safo')
+
+            sdsl_ceo_email = env('SDSL_CEO_EMAIL', 'sdslceo@umbcapital.com')
+            sdsl_ceo_first = env('SDSL_CEO_FIRST', 'Kofi')
+            sdsl_ceo_last  = env('SDSL_CEO_LAST',  'Ameyaw')
+
+            sdsl_staff_email = env('SDSL_STAFF_EMAIL', 'asanunu@umbcapital.com')
+            sdsl_staff_first = env('SDSL_STAFF_FIRST', 'Augustine')
+            sdsl_staff_last  = env('SDSL_STAFF_LAST',  'Sanunu')
+
+            sbl_ceo_email = env('SBL_CEO_EMAIL', 'sblceo@umbcapital.com')
+            sbl_ceo_first = env('SBL_CEO_FIRST', 'Winslow')
+            sbl_ceo_last  = env('SBL_CEO_LAST',  'Sackey')
+
+            sbl_staff_email = env('SBL_STAFF_EMAIL', 'staff@sbl.com')  # override with real email via env
+            sbl_staff_first = env('SBL_STAFF_FIRST', 'Eric')
+            sbl_staff_last  = env('SBL_STAFF_LAST',  'Nartey')
+
+            demo_users = [
+                # Merban Capital (CEO, HR, Manager, Junior Staff, Senior Staff)
+                {'email': merban_ceo_email,    'username': username_from_email(merban_ceo_email,    'merban_ceo'),  'first_name': merban_ceo_first,    'last_name': merban_ceo_last,    'role': 'ceo',          'affiliate': merban, 'department': None,                           'employee_id': 'DEMO001'},
+                {'email': merban_hr_email,     'username': username_from_email(merban_hr_email,     'merban_hr'),   'first_name': merban_hr_first,     'last_name': merban_hr_last,     'role': 'hr',           'affiliate': merban, 'department': departments.get('HR & Admin'), 'employee_id': 'DEMO002'},
+                {'email': merban_mgr_email,    'username': username_from_email(merban_mgr_email,    'merban_mgr'),  'first_name': merban_mgr_first,    'last_name': merban_mgr_last,    'role': 'manager',      'affiliate': merban, 'department': departments.get('IT'),         'employee_id': 'DEMO003'},
+                {'email': merban_staff_email,  'username': username_from_email(merban_staff_email,  'merban_staff'),'first_name': merban_staff_first,  'last_name': merban_staff_last,  'role': 'junior_staff', 'affiliate': merban, 'department': departments.get('IT'),         'employee_id': 'DEMO004'},
+                {'email': merban_senior_email, 'username': username_from_email(merban_senior_email, 'merban_snr'),  'first_name': merban_senior_first, 'last_name': merban_senior_last, 'role': 'senior_staff', 'affiliate': merban, 'department': departments.get('IT'),         'employee_id': 'DEMO009'},
+                # SDSL (no departments/managers)
+                {'email': sdsl_ceo_email,      'username': username_from_email(sdsl_ceo_email,      'sdsl_ceo'),    'first_name': sdsl_ceo_first,      'last_name': sdsl_ceo_last,      'role': 'ceo',          'affiliate': sdsl,   'department': None,                           'employee_id': 'DEMO005'},
+                {'email': sdsl_staff_email,    'username': username_from_email(sdsl_staff_email,    'sdsl_staff'),  'first_name': sdsl_staff_first,    'last_name': sdsl_staff_last,    'role': 'senior_staff', 'affiliate': sdsl,   'department': None,                           'employee_id': 'DEMO006'},
+                # SBL (no departments/managers)
+                {'email': sbl_ceo_email,       'username': username_from_email(sbl_ceo_email,       'sbl_ceo'),     'first_name': sbl_ceo_first,       'last_name': sbl_ceo_last,       'role': 'ceo',          'affiliate': sbl,    'department': None,                           'employee_id': 'DEMO007'},
+                {'email': sbl_staff_email,     'username': username_from_email(sbl_staff_email,     'sbl_staff'),   'first_name': sbl_staff_first,     'last_name': sbl_staff_last,     'role': 'senior_staff', 'affiliate': sbl,    'department': None,                           'employee_id': 'DEMO008'},
             ]
-            
+
             created_users = []
-            for i, assignment in enumerate(ceo_assignments, 1):
+            for u in demo_users:
                 user = User.objects.create_user(
-                    username=assignment['username'],
-                    email=assignment['email'],
-                    first_name=assignment['first_name'],
-                    last_name=assignment['last_name'],
-                    employee_id=f'CEO{i:03d}',  # Temporary until employee_id is removed
+                    username=u['username'],
+                    email=u['email'],
+                    first_name=u['first_name'],
+                    last_name=u['last_name'],
+                    employee_id=u['employee_id'],
                     password='ChangeMe123!',
-                    role='ceo',
-                    department=None,  # CEOs are individual entities
-                    is_staff=True,
-                    annual_leave_entitlement=30,
-                    is_active_employee=True
+                    role=u['role'],
+                    department=u['department'],
+                    affiliate=u['affiliate'],
+                    is_staff=True if u['role'] in ['hr','manager','ceo','admin'] else False,
+                    annual_leave_entitlement=25,
+                    is_active_employee=True,
+                    is_demo=True,
                 )
                 created_users.append(user)
-                self.stdout.write(f"Created CEO: {user.get_full_name()} <{user.email}>")
+                self.stdout.write(f"Created {u['role'].upper()}: {user.get_full_name()} <{user.email}>")
             
-            # 7. Create leave balances for all users (including CEOs) - using seed_demo_data logic
+            # 7. Create leave balances for current demo users only; no past requests recreated
             current_year = timezone.now().year
             default_entitlements = {
                 'Annual Leave': 25,
@@ -162,7 +203,7 @@ class Command(BaseCommand):
                 'Maternity Leave': 90,
             }
             
-            all_users = User.objects.all()
+            all_users = User.objects.filter(is_demo=True)
             all_types = LeaveType.objects.filter(is_active=True)
             balance_count = 0
             
@@ -186,20 +227,46 @@ class Command(BaseCommand):
                         balance_count += 1
             
             self.stdout.write(f"Created {balance_count} leave balances for {all_users.count()} users")
+
+            # 7b. Ensure platform superuser admin exists (not part of demo users)
+            admin_email = os.getenv('PLATFORM_ADMIN_EMAIL', 'admin@umbcapital.com').strip()
+            admin_username = os.getenv('PLATFORM_ADMIN_USERNAME', 'admin').strip()
+            admin_password = os.getenv('PLATFORM_ADMIN_PASSWORD', os.getenv('ADMIN_PASSWORD', 'AdminChangeMe123!')).strip()
+
+            if not User.objects.filter(email=admin_email).exists():
+                # Avoid username collision
+                base_username = admin_username
+                suffix = 1
+                while User.objects.filter(username=admin_username).exists():
+                    admin_username = f"{base_username}{suffix}"
+                    suffix += 1
+                su = User.objects.create_superuser(
+                    username=admin_username,
+                    email=admin_email,
+                    password=admin_password,
+                    first_name='Platform',
+                    last_name='Admin',
+                    employee_id='SUPERADMIN',
+                    role='admin',
+                    is_demo=False,
+                )
+                self.stdout.write(self.style.SUCCESS(f"Created superuser: {su.username} <{admin_email}>"))
+            else:
+                self.stdout.write(f"Superuser {admin_email} already exists – leaving unchanged")
             
         # 8. Create marker file to confirm execution
         marker_path = '/tmp/enhanced_reset_executed.txt' if os.name != 'nt' else 'enhanced_reset_executed.txt'
         with open(marker_path, 'w') as f:
             f.write(f'Enhanced reset executed at {timezone.now()}\n')
             f.write(f'Reset users: {deleted_users}\n') 
-            f.write(f'Created CEOs: {len(ceo_assignments)}\n')
+            f.write(f'Created demo users: {len(created_users)}\n')
             f.write(f'Created balances: {balance_count}\n')
         
         self.stdout.write(
             self.style.SUCCESS(
                 f'Enhanced production reset complete!\n'
                 f'- Deleted {deleted_users} users, {deleted_requests} requests, {deleted_balances} balances\n'
-                f'- Created {len(ceo_assignments)} CEOs as individual entities\n'
+                f'- Created {len(created_users)} demo users across affiliates\n'
                 f'- Created {balance_count} leave balances\n'
                 f'- All departments ready for fresh CSV imports\n'
                 f'Marker file: {marker_path}'

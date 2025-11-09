@@ -35,8 +35,19 @@ function Dashboard() {
           console.log('Requests response status:', requestsRes.status);
           console.log('Requests response data:', requestsRes.data);
           
-          const balancesData = balancesRes.data.results || balancesRes.data;
-          const requestsData = requestsRes.data.results || requestsRes.data;
+          // Normalize response shapes to arrays regardless of backend pagination/wrappers
+          const toArray = (data) => {
+            if (Array.isArray(data)) return data;
+            if (Array.isArray(data?.results)) return data.results;
+            if (Array.isArray(data?.items)) return data.items;
+            // Some backends may wrap under a key like 'requests' or 'data'
+            if (Array.isArray(data?.requests)) return data.requests;
+            if (Array.isArray(data?.data)) return data.data;
+            return [];
+          };
+
+          const balancesData = toArray(balancesRes.data);
+          const requestsData = toArray(requestsRes.data);
           
                   console.log('Processed balances data:', balancesData);
                   console.log('Balances data type:', typeof balancesData);
@@ -53,8 +64,8 @@ function Dashboard() {
           console.log('Requests data is array:', Array.isArray(requestsData));
           console.log('Requests data length:', requestsData?.length);
           
-          setBalances(balancesData);
-          setRecentRequests(requestsData);
+          setBalances(Array.isArray(balancesData) ? balancesData : []);
+          setRecentRequests(Array.isArray(requestsData) ? requestsData : []);
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);

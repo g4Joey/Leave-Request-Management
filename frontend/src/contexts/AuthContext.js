@@ -66,12 +66,56 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
+      // Clear any stale tokens before attempting a new login
+      localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
+      delete api.defaults.headers.common['Authorization'];
+
       const response = await api.post('/auth/token/', {
+        // Send both username and email for maximum compatibility with backends
         username: email,
-        password: password
+        email: email,
+        password: password,
       });
-      
-      const { access, refresh } = response.data;
+      // Validate expected token fields
+      const raw = response?.data;
+      const access = raw?.access || raw?.data?.access || raw?.token || raw?.data?.token;
+      const refresh = raw?.refresh || raw?.data?.refresh;
+      if (!access || !refresh || typeof access !== 'string' || typeof refresh !== 'string') {
+        // Helpful debug in dev without exposing secrets
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.error('Login: Unexpected token payload', { status: response?.status, dataType: typeof raw, keys: raw && Object.keys(raw) });
+        }
+        // Fallback: try form-encoded submission in case backend expects it
+        try {
+          const form = new URLSearchParams();
+          form.append('username', email);
+          form.append('email', email);
+          form.append('password', password);
+          const resp2 = await api.post('/auth/token/', form, {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json',
+            },
+          });
+          const raw2 = resp2?.data;
+          const access2 = raw2?.access || raw2?.data?.access || raw2?.token || raw2?.data?.token;
+          const refresh2 = raw2?.refresh || raw2?.data?.refresh;
+          if (!access2 || !refresh2 || typeof access2 !== 'string' || typeof refresh2 !== 'string') {
+            if (process.env.NODE_ENV !== 'production') {
+              // eslint-disable-next-line no-console
+              console.error('Login (fallback) still unexpected payload', { status: resp2?.status, dataType: typeof raw2, keys: raw2 && Object.keys(raw2) });
+            }
+            return { success: false, error: 'Invalid login response from server' };
+          }
+          localStorage.setItem('token', access2);
+          localStorage.setItem('refresh_token', refresh2);
+          api.defaults.headers.common['Authorization'] = `Bearer ${access2}`;
+        } catch (fallbackErr) {
+          return { success: false, error: 'Invalid login response from server' };
+        }
+      }
       localStorage.setItem('token', access);
       localStorage.setItem('refresh_token', refresh);
       api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
@@ -84,23 +128,29 @@ export function AuthProvider({ children }) {
           email: profile.email || email,
         }, access);
         if (!normalized.role) {
-            console.warn('AuthContext (login): Missing role in profile payload', profile);
+          // If role missing, treat as login failure to avoid landing in a generic, under-privileged UI
+          localStorage.removeItem('token');
+          localStorage.removeItem('refresh_token');
+          delete api.defaults.headers.common['Authorization'];
+          return { success: false, error: 'Profile did not include role. Please try again or contact support.' };
         }
         setUser(normalized);
       } catch (e) {
-        setUser({
-          token: access,
-          email,
-          role: '',
-          is_superuser: false,
-          grade: null,
-          grade_id: null,
-          grade_slug: null,
-        });
+        // If profile fetch fails, treat login as failed to prevent entering app without role-based features
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+        delete api.defaults.headers.common['Authorization'];
+        return { success: false, error: 'Failed to load profile after login' };
       }
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.response?.data?.detail || 'Login failed' };
+      // Prefer detailed API error messages when available
+      const data = error.response?.data;
+      const detail = (typeof data?.detail === 'string' && data.detail)
+        || (Array.isArray(data?.non_field_errors) && data.non_field_errors.join(' '))
+        || (typeof data?.error === 'string' && data.error)
+        || null;
+      return { success: false, error: detail || 'Login failed' };
     }
   };
 
