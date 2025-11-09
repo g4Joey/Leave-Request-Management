@@ -5,7 +5,6 @@ Uses Strategy Pattern and Inheritance for different approval workflows.
 """
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
-import os
 from django.db import models, transaction
 import logging
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -39,6 +38,10 @@ class ApprovalRoutingService:
         if not employee:
             return None
 
+        # Read strictness from env: when falsey, allow a sensible fallback CEO if affiliate cannot be resolved
+        strict_env = os.getenv('STRICT_CEO_AFFILIATE', '1').strip().lower()
+        is_strict = strict_env in ['1', 'true', 'yes']
+
         affiliate = getattr(employee, 'affiliate', None)
 
         # Merban-only department override: if no user.affiliate, but department.affiliate is Merban, use that
@@ -52,12 +55,8 @@ class ApprovalRoutingService:
             logger.exception("Failed to evaluate department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
 
         if not affiliate:
-            # Allow configurable fallback for legacy data where employee affiliate isn't set
-            strict_env = os.getenv('STRICT_CEO_AFFILIATE', '1').strip().lower()
-            is_strict = strict_env in ['1', 'true', 'yes']
-            if not is_strict:
-                return cls._get_default_ceo()
-            return None
+            # If strict matching is disabled, return default CEO (Merban) so CEO queues remain functional
+            return cls._get_default_ceo() if not is_strict else None
 
         # CEOs are looked up strictly by their affiliate
         try:
@@ -87,29 +86,12 @@ class ApprovalRoutingService:
     
     @classmethod
     def _get_default_ceo(cls) -> Optional[CustomUser]:
-        """Return a sensible default CEO when strict affiliate matching is disabled.
-
-        By convention, use the Merban CEO (MERBAN/MERBAN CAPITAL) as the global fallback.
-        """
-        try:
-            return (
-                User.objects.filter(role__iexact='ceo', is_active=True)
-                .filter(affiliate__name__in=['MERBAN', 'MERBAN CAPITAL'])
-                .order_by('id')
-            ).first()
-        except Exception:
-            return None
+        """Deprecated: No default CEO fallback. Return None to enforce strict affiliate matching."""
+        return None
     
     @classmethod
     def get_employee_affiliate_name(cls, employee: CustomUser) -> str:
-        """Get the affiliate name for an employee.
-
-        Returns:
-        - Affiliate name when resolvable (department affiliate preferred, else user affiliate)
-        - If not resolvable:
-            * When STRICT_CEO_AFFILIATE is falsey (0/false), return 'MERBAN CAPITAL' to follow Merban flow
-            * Otherwise return 'DEFAULT' so handler uses Merban flow only as ultimate fallback rules
-        """
+        """Get the affiliate name for an employee, or 'DEFAULT' if none."""
         if employee:
             if (
                 hasattr(employee, 'department') and employee.department and 
@@ -119,9 +101,7 @@ class ApprovalRoutingService:
             # Fallback to user's affiliate when no department is assigned (SDSL/SBL individual users)
             if hasattr(employee, 'affiliate') and getattr(employee, 'affiliate', None):
                 return employee.affiliate.name
-        strict_env = os.getenv('STRICT_CEO_AFFILIATE', '1').strip().lower()
-        is_strict = strict_env in ['1', 'true', 'yes']
-        return 'DEFAULT' if is_strict else 'MERBAN CAPITAL'
+        return 'DEFAULT'
 
 
 class ApprovalHandler(ABC):
