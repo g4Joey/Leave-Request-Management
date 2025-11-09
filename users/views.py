@@ -442,19 +442,29 @@ class StaffManagementView(APIView):
                                 'employee_id': staff.manager.employee_id
                             }
                         
-                        # Use UserSerializer for consistent affiliate data
-                        from .serializers import UserSerializer
-                        staff_data = UserSerializer(staff).data
+                        # Get affiliate consistently: department affiliate first, then direct affiliate
+                        affiliate = None
+                        affiliate_name = None
+                        affiliate_id = None
+                        
+                        if staff.department and staff.department.affiliate:
+                            affiliate = staff.department.affiliate
+                        elif staff.affiliate:
+                            affiliate = staff.affiliate
+                            
+                        if affiliate:
+                            affiliate_name = affiliate.name
+                            affiliate_id = affiliate.id
                         
                         individual_staff.append({
                             'id': staff.pk,
                             'employee_id': staff.employee_id,
                             'name': staff.get_full_name(),
                             'email': staff.email,
-                            # Use consistent affiliate data from UserSerializer
-                            'affiliate_id': staff_data.get('affiliate', {}).get('id'),
-                            'affiliate_name': staff_data.get('affiliate_name'),
-                            'affiliate': staff_data.get('affiliate_name'),  # backward compatibility
+                            # Use consistent affiliate data
+                            'affiliate_id': affiliate_id,
+                            'affiliate_name': affiliate_name,
+                            'affiliate': affiliate_name,  # backward compatibility
                             'role': staff.role,
                             'hire_date': staff.hire_date,
                             'manager': manager_info,
@@ -485,19 +495,29 @@ class StaffManagementView(APIView):
                         'name': staff.manager.get_full_name(),
                         'employee_id': staff.manager.employee_id
                     }
-                # Use UserSerializer for consistent affiliate data
-                from .serializers import UserSerializer
-                staff_data = UserSerializer(staff).data
+                # Get affiliate consistently: department affiliate first, then direct affiliate
+                affiliate = None
+                affiliate_name = None
+                affiliate_id = None
+                
+                if staff.department and staff.department.affiliate:
+                    affiliate = staff.department.affiliate
+                elif staff.affiliate:
+                    affiliate = staff.affiliate
+                    
+                if affiliate:
+                    affiliate_name = affiliate.name
+                    affiliate_id = affiliate.id
 
                 individuals_list.append({
                     'id': staff.pk,
                     'employee_id': staff.employee_id,
                     'name': staff.get_full_name(),
                     'email': staff.email,
-                    # Use consistent affiliate data from UserSerializer
-                    'affiliate_id': staff_data.get('affiliate', {}).get('id'),
-                    'affiliate_name': staff_data.get('affiliate_name'),
-                    'affiliate': staff_data.get('affiliate_name'),  # backward compatibility
+                    # Use consistent affiliate data
+                    'affiliate_id': affiliate_id,
+                    'affiliate_name': affiliate_name,
+                    'affiliate': affiliate_name,  # backward compatibility
                     'role': staff.role,
                     'hire_date': staff.hire_date,
                     'manager': manager_info,

@@ -201,8 +201,8 @@ function StaffManagement() {
             id: s.id,
             name: cleanName(s.name),
             email: s.email,
-            // Use consistent affiliate data from UserSerializer
-            affiliate: s.affiliate?.name || s.affiliate_name || 'No Affiliate',
+            // Handle affiliate data: can be string (from main API) or object (from UserSerializer)
+            affiliate: s.affiliate?.name || s.affiliate_name || s.affiliate || 'No Affiliate',
             department: deptDisplay,
             employee_id: s.employee_id,
             role: roleNorm,
