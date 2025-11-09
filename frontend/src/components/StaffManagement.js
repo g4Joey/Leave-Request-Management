@@ -199,14 +199,7 @@ function StaffManagement() {
 
           // Handle affiliate data: can be string (from main API) or object (from UserSerializer)
           // Ensure we handle all possible data types and falsy values correctly
-          let affiliateValue = 'No Affiliate';
-          if (s.affiliate && typeof s.affiliate === 'object' && s.affiliate.name) {
-            affiliateValue = s.affiliate.name;
-          } else if (s.affiliate_name && typeof s.affiliate_name === 'string' && s.affiliate_name.trim()) {
-            affiliateValue = s.affiliate_name.trim();
-          } else if (s.affiliate && typeof s.affiliate === 'string' && s.affiliate.trim()) {
-            affiliateValue = s.affiliate.trim();
-          }
+          const affiliateValue = s.affiliate_name || s.affiliate || 'No Affiliate';
 
           const record = {
             id: s.id,
