@@ -110,17 +110,6 @@ class CEOLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             'debug': debug_items,
         })
 
-    @action(detail=False, methods=['get'], url_path='recent_activity')
-    def recent_activity(self, request):
-        """Recent items where this CEO acted (ceo_approved_by)."""
-        try:
-            limit = int(request.query_params.get('limit', 15))
-        except Exception:
-            limit = 15
-        qs = LeaveRequest.objects.filter(ceo_approved_by=request.user).order_by('-ceo_approval_date', '-updated_at')[:limit]
-        data = LeaveRequestListSerializer(qs, many=True).data
-        return Response({'count': len(data), 'results': data})
-
     @action(detail=True, methods=['put'], url_path='approve')
     def approve(self, request, pk=None):
         try:

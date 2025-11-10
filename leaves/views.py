@@ -577,7 +577,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
 class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for Managers and HR only. CEO logic moved to dedicated CEOLeaveViewSet.
+    ViewSet for Managers to view and approve leave requests - supports R4
     """
     # Use list serializer for list-like endpoints to include affiliate/department details
     serializer_class = LeaveRequestListSerializer
@@ -627,8 +627,16 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
-            # Explicitly return none: CEOs must use CEOLeaveViewSet endpoints.
-            return qs.none()
+            # For CEO, include items that are pending CEO action (pending for SDSL/SBL, hr_approved for Merban)
+            # and optionally previously acted ones for visibility.
+            # CRITICAL: Filter by CEO's affiliate only
+            ceo_affiliate = user.affiliate
+            if not ceo_affiliate:
+                return qs.none()  # CEO without affiliate can't see any requests
+            
+            return qs.filter(
+                Q(employee__affiliate=ceo_affiliate) | Q(employee__department__affiliate=ceo_affiliate)
+            ).filter(status__in=['pending', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()
@@ -780,11 +788,141 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def ceo_approvals_categorized(self, request):
-        return Response({'detail': 'Deprecated. Use /leaves/ceo/approvals_categorized/'}, status=status.HTTP_410_GONE)
+        """CEO-specific endpoint that categorizes pending requests by submitter role
+        
+        Filters requests by CEO's affiliate:
+        - Merban CEO sees Merban requests (all categories: staff, hod_manager, hr)
+        - SDSL CEO sees SDSL requests (only staff category)
+        - SBL CEO sees SBL requests (only staff category)
+        """
+        from .services import ApprovalWorkflowService
+        user = request.user
+        user_role = getattr(user, 'role', None)
+        
+        if user_role != 'ceo' and not getattr(user, 'is_superuser', False):
+            return Response({'detail': 'Only CEOs can access this endpoint'}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        # Get requests that this CEO can approve (filtered by affiliate and workflow stage)
+        candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
+        
+        # Filter to only requests this CEO can actually approve
+        filtered_requests = []
+        for req in candidate_qs:
+            handler = ApprovalWorkflowService.get_handler(req)
+            # Rely solely on handler.can_approve which already checks the exact CEO for the employee's affiliate
+            if handler.can_approve(user, req.status):
+                filtered_requests.append(req)
+        
+        serializer = self.get_serializer(filtered_requests, many=True)
+        
+        # Categorize by submitter role
+        categorized = {
+            'hod_manager': [],
+            'hr': [],
+            'staff': []
+        }
+        
+        for request_data in serializer.data:
+            # Get the employee role from the request
+            submitter_role = request_data.get('employee_role', 'staff')
+            
+            if submitter_role == 'manager':
+                categorized['hod_manager'].append(request_data)
+            elif submitter_role == 'hr':
+                categorized['hr'].append(request_data)
+            else:
+                categorized['staff'].append(request_data)
+        
+        # Include CEO affiliate for frontend tab logic (used to decide which categories to show)
+        ceo_affiliate_name = getattr(getattr(user, 'affiliate', None), 'name', None)
+
+        response_data = {
+            'categories': categorized,
+            'total_count': len(serializer.data),
+            'counts': {
+                'hod_manager': len(categorized['hod_manager']),
+                'hr': len(categorized['hr']),
+                'staff': len(categorized['staff'])
+            },
+            'ceo_affiliate': ceo_affiliate_name,
+        }
+        
+        return Response(response_data)
 
     @action(detail=False, methods=['get'])
     def ceo_approvals_debug(self, request):
-        return Response({'detail': 'Deprecated. Use /leaves/ceo/approvals_debug/'}, status=status.HTTP_410_GONE)
+        """Detailed debug for CEO approvals filtering.
+
+        Returns step-by-step visibility data so we can diagnose production discrepancies
+        where admin sees requests but CEO does not.
+
+        SECURITY: Restricted to CEO or superuser. Do NOT expose in public documentation.
+        You can remove this endpoint after troubleshooting.
+        """
+        from .services import ApprovalWorkflowService
+        user = request.user
+        role = getattr(user, 'role', None)
+        if role != 'ceo' and not getattr(user, 'is_superuser', False):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Base queryset (same as get_queryset logic for CEO path)
+        base_qs = self.get_queryset()
+        base_ids = list(base_qs.values_list('id', flat=True))
+
+        # Candidate requests considered in categorized endpoint
+        candidate_qs = base_qs.filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
+
+        debug_items = []
+        for req in candidate_qs.select_related('employee__affiliate', 'employee__department__affiliate'):
+            handler = ApprovalWorkflowService.get_handler(req)
+            can_approve = False
+            try:
+                can_approve = handler.can_approve(user, req.status)
+            except Exception as e:  # capture unexpected errors
+                can_approve = False
+                handler_error = str(e)
+            else:
+                handler_error = None
+
+            employee = req.employee
+            debug_items.append({
+                'request_id': req.id,
+                'status': req.status,
+                'employee_id': getattr(employee, 'employee_id', None),
+                'employee_username': employee.username,
+                'employee_email': employee.email,
+                'employee_role': getattr(employee, 'role', None),
+                'employee_affiliate_id': getattr(getattr(employee, 'affiliate', None), 'id', None),
+                'employee_affiliate_name': getattr(getattr(employee, 'affiliate', None), 'name', None),
+                'employee_department': getattr(getattr(employee, 'department', None), 'name', None),
+                'department_affiliate_name': getattr(getattr(getattr(employee, 'department', None), 'affiliate', None), 'name', None),
+                'can_approve': can_approve,
+                'handler': handler.__class__.__name__,
+                'handler_error': handler_error,
+            })
+
+        response = {
+            'current_user': {
+                'id': user.id,
+                'email': user.email,
+                'username': user.username,
+                'role': role,
+                'is_superuser': getattr(user, 'is_superuser', False),
+                'affiliate_id': getattr(getattr(user, 'affiliate', None), 'id', None),
+                'affiliate_name': getattr(getattr(user, 'affiliate', None), 'name', None),
+            },
+            'base_queryset_ids': base_ids,
+            'candidate_request_ids': list(candidate_qs.values_list('id', flat=True)),
+            'debug_requests': debug_items,
+            'filtered_final_ids': [item['request_id'] for item in debug_items if item['can_approve']],
+            'counts': {
+                'base_queryset': len(base_ids),
+                'candidates': candidate_qs.count(),
+                'final': len([item for item in debug_items if item['can_approve']]),
+            }
+        }
+        return Response(response)
 
     @action(detail=False, methods=['get'])
     def recent_activity(self, request):
