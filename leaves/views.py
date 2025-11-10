@@ -834,6 +834,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 categorized['staff'].append(request_data)
         
+        # Include CEO affiliate for frontend tab logic (used to decide which categories to show)
+        ceo_affiliate_name = getattr(getattr(user, 'affiliate', None), 'name', None)
+
         response_data = {
             'categories': categorized,
             'total_count': len(serializer.data),
@@ -842,7 +845,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 'hr': len(categorized['hr']),
                 'staff': len(categorized['staff'])
             },
-            # Keep affiliate info minimal here; handler.can_approve already scoped visibility correctly
+            'ceo_affiliate': ceo_affiliate_name,
         }
         
         return Response(response_data)
