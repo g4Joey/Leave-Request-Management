@@ -474,6 +474,67 @@ class StaffManagementView(APIView):
                     # Return individual employees as a flattened list for SDSL/SBL
                     if individual_staff:
                         return Response(individual_staff)
+                
+                # For MERBAN and other affiliates, add individual employees to the department list
+                if affiliate.name not in ['SDSL', 'SBL']:
+                    individuals_qs = CustomUser.objects.filter(
+                        affiliate_id=affiliate_id,
+                        department__isnull=True,  # No department assignment
+                        is_active=True
+                    ).exclude(role='admin')  # Exclude admin only
+                    
+                    # Apply demo exclusion policy if needed
+                    if exclude_demo:
+                        individuals_qs = individuals_qs.exclude(is_demo=True)
+                    
+                    # Add individual employees as a special "department" if any exist
+                    if individuals_qs.exists():
+                        individual_staff = []
+                        for staff in individuals_qs:
+                            manager_info = None
+                            if staff.manager:
+                                manager_info = {
+                                    'id': staff.manager.pk,
+                                    'name': staff.manager.get_full_name(),
+                                    'employee_id': staff.manager.employee_id
+                                }
+                            
+                            # Get affiliate consistently: department affiliate first, then direct affiliate
+                            affiliate_obj = None
+                            affiliate_name = None
+                            affiliate_id_val = None
+                            
+                            if staff.department and staff.department.affiliate:
+                                affiliate_obj = staff.department.affiliate
+                            elif staff.affiliate:
+                                affiliate_obj = staff.affiliate
+                                
+                            if affiliate_obj:
+                                affiliate_name = affiliate_obj.name
+                                affiliate_id_val = affiliate_obj.id
+                            
+                            individual_staff.append({
+                                'id': staff.pk,
+                                'employee_id': staff.employee_id,
+                                'name': staff.get_full_name(),
+                                'email': staff.email,
+                                'affiliate_id': affiliate_id_val,
+                                'affiliate_name': affiliate_name,
+                                'affiliate': affiliate_name,  # backward compatibility
+                                'role': staff.role,
+                                'hire_date': staff.hire_date,
+                                'manager': manager_info,
+                            })
+                        
+                        # Add individual employees as a special section
+                        data.append({
+                            'id': f'individuals_{affiliate_id}',
+                            'name': 'Individual Employees',
+                            'description': 'Employees not assigned to a department',
+                            'staff_count': len(individual_staff),
+                            'staff': individual_staff,
+                            'manager': None
+                        })
                         
             except Affiliate.DoesNotExist:
                 pass
