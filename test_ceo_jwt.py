@@ -43,9 +43,9 @@ def test_ceo_endpoint_with_jwt():
     }
     
     print()
-    print("🔍 Test 1: CEO Approvals Categorized Endpoint")
+    print("🔍 Test 1: CEO Approvals Categorized Endpoint (isolated)")
     try:
-        response = requests.get(f"{base_url}/leaves/manager/ceo_approvals_categorized/", headers=headers)
+        response = requests.get(f"{base_url}/leaves/ceo/approvals_categorized/", headers=headers)
         print(f"   Status Code: {response.status_code}")
         
         if response.status_code == 200:
@@ -85,19 +85,17 @@ def test_ceo_endpoint_with_jwt():
         traceback.print_exc()
     
     print()
-    print("🔍 Test 2: Check Base Manager Endpoint")
+    print("🔍 Test 2: Verify CEO cannot access manager pending approvals")
     try:
-        response = requests.get(f"{base_url}/leaves/manager/", headers=headers)
-        print(f"   Base endpoint status: {response.status_code}")
+        response = requests.get(f"{base_url}/leaves/manager/pending_approvals/", headers=headers)
+        print(f"   Manager pending approvals status: {response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            print(f"   Base endpoint count: {data.get('count', 'Not found')}")
-            results = data.get('results', [])
-            print(f"   Results: {len(results)} requests")
-            if results:
-                print(f"   First result: ID {results[0].get('id')} - {results[0].get('employee_name')} (status: {results[0].get('status')})")
+            print(f"   Manager pending approvals count (should be 0 for CEO): {data.get('count', 'N/A')}")
+        else:
+            print(f"   Non-200 indicates isolation working or restricted access")
     except Exception as e:
-        print(f"   Base endpoint error: {e}")
+        print(f"   Manager pending approvals access error: {e}")
 
 if __name__ == "__main__":
     test_ceo_endpoint_with_jwt()

@@ -32,10 +32,10 @@ def test_live_ceo_endpoint():
     print(f"   Force login result: {login_success}")
     
     print()
-    print("🔍 Test 1: GET /leaves/manager/ceo_approvals_categorized/")
+        print("🔍 Test 1: GET /leaves/ceo/approvals_categorized/")
     
     try:
-        response = client.get('/leaves/manager/ceo_approvals_categorized/')
+        response = client.get('/leaves/ceo/approvals_categorized/')
         print(f"   Status Code: {response.status_code}")
         
         if response.status_code == 200:

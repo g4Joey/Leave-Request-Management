@@ -576,8 +576,10 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
 
 class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    ViewSet for Managers and HR only. CEO logic moved to dedicated CEOLeaveViewSet.
+    """ViewSet strictly for Manager/HR/Admin operations.
+
+    CEO visibility and actions have been fully migrated to `CEOLeaveViewSet`.
+    No CEO-specific logic should remain here (queues, counts, activity, approval capability).
     """
     # Use list serializer for list-like endpoints to include affiliate/department details
     serializer_class = LeaveRequestListSerializer
@@ -591,12 +593,11 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):  # type: ignore[override]
         """Return leave requests available to the current approver.
 
-        Rules:
-        - manager: only requests from their direct reports (employee__manager = self.user)
-        - hr: all requests that are at or beyond Manager stage
-        - ceo: all requests that are at or beyond HR stage
-        - admin/superuser: all requests
-        - others: none
+    Rules:
+    - manager: only requests from their direct reports / HOD scope (excluding SDSL/SBL CEO-first affiliates)
+    - hr: requests at or beyond manager stage, plus CEO-approved for SDSL/SBL finalization
+    - admin/superuser: all requests
+    - others (including CEO): none
         """
         user = self.request.user
         qs = LeaveRequest.objects.all()
@@ -626,8 +627,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             # Items that have passed Manager stage or are pending (to allow visibility)
             return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
+        # CEO: must use CEOLeaveViewSet (return none to enforce isolation)
         if role == 'ceo':
-            # Explicitly return none: CEOs must use CEOLeaveViewSet endpoints.
             return qs.none()
 
         # Everyone else: no access
@@ -663,7 +664,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                     )
                 )
             )
-        if role in ['hr', 'ceo']:
+        if role in ['hr']:
             # Defer to workflow service for stage/affiliate-specific checks
             try:
                 from .services import ApprovalWorkflowService
@@ -680,7 +681,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         stage_override = (request.query_params.get('stage') or '').lower().strip() if request.query_params.get('stage') else ''
         
         # Filter requests based on user's role and approval stage
-        if user_role == 'manager':
+    if user_role == 'manager':
             # Managers see requests pending their approval
             # Safety: HR/admin requests should never be in manager queue
             # Also, exclude SDSL/SBL affiliates entirely (CEO-first; manager should not see these)
@@ -726,20 +727,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
             # Use list() and chain() instead of union() to avoid ORDER BY issues
             pending_requests = list(chain(merban_qs, ceo_approved_qs))
-        elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
-            # CEO sees requests that require their approval - rely on workflow's can_approve which already enforces
-            # the correct CEO based on employee affiliate (handles Merban/SDSL/SBL synonyms robustly).
-            from .services import ApprovalWorkflowService
-
-            # Standard (Merban): hr_approved; SDSL/SBL: pending
-            candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
-            filtered_ids = set()
-            for req in candidate_qs:
-                handler = ApprovalWorkflowService.get_handler(req)
-                if handler.can_approve(user, req.status):
-                    filtered_ids.add(req.id)
-
-            pending_requests = self.get_queryset().filter(id__in=list(filtered_ids))
+        # CEO branch removed: CEO must use CEOLeaveViewSet for approvals
         elif user_role == 'admin':
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
             # Admins can still browse all requests via list endpoints
@@ -778,13 +766,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         
         return Response(response_data)
 
-    @action(detail=False, methods=['get'])
-    def ceo_approvals_categorized(self, request):
-        return Response({'detail': 'Deprecated. Use /leaves/ceo/approvals_categorized/'}, status=status.HTTP_410_GONE)
-
-    @action(detail=False, methods=['get'])
-    def ceo_approvals_debug(self, request):
-        return Response({'detail': 'Deprecated. Use /leaves/ceo/approvals_debug/'}, status=status.HTTP_410_GONE)
+    # Removed deprecated CEO endpoints (approvals_categorized / approvals_debug) to ensure isolation
 
     @action(detail=False, methods=['get'])
     def recent_activity(self, request):
@@ -808,10 +790,10 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         qs = LeaveRequest.objects.all()
 
         if getattr(user, 'is_superuser', False) or role == 'admin':
-            # Treat admin like CEO for activity view
-            acted_qs = qs.filter(ceo_approved_by=user).order_by('-ceo_approval_date', '-updated_at')
-        elif role == 'ceo':
-            acted_qs = qs.filter(ceo_approved_by=user).order_by('-ceo_approval_date', '-updated_at')
+            # Admin recent activity includes actions across all stages (manager/hr/ceo). Keep CEO approvals for audit.
+            acted_qs = qs.filter(
+                Q(manager_approved_by=user) | Q(hr_approved_by=user) | Q(ceo_approved_by=user)
+            ).order_by('-updated_at')
         elif role == 'hr':
             acted_qs = qs.filter(hr_approved_by=user).order_by('-hr_approval_date', '-updated_at')
         elif role == 'manager':
@@ -1064,16 +1046,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 ).count()
                 ceo_approved_count = self.get_queryset().filter(status='ceo_approved').count()
                 counts['hr_approvals'] = merban_count + ceo_approved_count
-            elif user_role == 'ceo':
-                # Use same logic as pending_approvals endpoint
-                from .services import ApprovalWorkflowService
-                ceo_count = 0
-                candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
-                for req in candidate_qs:
-                    handler = ApprovalWorkflowService.get_handler(req)
-                    if handler.can_approve(user, req.status):
-                        ceo_count += 1
-                counts['ceo_approvals'] = ceo_count
+            # CEO counts removed: handled by CEOLeaveViewSet.approval_counts (to be implemented)
             elif user_role == 'admin':
                 counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
                 counts['hr_approvals'] = self.get_queryset().filter(status__in=['manager_approved', 'ceo_approved']).count()
