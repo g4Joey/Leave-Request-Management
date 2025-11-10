@@ -851,6 +851,80 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(response_data)
 
     @action(detail=False, methods=['get'])
+    def ceo_approvals_debug(self, request):
+        """Detailed debug for CEO approvals filtering.
+
+        Returns step-by-step visibility data so we can diagnose production discrepancies
+        where admin sees requests but CEO does not.
+
+        SECURITY: Restricted to CEO or superuser. Do NOT expose in public documentation.
+        You can remove this endpoint after troubleshooting.
+        """
+        from .services import ApprovalWorkflowService
+        user = request.user
+        role = getattr(user, 'role', None)
+        if role != 'ceo' and not getattr(user, 'is_superuser', False):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Base queryset (same as get_queryset logic for CEO path)
+        base_qs = self.get_queryset()
+        base_ids = list(base_qs.values_list('id', flat=True))
+
+        # Candidate requests considered in categorized endpoint
+        candidate_qs = base_qs.filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
+
+        debug_items = []
+        for req in candidate_qs.select_related('employee__affiliate', 'employee__department__affiliate'):
+            handler = ApprovalWorkflowService.get_handler(req)
+            can_approve = False
+            try:
+                can_approve = handler.can_approve(user, req.status)
+            except Exception as e:  # capture unexpected errors
+                can_approve = False
+                handler_error = str(e)
+            else:
+                handler_error = None
+
+            employee = req.employee
+            debug_items.append({
+                'request_id': req.id,
+                'status': req.status,
+                'employee_id': getattr(employee, 'employee_id', None),
+                'employee_username': employee.username,
+                'employee_email': employee.email,
+                'employee_role': getattr(employee, 'role', None),
+                'employee_affiliate_id': getattr(getattr(employee, 'affiliate', None), 'id', None),
+                'employee_affiliate_name': getattr(getattr(employee, 'affiliate', None), 'name', None),
+                'employee_department': getattr(getattr(employee, 'department', None), 'name', None),
+                'department_affiliate_name': getattr(getattr(getattr(employee, 'department', None), 'affiliate', None), 'name', None),
+                'can_approve': can_approve,
+                'handler': handler.__class__.__name__,
+                'handler_error': handler_error,
+            })
+
+        response = {
+            'current_user': {
+                'id': user.id,
+                'email': user.email,
+                'username': user.username,
+                'role': role,
+                'is_superuser': getattr(user, 'is_superuser', False),
+                'affiliate_id': getattr(getattr(user, 'affiliate', None), 'id', None),
+                'affiliate_name': getattr(getattr(user, 'affiliate', None), 'name', None),
+            },
+            'base_queryset_ids': base_ids,
+            'candidate_request_ids': list(candidate_qs.values_list('id', flat=True)),
+            'debug_requests': debug_items,
+            'filtered_final_ids': [item['request_id'] for item in debug_items if item['can_approve']],
+            'counts': {
+                'base_queryset': len(base_ids),
+                'candidates': candidate_qs.count(),
+                'final': len([item for item in debug_items if item['can_approve']]),
+            }
+        }
+        return Response(response)
+
+    @action(detail=False, methods=['get'])
     def recent_activity(self, request):
         """Return the most recent requests the current approver acted on.
 
