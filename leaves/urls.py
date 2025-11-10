@@ -8,6 +8,7 @@ from .views import (
     EmploymentGradeViewSet,
     LeaveGradeEntitlementViewSet,
 )
+from .views_ceo import CEOLeaveViewSet
 from .role_views import RoleEntitlementViewSet
 from .approval_dashboard import approval_dashboard
 from .views_overlap import OverlapAPIView, OverlapSummaryAPIView
@@ -17,6 +18,7 @@ router.register(r'requests', LeaveRequestViewSet, basename='leave-requests')
 router.register(r'balances', LeaveBalanceViewSet, basename='leave-balances')
 router.register(r'types', LeaveTypeViewSet, basename='leave-types')
 router.register(r'manager', ManagerLeaveViewSet, basename='manager-leaves')
+router.register(r'ceo', CEOLeaveViewSet, basename='ceo-leaves')
 router.register(r'role-entitlements', RoleEntitlementViewSet, basename='role-entitlements')
 
 urlpatterns = [

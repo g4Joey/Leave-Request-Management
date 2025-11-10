@@ -21,7 +21,7 @@ function CEOApprovals() {
     try {
       setLoading(true);
       // Get categorized pending requests for CEO approval
-      const response = await api.get('/leaves/manager/ceo_approvals_categorized/');
+  const response = await api.get('/leaves/ceo/approvals_categorized/');
       
       setRequests(response.data.categories || {
         hod_manager: [],
@@ -63,7 +63,7 @@ function CEOApprovals() {
     setLoadingActionById(prev => ({ ...prev, [requestId]: action }));
 
     try {
-      await api.put(`/leaves/manager/${requestId}/${action}/`, {
+      await api.put(`/leaves/ceo/${requestId}/${action}/`, {
         approval_comments: comments || ''
       });
       
