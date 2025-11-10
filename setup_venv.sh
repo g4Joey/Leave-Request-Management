@@ -1,6 +1,7 @@
 #!/bin/bash
 # Setup script for Leave Request Management System
 # This creates a virtual environment and installs all dependencies
+# Requires Python 3.13+
 
 set -e  # Exit on error
 
@@ -9,24 +10,32 @@ echo "Setting up Leave Management System"
 echo "=========================================="
 echo ""
 
-# Check if Python 3 is installed
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Error: python3 is not installed"
-    echo "Please install Python 3.8+ from https://www.python.org/downloads/"
+# Check if Python 3.13 is installed
+if ! command -v python3.13 &> /dev/null; then
+    echo "❌ Error: Python 3.13 is not installed"
+    echo ""
+    echo "This project requires Python 3.13+. Your current version:"
+    python3 --version 2>&1 || echo "Python 3 not found"
+    echo ""
+    echo "📖 Please see INSTALL_PYTHON.md for installation instructions"
+    echo ""
+    echo "Quick install with Homebrew:"
+    echo "  brew install python@3.13"
+    echo ""
     exit 1
 fi
 
-echo "✅ Python 3 found: $(python3 --version)"
+echo "✅ Python 3.13 found: $(python3.13 --version)"
 echo ""
 
 # Create virtual environment
-echo "📦 Creating virtual environment..."
+echo "📦 Creating virtual environment with Python 3.13..."
 if [ -d ".venv" ]; then
     echo "⚠️  .venv directory already exists. Removing it..."
     rm -rf .venv
 fi
 
-python3 -m venv .venv
+python3.13 -m venv .venv
 echo "✅ Virtual environment created"
 echo ""
 
