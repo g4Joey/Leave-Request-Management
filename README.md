@@ -99,6 +99,56 @@ PUT  /api/leaves/manager/{id}/approve/       # Approve request (R4)
 PUT  /api/leaves/manager/{id}/reject/        # Reject request (R4)
 ```
 
+### Role-Specific Endpoints (Post-Separation)
+
+Roles and their primary endpoints:
+
+- Staff (self)
+   - Base: `/api/leaves/requests/`
+   - Listing: standard CRUD
+   - Recent: `/api/leaves/requests/?user=me` (planned)
+
+- Manager
+   - Base: `/api/leaves/manager/`
+   - Pending: `/api/leaves/manager/pending_approvals/`
+   - Recent: `/api/leaves/manager/recent_activity/`
+   - Approvals: `/api/leaves/manager/{id}/approve|reject|cancel/` (to be moved)
+
+- HR
+   - Base: `/api/leaves/manager/`
+   - Pending: `/api/leaves/manager/pending_approvals/?stage=hr`
+   - Recent: `/api/leaves/manager/recent_activity/`
+   - Approvals: same as manager (will migrate)
+
+- CEO
+   - Base: `/api/leaves/ceo/`
+   - Categorized: `/api/leaves/ceo/approvals_categorized/`
+   - Recent: `/api/leaves/ceo/recent_activity/`
+   - Approvals: `/api/leaves/ceo/{id}/approve|reject/`
+
+- Admin
+   - Mixed visibility; use stage override params
+   - Recent: `/api/leaves/manager/recent_activity/`
+   - Approvals: all approve endpoints
+
+### Separation Roadmap (Implemented & Pending)
+
+Implemented:
+
+- Dedicated `CEOLeaveViewSet` under `/api/leaves/ceo/`.
+- Removed CEO logic from `ManagerLeaveViewSet`.
+- Frontend `CEOApprovals.js` now hits `/api/leaves/ceo/approvals_categorized/`.
+- Dashboard CEO branch uses `/api/leaves/ceo/recent_activity/`.
+
+Pending / Recommended:
+
+1. Extract `ManagerApprovalViewSet` for approve/reject/cancel logic (remove from listing viewset).
+2. Introduce `StaffSelfServiceViewSet` for personal history & cancellation.
+3. Split approval counts into dedicated endpoints: `/api/leaves/manager/approval_counts/`, `/api/leaves/hr/approval_counts/`, `/api/leaves/ceo/approval_counts/`.
+4. Frontend refactor: break `ManagerDashboard.js` into role-specific components; create `useCeoApprovalCounts` hook.
+5. Add integration tests covering: Merban multi-stage flow, SDSL first-approver path, SBL first-approver path.
+6. Remove deprecated manager CEO endpoints after frontend fully migrated.
+
 ### Example API Usage
 
 **Get Authentication Token:**

@@ -6,6 +6,7 @@ function Dashboard() {
   const { user } = useAuth();
   const [balances, setBalances] = useState([]);
   const [recentRequests, setRecentRequests] = useState([]);
+  const [ceoSummary, setCeoSummary] = useState(null); // Holds categorized counts for CEO
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,11 +19,23 @@ function Dashboard() {
         
         // CEO users get different dashboard data - show recently approved/rejected requests
         if (user?.role === 'ceo') {
-          // Use dedicated endpoint that returns items the CEO acted on
-          const actedRequestsRes = await api.get('/leaves/manager/recent_activity/?limit=15');
+          // CEO: fetch both recent activity and categorized approvable items
+          const [actedRequestsRes, categorizedRes] = await Promise.all([
+            api.get('/leaves/ceo/recent_activity/?limit=15'),
+            api.get('/leaves/ceo/approvals_categorized/')
+          ]);
           const acted = actedRequestsRes.data.results || actedRequestsRes.data || [];
           setRecentRequests(Array.isArray(acted) ? acted.slice(0, 5) : []);
           setBalances([]); // CEOs don't have leave balances
+          // Normalize categorized summary
+          const summary = {
+            total: categorizedRes.data?.total_count || 0,
+            staff: categorizedRes.data?.counts?.staff || 0,
+            hod_manager: categorizedRes.data?.counts?.hod_manager || 0,
+            hr: categorizedRes.data?.counts?.hr || 0,
+            affiliate: categorizedRes.data?.ceo_affiliate || ''
+          };
+          setCeoSummary(summary);
         } else {
           const [balancesRes, requestsRes] = await Promise.all([
             api.get('/leaves/balances/current_year_full/'),
@@ -115,6 +128,27 @@ function Dashboard() {
               : 'Track your leave balances, submit new requests, and view your leave history.'
             }
           </p>
+          {user?.role === 'ceo' && ceoSummary && (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <div className="px-3 py-2 bg-blue-50 rounded text-xs font-medium text-blue-700">
+                Pending (Total): {ceoSummary.total}
+              </div>
+              <div className="px-3 py-2 bg-gray-50 rounded text-xs font-medium text-gray-700">
+                Staff: {ceoSummary.staff}
+              </div>
+              <div className="px-3 py-2 bg-indigo-50 rounded text-xs font-medium text-indigo-700">
+                Managers/HOD: {ceoSummary.hod_manager}
+              </div>
+              <div className="px-3 py-2 bg-pink-50 rounded text-xs font-medium text-pink-700">
+                HR: {ceoSummary.hr}
+              </div>
+              {ceoSummary.affiliate && (
+                <div className="px-3 py-2 bg-green-50 rounded text-xs font-medium text-green-700">
+                  Affiliate: {ceoSummary.affiliate}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
