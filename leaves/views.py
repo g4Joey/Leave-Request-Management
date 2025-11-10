@@ -629,7 +629,14 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         if role == 'ceo':
             # For CEO, include items that are pending CEO action (pending for SDSL/SBL, hr_approved for Merban)
             # and optionally previously acted ones for visibility.
-            return qs.filter(status__in=['pending', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
+            # CRITICAL: Filter by CEO's affiliate only
+            ceo_affiliate = user.affiliate
+            if not ceo_affiliate:
+                return qs.none()  # CEO without affiliate can't see any requests
+            
+            return qs.filter(
+                Q(employee__affiliate=ceo_affiliate) | Q(employee__department__affiliate=ceo_affiliate)
+            ).filter(status__in=['pending', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()

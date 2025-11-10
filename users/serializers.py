@@ -67,7 +67,8 @@ class DepartmentSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     department = DepartmentSerializer(read_only=True)
     department_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    affiliate_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    affiliate_id = serializers.SerializerMethodField(read_only=True)  # Changed to read-only method field
+    affiliate_id_write = serializers.IntegerField(write_only=True, required=False, allow_null=True, source='affiliate_id')
     affiliate = serializers.SerializerMethodField(read_only=True)
     affiliate_name = serializers.SerializerMethodField(read_only=True)
     password = serializers.CharField(write_only=True, required=False)
@@ -77,6 +78,14 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_role_display(self, obj):
         return obj.get_role_display_name()
+
+    def get_affiliate_id(self, obj):
+        """Get user's affiliate ID with consistent logic"""
+        if obj.department and obj.department.affiliate:
+            return obj.department.affiliate.id
+        elif obj.affiliate:
+            return obj.affiliate.id
+        return None
 
     def get_affiliate(self, obj):
         """Get user's affiliate with consistent logic: department affiliate first, then direct affiliate"""
@@ -105,8 +114,8 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'employee_id', 'role', 'role_display', 'department', 'department_id', 'affiliate_id',
-            'affiliate', 'affiliate_name',  # Added affiliate information
+            'employee_id', 'role', 'role_display', 'department', 'department_id', 'affiliate_id_write',
+            'affiliate_id', 'affiliate', 'affiliate_name',  # Added affiliate information
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser'
