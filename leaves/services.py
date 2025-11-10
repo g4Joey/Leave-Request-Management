@@ -25,11 +25,14 @@ class ApprovalRoutingService:
         """Determine the appropriate CEO strictly by affiliate (no fallback).
 
         Rules (case-insensitive):
-        - Merban Capital: employees (including those in any Merban department) → Merban CEO
-        - SDSL: employees → SDSL CEO
-        - SBL: employees → SBL CEO
+        - SDSL/SBL: employees → their respective CEO (via user.affiliate)
+        - Merban Capital: employees (via user.affiliate OR department.affiliate for legacy) → Merban CEO
         - Missing/No affiliate → None (request will not appear in any CEO queue until data is fixed)
 
+        Priority order:
+        1. User's direct affiliate (correct for SDSL/SBL and modern Merban users)
+        2. Department's affiliate (ONLY for legacy Merban employees without user.affiliate)
+        
         CEOs are attached to Affiliates (not departments). Only Merban uses departments.
         """
         logger = logging.getLogger('leaves')
@@ -37,19 +40,30 @@ class ApprovalRoutingService:
         if not employee:
             return None
 
+        # Primary: Use employee's direct affiliate (correct for SDSL/SBL and most Merban)
         affiliate = getattr(employee, 'affiliate', None)
 
-        # Merban-only department override: if no user affiliate but department affiliate is Merban, adopt it
-        try:
-            if not affiliate and getattr(employee, 'department', None) and getattr(employee.department, 'affiliate', None):
-                dep_aff = employee.department.affiliate
-                name = (getattr(dep_aff, 'name', '') or '').strip().lower()
-                if name in ('merban capital', 'merban'):
-                    affiliate = dep_aff
-        except Exception as e:
-            logger.exception("Failed department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
+        # Fallback: Merban-only department override (if no user affiliate but department affiliate is Merban, adopt it)
+        # This is ONLY for legacy Merban users who don't have user.affiliate set
+        if not affiliate:
+            try:
+                if getattr(employee, 'department', None) and getattr(employee.department, 'affiliate', None):
+                    dep_aff = employee.department.affiliate
+                    name = (getattr(dep_aff, 'name', '') or '').strip().lower()
+                    # ONLY use department affiliate if it's Merban
+                    if name in ('merban capital', 'merban'):
+                        affiliate = dep_aff
+                        logger.debug("Using department affiliate override for employee %s: %s", 
+                                   getattr(employee, 'id', None), name)
+            except Exception as e:
+                logger.exception("Failed department affiliate override for employee %s: %s", 
+                               getattr(employee, 'id', None), e)
 
         if not affiliate:
+            logger.warning("No affiliate found for employee %s (id=%s, dept=%s)", 
+                         getattr(employee, 'email', 'unknown'),
+                         getattr(employee, 'id', None),
+                         getattr(getattr(employee, 'department', None), 'name', None))
             return None
 
         # CEOs are looked up strictly by affiliate name (with synonym grouping for Merban)
@@ -63,14 +77,30 @@ class ApprovalRoutingService:
                 aff_names = ['SBL']
             else:
                 aff_names = [getattr(affiliate, 'name', '')]
+            
+            logger.debug("Looking for CEO with role='ceo', affiliate in %s for employee %s", 
+                       aff_names, getattr(employee, 'id', None))
+            
             ceo = (
                 User.objects.filter(role__iexact='ceo', is_active=True)
                 .filter(affiliate__name__in=aff_names)
                 .order_by('id')
             ).first()
+            
+            if ceo:
+                logger.debug("Found CEO %s (id=%s, affiliate=%s) for employee %s", 
+                           getattr(ceo, 'email', 'unknown'),
+                           getattr(ceo, 'id', None),
+                           getattr(getattr(ceo, 'affiliate', None), 'name', None),
+                           getattr(employee, 'id', None))
+            else:
+                logger.warning("No CEO found for affiliate names %s for employee %s", 
+                             aff_names, getattr(employee, 'id', None))
+            
             return ceo
         except Exception as e:
-            logger.exception("Failed to determine CEO for employee %s: %s", getattr(employee, 'id', None), e)
+            logger.exception("Failed to determine CEO for employee %s: %s", 
+                           getattr(employee, 'id', None), e)
             return None
     
     # Removed fallback helper: strict routing only; requests with missing affiliate yield None
@@ -82,18 +112,30 @@ class ApprovalRoutingService:
         Strict mode: We do not fabricate a placeholder affiliate. Missing or unknown affiliate
         should prevent routing/approval until data is corrected. Previously a 'DEFAULT' fallback
         implicitly treated requests as Merban; this has been removed.
+        
+        Priority order (matching get_ceo_for_employee logic):
+        1. User's direct affiliate (if present)
+        2. Department's affiliate (ONLY as Merban fallback if user affiliate is missing)
         """
         if not employee:
             return ''
-        # Prefer department affiliate for Merban department override (matches CEO routing logic)
+        
+        # Primary: Use user's direct affiliate if present (correct for SDSL/SBL and most Merban)
+        if hasattr(employee, 'affiliate') and getattr(employee, 'affiliate', None):
+            return (employee.affiliate.name or '').strip().upper()
+        
+        # Fallback: Department affiliate (ONLY for Merban employees without direct affiliate)
+        # This matches the logic in get_ceo_for_employee to ensure consistency
         if (
             hasattr(employee, 'department') and employee.department and 
             hasattr(employee.department, 'affiliate') and employee.department.affiliate
         ):
-            return (employee.department.affiliate.name or '').strip().upper()
-        # Fall back to user's own affiliate if present
-        if hasattr(employee, 'affiliate') and getattr(employee, 'affiliate', None):
-            return (employee.affiliate.name or '').strip().upper()
+            dept_aff_name = (employee.department.affiliate.name or '').strip().upper()
+            # Only use department affiliate if it's Merban (legacy Merban users without user.affiliate)
+            if dept_aff_name in ('MERBAN', 'MERBAN CAPITAL'):
+                return dept_aff_name
+        
+        # No affiliate found
         return ''
 
 
