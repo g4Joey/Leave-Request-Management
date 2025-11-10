@@ -40,7 +40,7 @@ def test_ceo_endpoint_properly():
     client.force_authenticate(user=benjamin)
     
     try:
-    response = client.get('/leaves/ceo/approvals_categorized/')
+        response = client.get('/leaves/manager/ceo_approvals_categorized/')
         print(f"   Status Code: {response.status_code}")
         
         if response.status_code == 200:
@@ -85,7 +85,7 @@ def test_ceo_endpoint_properly():
     client2.credentials(HTTP_AUTHORIZATION=f'Bearer {jwt_token}')
     
     try:
-    response2 = client2.get('/leaves/ceo/approvals_categorized/')
+        response2 = client2.get('/leaves/manager/ceo_approvals_categorized/')
         print(f"   Status Code: {response2.status_code}")
         
         if response2.status_code == 200:
