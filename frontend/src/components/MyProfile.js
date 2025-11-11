@@ -33,6 +33,14 @@ function MyProfile() {
     confirm_password: ''
   });
 
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setProfileData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
   // Refresh user data when component loads
   useEffect(() => {
     refreshUser();
