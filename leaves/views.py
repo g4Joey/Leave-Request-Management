@@ -1157,8 +1157,39 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                         ceo_count += 1
                 counts['ceo_approvals'] = ceo_count
             elif user_role == 'admin':
-                counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
-                counts['hr_approvals'] = self.get_queryset().filter(status__in=['manager_approved', 'ceo_approved']).count()
+                from django.db.models import Q as _Q
+                # Mirror pending_approvals(admin) manager queue: exclude HR/admin submitters and SDSL/SBL affiliates
+                counts['manager_approvals'] = (
+                    self.get_queryset()
+                    .filter(status='pending')
+                    .exclude(employee__role__in=['hr', 'admin'])
+                    .exclude(
+                        _Q(employee__department__affiliate__name__iexact='SDSL') |
+                        _Q(employee__department__affiliate__name__iexact='SBL') |
+                        _Q(employee__affiliate__name__iexact='SDSL') |
+                        _Q(employee__affiliate__name__iexact='SBL')
+                    )
+                    .count()
+                )
+                # HR approvals for admin: Merban manager_approved + SDSL/SBL ceo_approved (exclude admin submitters)
+                merban_filter = (
+                    _Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
+                    _Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
+                )
+                merban_count = (
+                    self.get_queryset()
+                    .filter(status='manager_approved')
+                    .filter(merban_filter)
+                    .exclude(employee__role='admin')
+                    .count()
+                )
+                ceo_approved_count = (
+                    self.get_queryset()
+                    .filter(status='ceo_approved')
+                    .exclude(employee__role='admin')
+                    .count()
+                )
+                counts['hr_approvals'] = merban_count + ceo_approved_count
                 counts['ceo_approvals'] = self.get_queryset().filter(status='hr_approved').count()
 
             counts['total'] = counts['manager_approvals'] + counts['hr_approvals'] + counts['ceo_approvals']

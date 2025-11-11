@@ -2,7 +2,7 @@ import os
 import json
 from django.core.management.base import BaseCommand
 from django.core.management import call_command
-from users.models import CustomUser, Department
+from users.models import CustomUser, Department, Affiliate
 
 
 class Command(BaseCommand):
@@ -108,7 +108,8 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.ERROR(f'Invalid SEED_USERS JSON: {e}'))
                     users_data = []
 
-                # Preload departments map
+                # Preload affiliates and departments map
+                aff_map = {a.name.strip().lower(): a for a in Affiliate.objects.all()}
                 dept_map = {d.name: d for d in Department.objects.all()}
                 created_count = 0
                 updated_count = 0
@@ -123,16 +124,34 @@ class Command(BaseCommand):
                     last_name = u.get('last_name', '')
                     employee_id = u.get('employee_id') or f'AUTO_{username}'.upper()
                     email = u.get('email') or f'{username}@example.com'
+                    aff_name = (u.get('affiliate') or '').strip()
                     dept_name = u.get('department')
                     manager_username = u.get('manager')
                     password = u.get('password')  # only set on create; never override existing
+
+                    # Resolve affiliate first (always prefer affiliate over department)
+                    affiliate_obj = None
+                    if aff_name:
+                        key = aff_name.lower()
+                        affiliate_obj = aff_map.get(key)
+                        if not affiliate_obj:
+                            affiliate_obj = Affiliate.objects.create(name=aff_name)
+                            aff_map[key] = affiliate_obj
+                            self.stdout.write(f"Created affiliate '{aff_name}'")
 
                     dept_obj = None
                     if dept_name:
                         dept_obj = dept_map.get(dept_name)
                         if not dept_obj:
-                            dept_obj, _c = Department.objects.get_or_create(name=dept_name, defaults={'description': ''})
+                            dept_obj, _c = Department.objects.get_or_create(
+                                name=dept_name,
+                                defaults={'description': '', 'affiliate': affiliate_obj}
+                            )
                             dept_map[dept_name] = dept_obj
+                        elif affiliate_obj and dept_obj.affiliate_id != affiliate_obj.id:
+                            dept_obj.affiliate = affiliate_obj
+                            dept_obj.save(update_fields=['affiliate'])
+                            self.stdout.write(f"Linked department '{dept_name}' to affiliate '{affiliate_obj.name}'")
 
                     manager_obj = None
                     if manager_username:
@@ -146,6 +165,7 @@ class Command(BaseCommand):
                             'last_name': last_name,
                             'employee_id': employee_id,
                             'email': email,
+                            'affiliate': affiliate_obj,
                             'department': dept_obj,
                             'manager': manager_obj,
                         }
@@ -166,6 +186,7 @@ class Command(BaseCommand):
                             ('role', role),
                             ('first_name', first_name),
                             ('last_name', last_name),
+                            ('affiliate', affiliate_obj),
                             ('department', dept_obj),
                             ('manager', manager_obj),
                             ('email', email),

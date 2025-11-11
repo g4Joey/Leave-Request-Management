@@ -8,6 +8,7 @@ from django.core.management import call_command
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from leaves.models import LeaveType, LeaveBalance
+from users.models import Affiliate, Department
 import json
 import os
 
@@ -55,31 +56,93 @@ class Command(BaseCommand):
             with open(seed_file, 'r') as f:
                 users_data = json.load(f)
             
+            # Preload affiliate and department maps for efficient resolution
+            affiliate_map = {a.name.lower(): a for a in Affiliate.objects.all()}
+            dept_map = {d.name.lower(): d for d in Department.objects.all()}
+
             for user_data in users_data:
+                if not isinstance(user_data, dict):
+                    continue
                 username = user_data.get('username') or user_data.get('email')
+                if not username:
+                    continue
+                raw_affiliate = (user_data.get('affiliate') or '').strip()
+                affiliate_obj = None
+                if raw_affiliate:
+                    key = raw_affiliate.lower()
+                    affiliate_obj = affiliate_map.get(key)
+                    if not affiliate_obj:
+                        affiliate_obj = Affiliate.objects.create(name=raw_affiliate)
+                        affiliate_map[key] = affiliate_obj
+                        self.stdout.write(f"  Created affiliate: {raw_affiliate}")
+
+                # Department only meaningful for Merban Capital (or if explicitly provided); ensure affiliate link
+                dept_name = (user_data.get('department') or '').strip()
+                dept_obj = None
+                if dept_name:
+                    dkey = dept_name.lower()
+                    dept_obj = dept_map.get(dkey)
+                    if not dept_obj:
+                        dept_obj = Department.objects.create(name=dept_name, affiliate=affiliate_obj if affiliate_obj else None)
+                        dept_map[dkey] = dept_obj
+                        self.stdout.write(f"  Created department: {dept_name}")
+                    elif affiliate_obj and dept_obj.affiliate_id != affiliate_obj.id:
+                        dept_obj.affiliate = affiliate_obj
+                        dept_obj.save(update_fields=['affiliate'])
+                        self.stdout.write(f"  Linked existing department '{dept_name}' to affiliate '{affiliate_obj.name}'")
+
+                role = user_data.get('role', 'junior_staff')
+                employee_id = user_data.get('employee_id') or f"AUTO_{username}".upper()
+                first_name = user_data.get('first_name', '')
+                last_name = user_data.get('last_name', '')
+                email = user_data.get('email', username)
+                manager_username = user_data.get('manager')
+                manager_obj = None
+                if manager_username:
+                    manager_obj = User.objects.filter(username=manager_username).first()
+
                 user, created = User.objects.get_or_create(
                     username=username,
                     defaults={
-                        'email': user_data.get('email', username),
-                        'first_name': user_data.get('first_name', ''),
-                        'last_name': user_data.get('last_name', ''),
-                        'role': user_data.get('role', 'employee'),
-                        'employee_id': user_data.get('employee_id', ''),
-                        'department': user_data.get('department', ''),
+                        'email': email,
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'role': role,
+                        'employee_id': employee_id,
+                        'affiliate': affiliate_obj,
+                        'department': dept_obj,
+                        'manager': manager_obj,
                         'is_active': True,
                         'is_active_employee': True,
                     }
                 )
                 if created:
-                    # Set password if provided
-                    if 'password' in user_data:
-                        user.set_password(user_data['password'])
+                    pwd = user_data.get('password')
+                    if pwd:
+                        user.set_password(pwd)
                     else:
-                        user.set_password('defaultpassword123')  # Default password
+                        user.set_unusable_password()
                     user.save()
-                    self.stdout.write(f'  Created user: {username} ({user.role})')
+                    self.stdout.write(f"  Created user: {username} (role={role}, affiliate={getattr(affiliate_obj,'name',None)})")
                 else:
-                    self.stdout.write(f'  User already exists: {username}')
+                    # Update affiliate/department if newly provided (do not change password)
+                    updates = {}
+                    for field, val in [
+                        ('affiliate', affiliate_obj),
+                        ('department', dept_obj),
+                        ('manager', manager_obj),
+                        ('role', role),
+                        ('first_name', first_name),
+                        ('last_name', last_name),
+                        ('email', email),
+                    ]:
+                        if val is not None and getattr(user, field) != val:
+                            updates[field] = val
+                    if updates:
+                        User.objects.filter(pk=user.pk).update(**updates)
+                        self.stdout.write(f"  Updated user: {username} fields: {', '.join(updates.keys())}")
+                    else:
+                        self.stdout.write(f"  User already exists (no changes): {username}")
         else:
             # Create basic users if no seed file
             self.stdout.write('No seed file found, creating basic users...')

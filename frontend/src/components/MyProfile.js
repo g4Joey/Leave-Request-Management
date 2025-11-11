@@ -50,14 +50,6 @@ function MyProfile() {
     }
   }, [user]);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setProfileData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
     setPasswordData(prev => ({
@@ -228,18 +220,6 @@ function MyProfile() {
                     {user?.role?.replace('_', ' ')?.replace(/\b\w/g, l => l.toUpperCase()) || 'Staff'}
                   </span>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Role
-                </label>
-                <input
-                  type="text"
-                  value={formatRoleLabel(user?.role)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
-                  disabled
-                />
               </div>
               
               <div>
