@@ -734,16 +734,21 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             for req in candidate_qs:
                 handler = ApprovalWorkflowService.get_handler(req)
                 if handler.can_approve(user, req.status):
-                    # Double-check affiliate matching for safety
+                    # Double-check affiliate matching for safety - strict filtering
                     req_affiliate_name = ''
                     if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
                         req_affiliate_name = req.employee.affiliate.name.strip().upper()
                     elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
                         req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
                     
-                    # Only include if affiliates match (or admin/superuser)
-                    if getattr(user, 'is_superuser', False) or not ceo_affiliate_name or req_affiliate_name == ceo_affiliate_name:
+                    # Strict affiliate matching: only include if affiliates match exactly
+                    # Superusers can see all requests
+                    if getattr(user, 'is_superuser', False):
                         filtered_ids.append(req.id)
+                    elif ceo_affiliate_name and req_affiliate_name == ceo_affiliate_name:
+                        filtered_ids.append(req.id)
+                    # If CEO has no affiliate or request has no affiliate, skip it
+                    # This prevents cross-affiliate visibility
             
             pending_requests = self.get_queryset().filter(id__in=filtered_ids)
         elif user_role == 'admin':
@@ -805,6 +810,16 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         ceo_affiliate = getattr(user, 'affiliate', None)
         ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
         
+        # CEO must have an affiliate set (unless superuser)
+        if not ceo_affiliate_name and not getattr(user, 'is_superuser', False):
+            return Response({
+                'categories': {'hod_manager': [], 'hr': [], 'staff': []},
+                'total_count': 0,
+                'counts': {'hod_manager': 0, 'hr': 0, 'staff': 0},
+                'ceo_affiliate': '',
+                'error': 'CEO user must have an affiliate assigned'
+            }, status=status.HTTP_200_OK)
+        
         # Get requests that this CEO can approve (filtered by affiliate and workflow stage)
         candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
         
@@ -813,6 +828,10 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         for req in candidate_qs:
             handler = ApprovalWorkflowService.get_handler(req)
             can = handler.can_approve(user, req.status)
+            
+            # Skip if handler says this CEO cannot approve (includes affiliate check)
+            if not can and not getattr(user, 'is_superuser', False):
+                continue
 
             # Determine employee affiliate (user or department)
             req_affiliate_name = ''
@@ -821,19 +840,15 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
                 req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
 
-            same_aff = (req_affiliate_name == ceo_affiliate_name) if ceo_affiliate_name else True
-
-            if can and (getattr(user, 'is_superuser', False) or same_aff):
+            # Strict affiliate matching (only show requests from same affiliate)
+            # Superusers can see all, otherwise must match exactly
+            if getattr(user, 'is_superuser', False):
                 filtered_requests.append(req)
-                continue
-
-            # Fallback: If CEO is SDSL/SBL and the request is pending with no affiliate/department,
-            # surface it to that CEO to avoid hiding legitimate CEO-first items due to missing data.
-            if req.status == 'pending' and ceo_affiliate_name in ['SDSL', 'SBL']:
-                no_aff = not getattr(req.employee, 'affiliate', None)
-                no_dept = not getattr(req.employee, 'department', None)
-                if no_aff and no_dept:
-                    filtered_requests.append(req)
+            elif ceo_affiliate_name and req_affiliate_name == ceo_affiliate_name:
+                filtered_requests.append(req)
+            # Special case: if employee has no affiliate assigned but CEO is SDSL/SBL,
+            # don't show it (they should have affiliate set)
+            # This prevents cross-affiliate visibility
         
         serializer = self.get_serializer(filtered_requests, many=True)
         
