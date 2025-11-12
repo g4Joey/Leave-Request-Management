@@ -90,7 +90,11 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
         """
         if not self._is_hr(request):
             return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
-        lt = self.get_object()
+        # Use full queryset to find inactive leave types too
+        try:
+            lt = LeaveType.objects.get(pk=pk)
+        except LeaveType.DoesNotExist:
+            return Response({'detail': 'Leave type not found'}, status=status.HTTP_404_NOT_FOUND)
         if not lt.is_active:
             lt.is_active = True
             lt.save(update_fields=['is_active', 'updated_at']) if hasattr(lt, 'updated_at') else lt.save(update_fields=['is_active'])
@@ -676,12 +680,12 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         # Filter requests based on user's role and approval stage
         if user_role == 'manager':
             # Managers see requests pending their approval
-            # Safety: HR/admin requests should never be in manager queue
+            # Safety: manager/HR/admin/CEO requests should never be in manager queue (staff-only)
             # Also, exclude SDSL/SBL affiliates entirely (CEO-first; manager should not see these)
             pending_requests = (
                 self.get_queryset()
                 .filter(status='pending')
-                .exclude(employee__role__in=['hr', 'admin'])
+                .exclude(employee__role__in=['manager', 'hr', 'ceo', 'admin'])
                 .exclude(
                     Q(employee__department__affiliate__name__iexact='SDSL') |
                     Q(employee__department__affiliate__name__iexact='SBL') |
@@ -749,13 +753,13 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         elif user_role == 'admin':
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
             # Admins can still browse all requests via list endpoints
-            # Safety: hide HR/admin submitters from manager-stage view
+            # Safety: hide manager/HR/admin/CEO submitters from manager-stage view (staff-only)
             # Additionally, hide SDSL/SBL staff pending items (CEO-first affiliates) from the admin manager queue to reduce confusion
             from django.db.models import Q as _Q
             pending_requests = (
                 self.get_queryset()
                 .filter(status='pending')
-                .exclude(employee__role__in=['hr', 'admin'])
+                .exclude(employee__role__in=['manager', 'hr', 'ceo', 'admin'])
                 .exclude(
                     _Q(employee__department__affiliate__name__iexact='SDSL') |
                     _Q(employee__department__affiliate__name__iexact='SBL') |
