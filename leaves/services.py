@@ -169,28 +169,23 @@ class MerbanApprovalHandler(ApprovalHandler):
     """Merban Capital workflow: Manager → HR → CEO.
 
     Special cases:
-    - Manager/HOD requester: HR → CEO (skip manager stage)
-    - HR requester: CEO only (skip manager and HR stages, CEO is final)
+    - Manager/HOD/HR requester: HR → CEO (skip manager stage)
     
     Note: Merban CEO does not request leave (no access to leave request page).
+    HR can approve their own request at the HR approval stage, same as other managers.
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
         """Dynamic flow based on requester role.
         - Staff (default): manager -> hr -> ceo
-        - Manager/HOD: hr -> ceo (skip manager)
-        - HR: ceo only (skip manager and hr, CEO is final for HR requests)
+        - Manager/HOD/HR: hr -> ceo (skip manager, HR self-approves at HR stage)
         """
         emp = self.leave_request.employee
         role = getattr(emp, 'role', None)
-        if role in ['manager', 'hod']:
+        if role in ['manager', 'hod', 'hr']:
             return {
                 'pending': 'hr',
                 'hr_approved': 'ceo'
-            }
-        if role == 'hr':
-            return {
-                'pending': 'ceo'
             }
         # Default staff flow
         return {
@@ -203,13 +198,9 @@ class MerbanApprovalHandler(ApprovalHandler):
         if current_status == 'pending':
             emp = self.leave_request.employee
             role = getattr(emp, 'role', None)
-            # Manager/HOD requests go to HR directly
-            if role in ['manager', 'hod']:
+            # Manager/HOD/HR requests go to HR directly (HR can self-approve)
+            if role in ['manager', 'hod', 'hr']:
                 return User.objects.filter(role='hr', is_active=True).first()
-            # HR requests go to Merban CEO directly (CEO is final for HR requests)
-            if role == 'hr':
-                # Route HR requests to the CEO of the employee's affiliate
-                return ApprovalRoutingService.get_ceo_for_employee(emp)
             # Default: staff -> manager
             if hasattr(emp, 'manager') and emp.manager:
                 return emp.manager
