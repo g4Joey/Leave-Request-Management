@@ -66,6 +66,8 @@ class DepartmentSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     department = DepartmentSerializer(read_only=True)
+    # Expose affiliate read-only object for display; keep affiliate_id for writes
+    affiliate = serializers.SerializerMethodField(read_only=True)
     department_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     affiliate_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     password = serializers.CharField(write_only=True, required=False)
@@ -80,7 +82,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'employee_id', 'role', 'role_display', 'department', 'department_id', 'affiliate_id',
+            'employee_id', 'role', 'role_display', 'affiliate', 'department', 'department_id', 'affiliate_id',
             'phone', 'hire_date', 'annual_leave_entitlement',
             'is_active_employee', 'date_joined', 'password', 'profile_image',
             'is_superuser'
@@ -94,6 +96,19 @@ class UserSerializer(serializers.ModelSerializer):
             'last_name': {'required': True},
         }
         read_only_fields = ['is_superuser']
+
+    def get_affiliate(self, obj):
+        """Return a minimal affiliate object for display (id, name)."""
+        aff = getattr(obj, 'affiliate', None)
+        if not aff:
+            return None
+        name = getattr(aff, 'name', None)
+        if not name:
+            return None
+        return {
+            'id': getattr(aff, 'id', None),
+            'name': name,
+        }
     
     def create(self, validated_data):
         password = validated_data.pop('password', None)

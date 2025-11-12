@@ -18,6 +18,8 @@ const normalizeProfile = (profile = {}, token = null) => {
       profile.is_superuser === 'True',
     employee_id: profile.employee_id,
     department: profile.department,
+    affiliate: profile.affiliate || null,
+    affiliate_name: profile.affiliate?.name || null,
     annual_leave_entitlement: profile.annual_leave_entitlement,
     phone: profile.phone,
     profile_image: profile.profile_image,
