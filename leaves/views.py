@@ -544,18 +544,10 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         total_days_taken = sum(req.total_days or 0 for req in current_year_requests.filter(status='approved'))
         pending_days = sum(req.total_days or 0 for req in current_year_requests.filter(status='pending'))
         
-        # Recent requests (last 5) with stage-aware labels
+        # Recent requests (last 5) with dynamic status display
         recent_requests = user_requests[:5]
         recent_serializer = LeaveRequestListSerializer(recent_requests, many=True)
         recent_data = recent_serializer.data
-        # Prefer stage_label when it indicates the next pending approver for better UX
-        for item in recent_data:
-            try:
-                if item.get('stage_label') and item.get('status') in ['pending', 'manager_approved', 'hr_approved']:
-                    item['status_display'] = item['stage_label']
-            except Exception:
-                # Non-fatal; keep default labels
-                pass
         
         dashboard_data = {
             'summary': {
