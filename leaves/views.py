@@ -695,8 +695,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             )
         elif user_role == 'hr' or (stage_override == 'hr' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # HR sees:
-            # - Merban: manager_approved (strictly Merban by affiliate, whether set on department or user)
-            # - SDSL/SBL: ceo_approved (CEO-first flow, HR is final)
+            # - Merban: staff manager_approved + manager/HOD/HR pending (skip-manager flow)
+            # - SDSL/SBL: staff ceo_approved + SDSL/SBL CEO pending (CEO skip-CEO flow, HR is final)
             from itertools import chain
 
             # Build filters for Merban affiliate regardless of whether affiliate is on department or user
@@ -704,26 +704,64 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
                 Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
             )
-            non_sdsl_sbl_filter = ~(
+            sdsl_filter = (
                 Q(employee__department__affiliate__name__iexact='SDSL') |
+                Q(employee__affiliate__name__iexact='SDSL')
+            )
+            sbl_filter = (
                 Q(employee__department__affiliate__name__iexact='SBL') |
-                Q(employee__affiliate__name__iexact='SDSL') |
                 Q(employee__affiliate__name__iexact='SBL')
             )
 
-            # Merban manager-approved only (exclude admin submitters)
-            merban_qs = (
+            # Merban staff requests that are manager-approved (exclude admin submitters)
+            merban_staff_qs = (
                 self.get_queryset()
                 .filter(status='manager_approved')
                 .filter(merban_filter)
                 .exclude(employee__role='admin')
             )
 
-            # CEO-approved (for SDSL/SBL final HR review) - exclude admin submitters
-            ceo_approved_qs = self.get_queryset().filter(status='ceo_approved').exclude(employee__role='admin')
+            # Merban manager/HOD/HR pending requests (these skip manager approval stage)
+            merban_manager_hod_hr_qs = (
+                self.get_queryset()
+                .filter(status='pending')
+                .filter(merban_filter)
+                .filter(employee__role__in=['manager', 'hod', 'hr'])
+                .exclude(employee__role='admin')
+            )
+
+            # SDSL/SBL staff CEO-approved requests (exclude admin submitters)
+            sdsl_sbl_staff_ceo_approved_qs = (
+                self.get_queryset()
+                .filter(status='ceo_approved')
+                .filter(sdsl_filter | sbl_filter)
+                .exclude(employee__role='admin')
+            )
+
+            # SDSL CEO pending requests (CEO skips CEO stage, goes to HR - HR is final)
+            sdsl_ceo_pending_qs = (
+                self.get_queryset()
+                .filter(status='pending')
+                .filter(sdsl_filter)
+                .filter(employee__role='ceo')
+            )
+
+            # SBL CEO pending requests (CEO skips CEO stage, goes to HR - HR is final)
+            sbl_ceo_pending_qs = (
+                self.get_queryset()
+                .filter(status='pending')
+                .filter(sbl_filter)
+                .filter(employee__role='ceo')
+            )
 
             # Use list() and chain() instead of union() to avoid ORDER BY issues
-            pending_requests = list(chain(merban_qs, ceo_approved_qs))
+            pending_requests = list(chain(
+                merban_staff_qs, 
+                merban_manager_hod_hr_qs, 
+                sdsl_sbl_staff_ceo_approved_qs,
+                sdsl_ceo_pending_qs,
+                sbl_ceo_pending_qs
+            ))
         elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
             # CEO sees requests that require their approval - filtered by affiliate and workflow
             from .services import ApprovalWorkflowService
@@ -1142,14 +1180,55 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             if user_role == 'manager':
                 counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
             elif user_role == 'hr':
-                # HR: Merban manager_approved + SDSL/SBL ceo_approved
+                # HR: Merban staff manager_approved + Merban manager/HOD/HR pending + SDSL/SBL staff ceo_approved + SDSL/SBL CEO pending
                 from django.db.models import Q
-                merban_count = self.get_queryset().filter(status='manager_approved').exclude(
-                    Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
-                    Q(employee__affiliate__name__in=['SDSL', 'SBL'])
+                merban_filter = (
+                    Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
+                    Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
+                )
+                sdsl_filter = (
+                    Q(employee__department__affiliate__name__iexact='SDSL') |
+                    Q(employee__affiliate__name__iexact='SDSL')
+                )
+                sbl_filter = (
+                    Q(employee__department__affiliate__name__iexact='SBL') |
+                    Q(employee__affiliate__name__iexact='SBL')
+                )
+                
+                # Merban staff requests that are manager_approved
+                merban_staff_count = self.get_queryset().filter(
+                    status='manager_approved'
+                ).filter(merban_filter).count()
+                
+                # Merban manager/HOD/HR pending requests (skip-manager flow)
+                merban_mgr_hod_hr_count = self.get_queryset().filter(
+                    status='pending'
+                ).filter(merban_filter).filter(
+                    employee__role__in=['manager', 'hod', 'hr']
                 ).count()
-                ceo_approved_count = self.get_queryset().filter(status='ceo_approved').count()
-                counts['hr_approvals'] = merban_count + ceo_approved_count
+                
+                # SDSL/SBL staff CEO-approved requests
+                sdsl_sbl_ceo_approved_count = self.get_queryset().filter(
+                    status='ceo_approved'
+                ).filter(sdsl_filter | sbl_filter).count()
+                
+                # SDSL CEO pending requests
+                sdsl_ceo_pending_count = self.get_queryset().filter(
+                    status='pending'
+                ).filter(sdsl_filter).filter(employee__role='ceo').count()
+                
+                # SBL CEO pending requests
+                sbl_ceo_pending_count = self.get_queryset().filter(
+                    status='pending'
+                ).filter(sbl_filter).filter(employee__role='ceo').count()
+                
+                counts['hr_approvals'] = (
+                    merban_staff_count + 
+                    merban_mgr_hod_hr_count + 
+                    sdsl_sbl_ceo_approved_count +
+                    sdsl_ceo_pending_count +
+                    sbl_ceo_pending_count
+                )
             elif user_role == 'ceo':
                 # Use same logic as pending_approvals endpoint
                 from .services import ApprovalWorkflowService
@@ -1162,11 +1241,11 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 counts['ceo_approvals'] = ceo_count
             elif user_role == 'admin':
                 from django.db.models import Q as _Q
-                # Mirror pending_approvals(admin) manager queue: exclude HR/admin submitters and SDSL/SBL affiliates
+                # Mirror pending_approvals(admin) manager queue: exclude manager/HR/CEO/admin submitters and SDSL/SBL affiliates
                 counts['manager_approvals'] = (
                     self.get_queryset()
                     .filter(status='pending')
-                    .exclude(employee__role__in=['hr', 'admin'])
+                    .exclude(employee__role__in=['manager', 'hr', 'ceo', 'admin'])
                     .exclude(
                         _Q(employee__department__affiliate__name__iexact='SDSL') |
                         _Q(employee__department__affiliate__name__iexact='SBL') |
@@ -1175,25 +1254,68 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                     )
                     .count()
                 )
-                # HR approvals for admin: Merban manager_approved + SDSL/SBL ceo_approved (exclude admin submitters)
+                # HR approvals for admin: Merban staff manager_approved + Merban manager/HOD/HR pending + SDSL/SBL staff ceo_approved + SDSL/SBL CEO pending
                 merban_filter = (
                     _Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
                     _Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
                 )
-                merban_count = (
+                sdsl_filter = (
+                    _Q(employee__department__affiliate__name__iexact='SDSL') |
+                    _Q(employee__affiliate__name__iexact='SDSL')
+                )
+                sbl_filter = (
+                    _Q(employee__department__affiliate__name__iexact='SBL') |
+                    _Q(employee__affiliate__name__iexact='SBL')
+                )
+                
+                # Merban staff requests that are manager_approved
+                merban_staff_count = (
                     self.get_queryset()
                     .filter(status='manager_approved')
                     .filter(merban_filter)
                     .exclude(employee__role='admin')
                     .count()
                 )
-                ceo_approved_count = (
+                # Merban manager/HOD/HR pending requests (skip-manager flow)
+                merban_mgr_hod_hr_count = (
                     self.get_queryset()
-                    .filter(status='ceo_approved')
+                    .filter(status='pending')
+                    .filter(merban_filter)
+                    .filter(employee__role__in=['manager', 'hod', 'hr'])
                     .exclude(employee__role='admin')
                     .count()
                 )
-                counts['hr_approvals'] = merban_count + ceo_approved_count
+                # SDSL/SBL staff CEO-approved requests
+                sdsl_sbl_ceo_approved_count = (
+                    self.get_queryset()
+                    .filter(status='ceo_approved')
+                    .filter(sdsl_filter | sbl_filter)
+                    .exclude(employee__role='admin')
+                    .count()
+                )
+                # SDSL CEO pending requests
+                sdsl_ceo_pending_count = (
+                    self.get_queryset()
+                    .filter(status='pending')
+                    .filter(sdsl_filter)
+                    .filter(employee__role='ceo')
+                    .count()
+                )
+                # SBL CEO pending requests
+                sbl_ceo_pending_count = (
+                    self.get_queryset()
+                    .filter(status='pending')
+                    .filter(sbl_filter)
+                    .filter(employee__role='ceo')
+                    .count()
+                )
+                counts['hr_approvals'] = (
+                    merban_staff_count + 
+                    merban_mgr_hod_hr_count + 
+                    sdsl_sbl_ceo_approved_count +
+                    sdsl_ceo_pending_count +
+                    sbl_ceo_pending_count
+                )
                 counts['ceo_approvals'] = self.get_queryset().filter(status='hr_approved').count()
 
             counts['total'] = counts['manager_approvals'] + counts['hr_approvals'] + counts['ceo_approvals']

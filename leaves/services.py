@@ -125,8 +125,22 @@ class ApprovalHandler(ABC):
         required_role = flow.get(current_status)
         user_role = getattr(user, 'role', None)
         
-        # Admin can always approve
+        # For admin, check if this status has a valid next stage and treat admin as that role
         if getattr(user, 'is_superuser', False) or user_role == 'admin':
+            # Admin must still follow the flow - only approve if this status has a next stage
+            if current_status not in flow:
+                return False
+            # Admin acts as the required role for this stage
+            required_role = flow.get(current_status)
+            if not required_role:
+                return False
+            # For CEO stage, admin must still match affiliate (treated as CEO check)
+            if required_role == 'ceo':
+                expected_ceo = ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
+                # Admin can approve as CEO only if they match the affiliate CEO or are superuser
+                if not getattr(user, 'is_superuser', False):
+                    return False  # Regular admin cannot act as CEO
+            # For other stages, admin can approve
             return True
         
         # Basic role check
@@ -156,14 +170,16 @@ class MerbanApprovalHandler(ApprovalHandler):
 
     Special cases:
     - Manager/HOD requester: HR → CEO (skip manager stage)
-    - HR requester: CEO only
+    - HR requester: CEO only (skip manager and HR stages, CEO is final)
+    
+    Note: Merban CEO does not request leave (no access to leave request page).
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
         """Dynamic flow based on requester role.
         - Staff (default): manager -> hr -> ceo
         - Manager/HOD: hr -> ceo (skip manager)
-        - HR: ceo (Merban) only (skip manager and hr)
+        - HR: ceo only (skip manager and hr, CEO is final for HR requests)
         """
         emp = self.leave_request.employee
         role = getattr(emp, 'role', None)
@@ -190,7 +206,7 @@ class MerbanApprovalHandler(ApprovalHandler):
             # Manager/HOD requests go to HR directly
             if role in ['manager', 'hod']:
                 return User.objects.filter(role='hr', is_active=True).first()
-            # HR requests go to Merban CEO directly
+            # HR requests go to Merban CEO directly (CEO is final for HR requests)
             if role == 'hr':
                 # Route HR requests to the CEO of the employee's affiliate
                 return ApprovalRoutingService.get_ceo_for_employee(emp)
@@ -212,13 +228,27 @@ class MerbanApprovalHandler(ApprovalHandler):
 class SDSLApprovalHandler(ApprovalHandler):
     """SDSL workflow: CEO → HR final.
 
-    Staff (including managers/HODs/HR within SDSL) all start at CEO stage because
+    Staff (including managers/HODs) start at CEO stage because
     SDSL does not use departmental manager approvals in the same way as Merban.
+    
+    Special case:
+    - CEO requester: HR only (skip CEO stage)
+    
     Status path: pending → ceo_approved → approved.
     """
     
     def get_approval_flow(self) -> Dict[str, str]:
-        """CEO first then HR final."""
+        """Dynamic flow based on requester role.
+        - Staff/manager/HOD (default): ceo -> hr
+        - CEO: hr only (skip CEO)
+        """
+        emp = self.leave_request.employee
+        role = getattr(emp, 'role', None)
+        if role == 'ceo':
+            return {
+                'pending': 'hr'
+            }
+        # Default flow: CEO first, then HR
         return {
             'pending': 'ceo',        # CEO first
             'ceo_approved': 'hr'     # HR final approval
@@ -229,8 +259,14 @@ class SDSLApprovalHandler(ApprovalHandler):
         return super().can_approve(user, current_status)
     
     def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
+        emp = self.leave_request.employee
+        role = getattr(emp, 'role', None)
+        
         if current_status == 'pending':
-            # CEO based on employee's affiliate (SDSL)
+            # CEO requests go directly to HR (skip CEO stage)
+            if role == 'ceo':
+                return User.objects.filter(role='hr', is_active=True).first()
+            # Default: CEO based on employee's affiliate (SDSL)
             return ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
         elif current_status == 'ceo_approved':
             # HR for final approval
@@ -249,17 +285,38 @@ class SDSLApprovalHandler(ApprovalHandler):
 class SBLApprovalHandler(ApprovalHandler):
     """SBL workflow: CEO → HR final (mirrors SDSL requirements).
 
+    Special case:
+    - CEO requester: HR only (skip CEO stage)
+    
     Status path: pending → ceo_approved → approved.
     """
 
     def get_approval_flow(self) -> Dict[str, str]:
+        """Dynamic flow based on requester role.
+        - Staff/manager/HOD (default): ceo -> hr
+        - CEO: hr only (skip CEO)
+        """
+        emp = self.leave_request.employee
+        role = getattr(emp, 'role', None)
+        if role == 'ceo':
+            return {
+                'pending': 'hr'
+            }
+        # Default flow: CEO first, then HR
         return {
             'pending': 'ceo',
             'ceo_approved': 'hr'
         }
 
     def get_next_approver(self, current_status: str) -> Optional[CustomUser]:
+        emp = self.leave_request.employee
+        role = getattr(emp, 'role', None)
+        
         if current_status == 'pending':
+            # CEO requests go directly to HR (skip CEO stage)
+            if role == 'ceo':
+                return User.objects.filter(role='hr', is_active=True).first()
+            # Default: CEO based on employee's affiliate
             return ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
         elif current_status == 'ceo_approved':
             return User.objects.filter(role='hr', is_active=True).first()

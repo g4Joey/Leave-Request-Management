@@ -280,6 +280,40 @@ class LeaveRequest(models.Model):
     def is_rejected(self):
         return self.status == 'rejected'
     
+    def get_dynamic_status_display(self):
+        """Get status display that reflects the actual workflow based on employee role"""
+        from leaves.services import ApprovalWorkflowService
+        
+        # For completed/rejected statuses, use standard display
+        if self.status in ['approved', 'rejected', 'cancelled']:
+            return self.get_status_display()
+        
+        # Get the handler to determine the workflow
+        try:
+            handler = ApprovalWorkflowService.get_handler(self)
+            flow = handler.get_approval_flow()
+            
+            # Map status to next required role
+            if self.status == 'pending':
+                next_role = flow.get('pending', '')
+                if next_role == 'hr':
+                    return 'Pending HR Approval'
+                elif next_role == 'ceo':
+                    return 'Pending CEO Approval'
+                else:
+                    return 'Pending Manager Approval'
+            elif self.status == 'manager_approved':
+                return 'Manager Approved - Pending HR'
+            elif self.status == 'hr_approved':
+                return 'HR Approved - Pending CEO'
+            elif self.status == 'ceo_approved':
+                return 'CEO Approved - Pending HR'
+        except Exception:
+            pass
+        
+        # Fallback to standard display
+        return self.get_status_display()
+    
     @property
     def current_approval_stage(self):
         """Return which stage of approval this request is at"""

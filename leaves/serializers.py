@@ -38,7 +38,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     working_days = serializers.IntegerField(read_only=True)
     calendar_days = serializers.IntegerField(read_only=True)
     range_with_days = serializers.CharField(read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status_display = serializers.CharField(source='get_dynamic_status_display', read_only=True)
     
     class Meta:
         model = LeaveRequest
