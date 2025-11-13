@@ -35,15 +35,15 @@ function ManagerDashboard() {
           status: status
         };
         
-        const res = await api.get('/leaves/manager/', { params });
+        const res = await api.get('/leaves/manager/approval_records/', { params });
         const data = res.data;
-        allItems = data.results || data;
+        allItems = data.results || data.results || data;
         
-        setRecordsHasMore(data && typeof data === 'object' && 'next' in data ? Boolean(data.next) : allItems.length === PAGE_SIZE);
+        setRecordsHasMore(Boolean(data?.has_more));
       } else {
         // Fetch both approved and rejected in parallel, then combine and sort
         const [approvedRes, rejectedRes] = await Promise.all([
-          api.get('/leaves/manager/', { 
+          api.get('/leaves/manager/approval_records/', { 
             params: { 
               ordering: '-created_at', 
               limit: Math.ceil(PAGE_SIZE / 2), 
@@ -52,7 +52,7 @@ function ManagerDashboard() {
               status: 'approved'
             }
           }),
-          api.get('/leaves/manager/', { 
+          api.get('/leaves/manager/approval_records/', { 
             params: { 
               ordering: '-created_at', 
               limit: Math.ceil(PAGE_SIZE / 2), 
@@ -63,8 +63,8 @@ function ManagerDashboard() {
           })
         ]);
         
-        const approvedItems = approvedRes.data.results || approvedRes.data;
-        const rejectedItems = rejectedRes.data.results || rejectedRes.data;
+        const approvedItems = approvedRes.data.results || approvedRes.data?.results || approvedRes.data || [];
+        const rejectedItems = rejectedRes.data.results || rejectedRes.data?.results || rejectedRes.data || [];
         
         // Combine and sort by created_at descending
         allItems = [...approvedItems, ...rejectedItems].sort((a, b) => 
@@ -72,9 +72,9 @@ function ManagerDashboard() {
         ).slice(0, PAGE_SIZE);
         
         // Check if there are more records
-        const hasMoreApproved = approvedRes.data && typeof approvedRes.data === 'object' && 'next' in approvedRes.data ? Boolean(approvedRes.data.next) : false;
-        const hasMoreRejected = rejectedRes.data && typeof rejectedRes.data === 'object' && 'next' in rejectedRes.data ? Boolean(rejectedRes.data.next) : false;
-        setRecordsHasMore(hasMoreApproved || hasMoreRejected || allItems.length === PAGE_SIZE);
+        const hasMoreApproved = Boolean(approvedRes?.data?.has_more);
+        const hasMoreRejected = Boolean(rejectedRes?.data?.has_more);
+        setRecordsHasMore(hasMoreApproved || hasMoreRejected);
       }
       
       setLeaveRecords(allItems);
@@ -240,9 +240,9 @@ function ManagerDashboard() {
         )}
       </ul>
 
-      {/* Leave Records Section (Approved & Rejected consolidated) */}
+      {/* Approval Records Section (Approved & Rejected consolidated) */}
       <div className="px-4 py-5 sm:px-6">
-        <h4 className="text-md leading-6 font-semibold text-gray-900">Leave Records</h4>
+        <h4 className="text-md leading-6 font-semibold text-gray-900">Approval Records</h4>
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           <input
             type="text"
@@ -318,6 +318,10 @@ function ManagerDashboard() {
                               <strong>Comments:</strong> {request.approval_comments}
                             </p>
                           )}
+                          {/* Show current status as of now for records */}
+                          <div className="mt-1 text-xs text-gray-700">
+                            Status: {request.status_display || request.stage_label || request.status}
+                          </div>
                           <div className="text-xs text-gray-400 mt-1">
                             Submitted: {new Date(request.created_at).toLocaleDateString()} | 
                             {request.approved_by_name && (
@@ -339,7 +343,7 @@ function ManagerDashboard() {
           <li><div className="px-4 py-12 text-center">
             {!hasSearched ? (
               <div className="space-y-2">
-                <p className="text-sm text-gray-500">Use the search above to find leave records</p>
+                <p className="text-sm text-gray-500">Use the search above to find approval records</p>
                 <p className="text-xs text-gray-400">Search by employee name, leave type, or filter by status</p>
               </div>
             ) : (

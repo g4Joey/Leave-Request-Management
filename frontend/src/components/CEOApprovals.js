@@ -16,6 +16,10 @@ function CEOApprovals() {
   const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
   const [activeTab, setActiveTab] = useState('staff'); // Default to staff tab
   const [ceoAffiliate, setCeoAffiliate] = useState(''); // Store CEO's affiliate
+  // CEO Approval Records
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsGroups, setRecordsGroups] = useState({ hod_manager: [], hr: [], staff: [] });
+  const [recordsActiveTab, setRecordsActiveTab] = useState('staff');
 
   const fetchCEORequests = useCallback(async () => {
     try {
@@ -57,7 +61,31 @@ function CEOApprovals() {
 
   useEffect(() => {
     fetchCEORequests();
+    fetchCEORecords();
   }, [fetchCEORequests]);
+
+  const fetchCEORecords = async () => {
+    try {
+      setRecordsLoading(true);
+      const res = await api.get('/leaves/manager/approval_records/', { params: { ordering: '-created_at', limit: 50 } });
+      const groups = (res.data && res.data.groups) || { hod_manager: [], hr: [], staff: [] };
+      setRecordsGroups(groups);
+      // Set records tab depending on affiliate (SDSL/SBL only staff tab)
+      const aff = (ceoAffiliate || '').toUpperCase();
+      if (aff === 'SDSL' || aff === 'SBL') {
+        setRecordsActiveTab('staff');
+      } else {
+        const first = groups.hod_manager?.length ? 'hod_manager' : (groups.hr?.length ? 'hr' : 'staff');
+        setRecordsActiveTab(first);
+      }
+    } catch (e) {
+      console.error('Error fetching CEO approval records:', e);
+      setRecordsGroups({ hod_manager: [], hr: [], staff: [] });
+      setRecordsActiveTab('staff');
+    } finally {
+      setRecordsLoading(false);
+    }
+  };
 
   const handleAction = async (requestId, action, comments = '') => {
     setLoadingActionById(prev => ({ ...prev, [requestId]: action }));
@@ -412,6 +440,78 @@ function CEOApprovals() {
           </div>
         </div>
       </Dialog>
+
+      {/* CEO Approval Records */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">Approval Records</h3>
+          <p className="text-sm text-gray-600">Previously processed requests, grouped by submitter category.</p>
+        </div>
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+            {(affiliate === 'SDSL' || affiliate === 'SBL' ? ['staff'] : ['hod_manager', 'hr', 'staff']).map((key) => {
+              const label = key === 'hod_manager' ? 'HOD/Manager Requests' : (key === 'hr' ? 'HR Requests' : 'Staff Requests');
+              const count = (recordsGroups[key] || []).length;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setRecordsActiveTab(key)}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    recordsActiveTab === key ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  {label}
+                  {count > 0 && (
+                    <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                      recordsActiveTab === key ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-900'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+        <div className="p-6">
+          {recordsLoading ? (
+            <div className="text-center py-12 text-gray-500">Loading records…</div>
+          ) : (
+            (recordsGroups[recordsActiveTab] || []).length === 0 ? (
+              <div className="px-4 py-12 text-center text-gray-500">No approval records found.</div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {(recordsGroups[recordsActiveTab] || []).map((request) => (
+                  <li key={`ceo-record-${request.id}`}>
+                    <div className="px-4 py-3 sm:px-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            {request.employee_name} — {request.leave_type_name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} 
+                            <span className="ml-1">({request.total_days} working days)</span>
+                          </p>
+                          {request.reason && (
+                            <p className="text-xs text-gray-600 mt-1">
+                              <strong>Reason:</strong> {request.reason}
+                            </p>
+                          )}
+                          {/* Show current status as of now */}
+                          <div className="mt-1 text-xs text-gray-700">
+                            Status: {request.status_display || request.stage_label || request.status}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -943,6 +943,133 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             'count': len(data),
             'results': data,
         })
+
+    @action(detail=False, methods=['get'])
+    def approval_records(self, request):
+        """Return Approval Records tailored per role with grouping where required.
+
+        - manager: requests acted on by this manager (approved or rejected)
+        - hr: requests acted on by this HR user, grouped by affiliate (Merban Capital, SDSL, SBL)
+        - ceo: requests acted on by this CEO, grouped by submitter category (hod_manager, hr, staff)
+
+        Query params: search, status, ordering, limit, offset
+        """
+        from django.db.models import Q
+        user = request.user
+        role = getattr(user, 'role', None)
+
+        # Parse common query params
+        search = (request.query_params.get('search') or '').strip()
+        status_param = (request.query_params.get('status') or '').strip()  # optional: approved/rejected
+        ordering = (request.query_params.get('ordering') or '-created_at').strip()
+        try:
+            limit = int(request.query_params.get('limit', 50))
+        except Exception:
+            limit = 50
+        try:
+            offset = int(request.query_params.get('offset', 0))
+        except Exception:
+            offset = 0
+
+        base_qs = LeaveRequest.objects.all()
+
+        # Filter by who acted based on role
+        if getattr(user, 'is_superuser', False) and not role:
+            # superuser without role: return none by default to avoid massive payload
+            acted_qs = base_qs.none()
+        elif getattr(user, 'is_superuser', False) and role == 'admin':
+            # Admin: show items they approved as CEO-equivalent (ceo_approved_by)
+            acted_qs = base_qs.filter(ceo_approved_by=user)
+        elif role == 'manager':
+            acted_qs = base_qs.filter(manager_approved_by=user)
+        elif role == 'hr':
+            acted_qs = base_qs.filter(hr_approved_by=user)
+        elif role == 'ceo':
+            acted_qs = base_qs.filter(ceo_approved_by=user)
+        else:
+            acted_qs = base_qs.none()
+
+        # Optional status filter (approved/rejected only for records context)
+        if status_param in ['approved', 'rejected']:
+            acted_qs = acted_qs.filter(status=status_param)
+
+        # Optional search across common fields
+        if search:
+            acted_qs = acted_qs.filter(
+                Q(employee__first_name__icontains=search) |
+                Q(employee__last_name__icontains=search) |
+                Q(reason__icontains=search) |
+                Q(leave_type__name__icontains=search)
+            )
+
+        # Apply ordering then pagination window (best-effort)
+        try:
+            acted_qs = acted_qs.order_by(ordering)
+        except Exception:
+            acted_qs = acted_qs.order_by('-created_at')
+
+        # For grouping responses, we may need full list; but keep window to avoid huge payloads
+        window_qs = acted_qs[offset: offset + limit]
+
+        # Role-specific shaping
+        if role == 'hr' or (getattr(user, 'is_superuser', False) and role == 'admin'):
+            # Group by affiliate using serializer-provided employee_department_affiliate
+            data = LeaveRequestListSerializer(window_qs, many=True).data
+            groups = {'Merban Capital': [], 'SDSL': [], 'SBL': [], 'Other': []}
+            for item in data:
+                raw = (item.get('employee_department_affiliate') or '').strip()
+                key = 'Other'
+                if raw.upper() in ['MERBAN CAPITAL', 'MERBAN']:
+                    key = 'Merban Capital'
+                elif raw.upper() == 'SDSL':
+                    key = 'SDSL'
+                elif raw.upper() == 'SBL':
+                    key = 'SBL'
+                groups.setdefault(key, []).append(item)
+            counts = {k: len(v) for k, v in groups.items()}
+            return Response({
+                'role': 'hr',
+                'total': len(data),
+                'counts': counts,
+                'groups': groups,
+                'limit': limit,
+                'offset': offset,
+                'has_more': (offset + limit) < acted_qs.count(),
+            })
+
+        if role == 'ceo' or (getattr(user, 'is_superuser', False) and role == 'admin'):
+            # Group CEO records by submitter category: hod_manager, hr, staff
+            data = LeaveRequestListSerializer(window_qs, many=True).data
+            groups = {'hod_manager': [], 'hr': [], 'staff': []}
+            for item in data:
+                submitter_role = (item.get('employee_role') or 'staff').lower()
+                if submitter_role == 'manager' or submitter_role == 'hod':
+                    groups['hod_manager'].append(item)
+                elif submitter_role == 'hr':
+                    groups['hr'].append(item)
+                else:
+                    groups['staff'].append(item)
+            counts = {k: len(v) for k, v in groups.items()}
+            return Response({
+                'role': 'ceo',
+                'total': len(data),
+                'counts': counts,
+                'groups': groups,
+                'limit': limit,
+                'offset': offset,
+                'has_more': (offset + limit) < acted_qs.count(),
+            })
+
+        # Default: manager (or none)
+        data = LeaveRequestListSerializer(window_qs, many=True).data
+        return Response({
+            'role': role or 'unknown',
+            'count': len(data),
+            'results': data,
+            'limit': limit,
+            'offset': offset,
+            'has_more': (offset + limit) < acted_qs.count(),
+        })
     
     @action(detail=True, methods=['get'])
     def trace(self, request, pk=None):

@@ -14,9 +14,14 @@ function HRApprovals() {
   const [actingId, setActingId] = useState(null);
   const [groupedApprovals, setGroupedApprovals] = useState({});
   const [activeTab, setActiveTab] = useState('Merban Capital');
+  // HR Approval Records (grouped by affiliate)
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsGroups, setRecordsGroups] = useState({ 'Merban Capital': [], 'SDSL': [], 'SBL': [] });
+  const [recordsActiveTab, setRecordsActiveTab] = useState('Merban Capital');
 
   useEffect(() => {
     fetchPendingApprovals();
+    fetchApprovalRecords();
   }, []);
 
   const fetchPendingApprovals = async () => {
@@ -47,6 +52,27 @@ function HRApprovals() {
       console.error('Error fetching pending approvals:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchApprovalRecords = async () => {
+    try {
+      setRecordsLoading(true);
+      const res = await api.get('/leaves/manager/approval_records/', { params: { ordering: '-created_at', limit: 50 } });
+      const groups = (res.data && res.data.groups) || {};
+      setRecordsGroups({
+        'Merban Capital': groups['Merban Capital'] || [],
+        'SDSL': groups['SDSL'] || [],
+        'SBL': groups['SBL'] || [],
+      });
+      const orderedKeys = ['Merban Capital', 'SDSL', 'SBL'];
+      const firstWithItems = orderedKeys.find(k => (groups[k] || []).length > 0) || 'Merban Capital';
+      setRecordsActiveTab(firstWithItems);
+    } catch (e) {
+      console.error('Error fetching HR approval records:', e);
+      setRecordsGroups({ 'Merban Capital': [], 'SDSL': [], 'SBL': [] });
+    } finally {
+      setRecordsLoading(false);
     }
   };
 
@@ -108,22 +134,7 @@ function HRApprovals() {
     setActionModal({ open: true, action, comments: '' });
   };
 
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      'pending': { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Pending Manager' },
-      'manager_approved': { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Pending HR' },
-      // CEO-first (SDSL/SBL) flow where HR is final approver
-      'ceo_approved': { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Pending HR' },
-      'hr_approved': { bg: 'bg-purple-100', text: 'text-purple-800', label: 'Pending CEO' },
-    };
-    
-    const config = statusConfig[status] || { bg: 'bg-gray-100', text: 'text-gray-800', label: status };
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-        {config.label}
-      </span>
-    );
-  };
+  // Active approval queue: do not show status badge per requirements to reduce redundancy
 
   const tabs = [
     { key: 'Merban Capital', label: 'Merban Capital', count: (groupedApprovals['Merban Capital'] || []).length, description: 'Requests from Merban Capital employees pending HR review' },
@@ -229,9 +240,7 @@ function HRApprovals() {
                             Employee ID: {request.employee_id || 'N/A'}
                           </p>
                         </div>
-                        <div className="text-right">
-                          {getStatusBadge(request.status)}
-                        </div>
+                        <div className="text-right" />
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -336,6 +345,74 @@ function HRApprovals() {
           </div>
         </div>
       )}
+
+      {/* HR Approval Records */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">Approval Records</h3>
+          <p className="text-sm text-gray-600">Previously processed requests, grouped by affiliate.</p>
+        </div>
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+            {['Merban Capital', 'SDSL', 'SBL'].map((key) => (
+              <button
+                key={key}
+                onClick={() => setRecordsActiveTab(key)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                  recordsActiveTab === key ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {key}
+                {(recordsGroups[key] || []).length > 0 && (
+                  <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                    recordsActiveTab === key ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-900'
+                  }`}>
+                    {(recordsGroups[key] || []).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="p-6">
+          {recordsLoading ? (
+            <div className="text-center py-12 text-gray-500">Loading records…</div>
+          ) : (
+            (recordsGroups[recordsActiveTab] || []).length === 0 ? (
+              <div className="px-4 py-12 text-center text-gray-500">No approval records found.</div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {(recordsGroups[recordsActiveTab] || []).map((request) => (
+                  <li key={`hr-record-${request.id}`}>
+                    <div className="px-4 py-3 sm:px-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            {request.employee_name} — {request.leave_type_name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} 
+                            <span className="ml-1">({request.total_days} working days)</span>
+                          </p>
+                          {request.reason && (
+                            <p className="text-xs text-gray-600 mt-1">
+                              <strong>Reason:</strong> {request.reason}
+                            </p>
+                          )}
+                          {/* Show current status per requirement */}
+                          <div className="mt-1 text-xs text-gray-700">
+                            Status: {request.status_display || request.stage_label || request.status}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
+        </div>
+      </div>
     </div>
   );
 }
