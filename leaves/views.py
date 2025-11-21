@@ -578,19 +578,17 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-created_at']
     
     def get_queryset(self):  # type: ignore[override]
-        """Return leave requests available to the current approver, filtered by role and affiliate.
+        """Return leave requests available to the current approver.
 
         Rules:
-        - manager: Direct reports or HOD of a department (Merban Capital only).
-        - hr: Requests at the correct stage for HR review across all affiliates.
-        - ceo: Requests at the correct stage for CEO approval, filtered by the CEO's affiliate.
-        - admin/superuser: All requests.
+        - manager: only requests from their direct reports (employee__manager = self.user)
+        - hr: all requests that are at or beyond Manager stage
+        - ceo: all requests that are at or beyond HR stage
+        - admin/superuser: all requests
         - others: none
         """
         user = self.request.user
-        qs = LeaveRequest.objects.select_related(
-            'employee__affiliate', 'employee__department__affiliate'
-        ).all()
+        qs = LeaveRequest.objects.all()
         role = getattr(user, 'role', None)
 
         # Superuser/admin: full access
@@ -599,53 +597,28 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
         if role == 'manager':
             # Direct reports or same department where user is HOD/Manager, but EXCLUDE own requests
-            # and exclude non-Merban affiliates.
+            # Additionally, exclude SDSL/SBL affiliates entirely because their flow is CEO-first (no manager stage)
             return (
                 qs.filter(
                     Q(employee__manager=user) | Q(employee__department__hod=user)
                 )
-                .filter(
-                    Q(employee__affiliate__name__iexact='MERBAN CAPITAL') |
-                    Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL')
-                )
                 .exclude(employee=user)
+                .exclude(
+                    Q(employee__department__affiliate__name__iexact='SDSL') |
+                    Q(employee__department__affiliate__name__iexact='SBL') |
+                    Q(employee__affiliate__name__iexact='SDSL') |
+                    Q(employee__affiliate__name__iexact='SBL')
+                )
             )
 
         if role == 'hr':
-            # HR sees:
-            # - Merban: staff manager_approved + manager/HOD/HR pending
-            # - SDSL/SBL: staff ceo_approved + CEO self-requests pending
-            merban_filter = Q(employee__affiliate__name__iexact='MERBAN CAPITAL') | Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL')
-            sdsl_sbl_filter = Q(employee__affiliate__name__in=['SDSL', 'SBL']) | Q(employee__department__affiliate__name__in=['SDSL', 'SBL'])
-
-            # Merban requests needing HR approval
-            merban_hr_q = Q(status='manager_approved') & merban_filter
-            merban_mgr_skip_q = Q(status='pending') & merban_filter & Q(employee__role__in=['manager', 'hod', 'hr'])
-
-            # SDSL/SBL requests needing HR approval (final step)
-            sdsl_sbl_hr_q = Q(status='ceo_approved') & sdsl_sbl_filter
-            sdsl_sbl_ceo_skip_q = Q(status='pending') & sdsl_sbl_filter & Q(employee__role='ceo')
-
-            return qs.filter(
-                merban_hr_q | merban_mgr_skip_q | sdsl_sbl_hr_q | sdsl_sbl_ceo_skip_q
-            )
+            # Items that have passed Manager stage or are pending (to allow visibility)
+            return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
-            # CEO sees requests requiring their approval, filtered by their specific affiliate.
-            ceo_affiliate = getattr(user, 'affiliate', None)
-            if not ceo_affiliate:
-                return qs.none() # CEO with no affiliate sees nothing.
-
-            affiliate_filter = Q(employee__affiliate=ceo_affiliate) | Q(employee__department__affiliate=ceo_affiliate)
-
-            # Merban CEO sees 'hr_approved' requests.
-            # SDSL/SBL CEOs see 'pending' requests.
-            if ceo_affiliate.name.upper() == 'MERBAN CAPITAL':
-                status_filter = Q(status='hr_approved')
-            else:
-                status_filter = Q(status='pending')
-
-            return qs.filter(affiliate_filter & status_filter)
+            # For CEO, include items that are pending CEO action (pending for SDSL/SBL, hr_approved for Merban)
+            # and optionally previously acted ones for visibility.
+            return qs.filter(status__in=['pending', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()
