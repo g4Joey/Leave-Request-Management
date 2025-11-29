@@ -14,13 +14,45 @@ function RoleManagement() {
 
   useEffect(() => {
     fetchRoleData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchRoleData = async () => {
     try {
       setLoading(true);
       const response = await api.get('/leaves/role-entitlements/');
-      setRoles(response.data.roles || []);
+      const apiRoles = response.data.roles || [];
+      // Also fetch staff to compute accurate counts per role (in case backend counts are stale)
+      let staffList = [];
+      try {
+        // request a large limit to avoid paginated partial results
+        const staffRes = await api.get('/users/staff/?limit=1000');
+        staffList = Array.isArray(staffRes.data?.results) ? staffRes.data.results : (Array.isArray(staffRes.data) ? staffRes.data : []);
+      } catch (e) {
+        // ignore, we'll use backend counts if staff fetch fails
+        staffList = [];
+      }
+
+      const computedCounts = {};
+      staffList.forEach((s) => {
+        const raw = String(s.role || '').toLowerCase();
+        let roleNorm = raw;
+        if (raw === 'employee' || raw === 'staff') roleNorm = 'junior_staff';
+        else if (raw === 'senior' || raw === 'senior_staff') roleNorm = 'senior_staff';
+        else if (raw === 'hod' || raw === 'head_of_department' || raw === 'head' || raw === 'manager') roleNorm = 'manager';
+        else if (raw === 'ceo' || raw === 'executive') roleNorm = 'ceo';
+        else if (raw === '') roleNorm = 'junior_staff';
+
+        computedCounts[roleNorm] = (computedCounts[roleNorm] || 0) + 1;
+      });
+
+      // merge counts, and filter out HR role from view per UX request
+      const merged = apiRoles
+        .map((r) => ({
+          ...r,
+          user_count: typeof computedCounts[r.role_code] === 'number' ? computedCounts[r.role_code] : (r.user_count || 0),
+        }))
+        .filter((r) => String(r.role_code || '').toLowerCase() !== 'hr');
+      setRoles(merged);
       setLeaveTypes(response.data.leave_types || []);
     } catch (error) {
       console.error('Failed to fetch role data:', error);

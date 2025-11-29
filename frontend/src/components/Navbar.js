@@ -42,7 +42,13 @@ function Navbar() {
               >
                 Dashboard
               </Link>
-              {user?.role !== 'ceo' && (
+              {(() => {
+                const isCEO = user?.role === 'ceo';
+                const aff = (user?.affiliate_name || '').toUpperCase();
+                const ceoCanRequest = isCEO && (aff === 'SDSL' || aff === 'SBL');
+                const allowRequest = !isCEO || ceoCanRequest; // block only Merban CEO
+                return allowRequest;
+              })() && (
                 <>
                   <Link
                     to="/request"

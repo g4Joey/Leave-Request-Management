@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -158,6 +158,7 @@ function StaffManagement() {
 
   const fetchStaffData = useCallback(async () => {
     try {
+      setLoading(true);
       // Fetch departments/employees
       const response = await api.get('/users/staff/');
       const payload = response?.data;
@@ -313,6 +314,9 @@ function StaffManagement() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchStaffData]);
 
+  // Handle navigation state from other pages (e.g., DepartmentPage) to open modals
+  
+
 
 
 
@@ -335,6 +339,7 @@ function StaffManagement() {
         email: raw.email,
         role: (raw.role === 'employee' || raw.role === 'staff') ? 'junior_staff' : raw.role,
         department_name: raw.department?.name || raw.department_name || (typeof raw.department === 'string' ? raw.department : undefined),
+        department_id: raw.department?.id || raw.department_id || null,
         hire_date: raw.hire_date,
         first_name: raw.first_name,
         last_name: raw.last_name,
@@ -348,7 +353,8 @@ function StaffManagement() {
         employee_id: normalized.employee_id || '', 
         hire_date: normalized.hire_date || '',
         new_email: '',
-        new_password: ''
+        new_password: '',
+        department_id: normalized.department_id || ''
       });
     } catch (e) {
       const status = e.response?.status;
@@ -484,6 +490,15 @@ function StaffManagement() {
     if (profileEditFields.hire_date !== (currentData.hire_date || '')) {
       updates.hire_date = profileEditFields.hire_date;
     }
+
+    // Check if department changed (HR/Admin only)
+    if ((user?.role === 'hr' || user?.role === 'admin' || user?.is_superuser)) {
+      const currentDept = currentData.department_id || null;
+      const newDept = profileEditFields.department_id || null;
+      if ((String(newDept) !== String(currentDept))) {
+        updates.department_id = newDept || null;
+      }
+    }
     
     // If no changes, return early
     if (Object.keys(updates).length === 0) return;
@@ -500,7 +515,9 @@ function StaffManagement() {
         data: prev.data ? { 
           ...prev.data, 
           employee_id: updatedUser.employee_id,
-          hire_date: updatedUser.hire_date 
+          hire_date: updatedUser.hire_date,
+          department_id: updatedUser.department?.id || updatedUser.department_id || prev.data.department_id,
+          department_name: updatedUser.department?.name || updatedUser.department_name || prev.data.department_name,
         } : prev.data 
       }));
       
@@ -515,7 +532,7 @@ function StaffManagement() {
       const employeeId = profileModal.employee.id;
       setEmployees(prev => prev.map((emp) => (
         emp.id === employeeId
-          ? { ...emp, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date }
+          ? { ...emp, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date, department: updatedUser.department?.name || updatedUser.department_name || emp.department }
           : emp
       )));
       
@@ -528,7 +545,7 @@ function StaffManagement() {
           ...dept,
           staff: dept.staff.map((staffer) => (
             staffer.id === employeeId
-              ? { ...staffer, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date }
+              ? { ...staffer, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date, department: updatedUser.department?.name || updatedUser.department_name || staffer.department }
               : staffer
           )),
         };
@@ -684,6 +701,125 @@ function StaffManagement() {
       request.end_date?.includes(query)
     );
   }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery]);
+
+  // Handle navigation state from other pages (e.g., DepartmentPage) to open modals
+  const location = useLocation();
+  useEffect(() => {
+    if (location?.state) {
+      const s = location.state;
+      if (s.openProfileId) {
+        openProfile({ id: s.openProfileId });
+      }
+      if (s.openBenefitsId) {
+        openBenefits({ id: s.openBenefitsId });
+      }
+      if (s.openLeaveHistoryId) {
+        openLeaveHistory({ id: s.openLeaveHistoryId });
+      }
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      } catch (e) {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
+  const handleExportLeaveHistoryCSV = () => {
+    const requests = leaveHistoryModal.requests;
+    if (!requests || requests.length === 0) {
+      showToast({ type: 'info', message: 'No leave history to export.' });
+      return;
+    }
+
+    const total = requests.length;
+    const approved = requests.filter(r => r.status === 'approved').length;
+    const rejected = requests.filter(r => r.status === 'rejected').length;
+    const pending = requests.filter(r => ['pending', 'manager_approved', 'hr_approved'].includes(r.status)).length;
+
+    const formatDate = (val) => {
+      if (!val) return '';
+      const s = String(val);
+      // ISO yyyy-mm-dd (or ISO datetime)
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const [y, m, d] = s.split('T')[0].split('-');
+        return `${d}-${m}-${y}`;
+      }
+      // dd/mm/yyyy
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+        const [d, m, y] = s.split('/');
+        return `${d}-${m}-${y}`;
+      }
+      // Fallback to Date parsing
+      const dt = new Date(s);
+      if (!isNaN(dt)) {
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const yy = dt.getFullYear();
+        return `${dd}-${mm}-${yy}`;
+      }
+      return s;
+    };
+
+    const usFormat = (val) => {
+      if (!val) return '';
+      const s = String(val).trim();
+      const base = s.split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(base)) {
+        const [y, m, d] = base.split('-');
+        return `${m}/${d}/${y}`;
+      }
+      if (/^\d{2}-\d{2}-\d{4}$/.test(s)) { // from prior DD-MM-YYYY
+        const [d, m, y] = s.split('-');
+        return `${m}/${d}/${y}`;
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s; // already mm/dd/yyyy
+      const dt = new Date(s);
+      if (!isNaN(dt)) {
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const yy = dt.getFullYear();
+        return `${mm}/${dd}/${yy}`;
+      }
+      return s;
+    };
+
+    const csvRows = [
+      ['Total', 'Approved', 'Rejected', 'Pending'],
+      [total, approved, rejected, pending],
+      [],
+      ['Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Comments', 'Requested At', 'Manager Approval Date', 'HR Approval Date', 'CEO Approval Date', 'Final Approval/Rejection Date']
+    ];
+
+    requests.forEach(request => {
+      csvRows.push([
+        request.leave_type_name || request.leave_type?.name || 'Unknown Leave Type',
+        usFormat(request.start_date),
+        usFormat(request.end_date),
+        request.total_days,
+        request.status,
+        request.reason || '',
+        request.approval_comments || '',
+        usFormat(request.created_at),
+        usFormat(request.manager_approval_date),
+        usFormat(request.hr_approval_date),
+        usFormat(request.ceo_approval_date),
+        usFormat(request.approval_date)
+      ]);
+    });
+
+    const csvContent = csvRows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', `leave_history_${leaveHistoryModal.employee?.name.replace(' ', '_')}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast({ type: 'success', message: 'Leave history exported.' });
+  };
 
   const saveBenefits = async () => {
     const { employee, rows } = benefitsModal;
@@ -1083,6 +1219,28 @@ function StaffManagement() {
     showToast({ type: 'info', message: 'Exported current employees as CSV' });
   };
 
+  const handleExportAllLeaveRequestsCSV = async () => {
+    try {
+      showToast({ type: 'info', message: 'Exporting all leave requests...' });
+      const response = await api.get('/leaves/requests/export-all/', {
+        responseType: 'blob', // Important for downloading files
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'all_leave_requests.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showToast({ type: 'success', message: 'All leave requests exported successfully.' });
+    } catch (error) {
+      console.error('Error exporting all leave requests:', error);
+      showToast({ type: 'error', message: 'Failed to export all leave requests.' });
+    }
+  };
+
   const downloadTemplateCSV = () => {
   const csv = `name,email,affiliate,department,role,employee_id,hire_date
 John Doe,john.doe@company.com,Merban Capital,IT,senior_staff,EMP001,2023-01-15
@@ -1256,7 +1414,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                         </div>
                         <div className="mt-1 space-y-1 text-sm text-gray-600">
                               <p><span className="text-gray-700 font-medium">CEO:</span> {affiliateInfo[aff.id]?.ceo || aff?.ceo?.name || aff?.ceo?.email || '—'}</p>
-                              {aff.name === 'MERBAN CAPITAL' && (
+                              {(aff.name || '').toUpperCase() === 'MERBAN CAPITAL' && (
                                 <p><span className="text-gray-700 font-medium">Departments:</span> {affiliateInfo[aff.id]?.depts ?? '—'}</p>
                               )}
                               <p><span className="text-gray-700 font-medium">Members:</span> {affiliateInfo[aff.id]?.members ?? '—'}</p>
@@ -1397,6 +1555,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   <table className="min-w-full text-sm text-left">
                     <thead className="text-xs uppercase text-gray-500">
                       <tr>
+                        <th className="px-3 py-2">#</th>
                         <th className="px-3 py-2">Name</th>
                         <th className="px-3 py-2">Email</th>
                         <th className="px-3 py-2">Affiliate</th>
@@ -1407,8 +1566,9 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredEmployees.map((emp) => (
+                      {filteredEmployees.map((emp, idx) => (
                         <tr key={emp.id} className="border-t">
+                          <td className="px-3 py-2">{idx + 1}</td>
                           <td className="px-3 py-2">{emp.name}</td>
                           <td className="px-3 py-2">{emp.email}</td>
                           <td className="px-3 py-2">{emp.affiliate}</td>
@@ -1416,7 +1576,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                           <td className="px-3 py-2">{emp.employee_id}</td>
                           <td className="px-3 py-2">{getRoleBadge(emp.role)}</td>
                           <td className="px-3 py-2">
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex gap-2">
                               <button
                                 onClick={() => openProfile(emp)}
                                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
@@ -1511,12 +1671,20 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
               <section>
                 <h2 className="text-lg font-medium mb-4">Export</h2>
                 <p className="text-sm text-gray-600 mb-4">Export staff list as CSV for backups or HR systems.</p>
-                <button
-                  onClick={handleExportCSV}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
-                >
-                  Export CSV
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleExportCSV}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                  >
+                    Export Staff List CSV
+                  </button>
+                  <button
+                    onClick={handleExportAllLeaveRequestsCSV}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-200 text-blue-700 hover:bg-blue-50"
+                  >
+                    Export All Leave Requests
+                  </button>
+                </div>
               </section>
             )}
             {active === 'role-management' && (
@@ -1635,8 +1803,24 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   </div>
                 </div>
                 
-                {/* Department - Read only */}
-                <div><span className="font-medium">Department:</span> {(profileModal.data.role === 'ceo' || /^executive(s)?$/i.test(profileModal.data.department_name || '')) ? '—' : (profileModal.data.department_name || '—')}</div>
+                {/* Department - editable for HR/Admin, read-only otherwise */}
+                {((user?.role === 'hr' || user?.role === 'admin' || user?.is_superuser)) ? (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Department</label>
+                    <select
+                      value={profileEditFields.department_id || ''}
+                      onChange={(e) => setProfileEditFields(prev => ({ ...prev, department_id: e.target.value }))}
+                      className="w-full border rounded-md px-2 py-1 text-sm"
+                    >
+                      <option value="">-- No department --</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div><span className="font-medium">Department:</span> {(profileModal.data.role === 'ceo' || /^executive(s)?$/i.test(profileModal.data.department_name || '')) ? '—' : (profileModal.data.department_name || '—')}</div>
+                )}
 
                 {/* Hire Date - Editable */}
                 <div>
@@ -2270,7 +2454,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
       {/* Leave History Modal */}
       {leaveHistoryModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-          <div className="bg-white rounded-md shadow p-6 w-full max-w-4xl max-h-[80vh]">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-4xl max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Leave History: {leaveHistoryModal.employee?.name}</h3>
               <button
@@ -2302,7 +2486,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                 <span className="ml-2 text-sm text-gray-500">Loading leave history...</span>
               </div>
             ) : (
-              <div className="overflow-y-auto max-h-[60vh]">
+              <div className="flex-1 overflow-y-auto">
                 {leaveHistoryModal.requests.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <p>No leave requests found for this employee.</p>
@@ -2400,7 +2584,13 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
               </div>
             )}
             
-            <div className="flex justify-end mt-6">
+            <div className="flex-shrink-0 flex justify-end mt-4 gap-2 bg-white">
+              <button
+                onClick={handleExportLeaveHistoryCSV}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700"
+              >
+                Download CSV
+              </button>
               <button
                 onClick={() => setLeaveHistoryModal({ open: false, loading: false, employee: null, requests: [], searchQuery: '' })}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-gray-200 hover:bg-gray-50"

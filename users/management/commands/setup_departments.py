@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from users.models import Department, CustomUser
+from users.models import Department, CustomUser, Affiliate
 import os
 
 
@@ -19,6 +19,12 @@ class Command(BaseCommand):
         skip_hr = options.get('skip_hr')
         
         with transaction.atomic():
+            # Resolve Merban Capital affiliate to link canonical departments
+            merban = Affiliate.objects.filter(name__iexact='MERBAN CAPITAL').first()
+            if not merban:
+                # Create if missing to ensure departments can be linked
+                merban = Affiliate.objects.create(name='MERBAN CAPITAL')
+                self.stdout.write('Created affiliate: MERBAN CAPITAL')
             # Create departments - Updated to match new organizational structure
             departments_data = [
                 ('Finance & Accounts', 'Financial accounts and accounting services'),
@@ -53,9 +59,14 @@ class Command(BaseCommand):
                                 self.stdout.write(self.style.WARNING(f'Could not delete duplicate department "{d.name}" (id={d.id}): {e}'))
                         if moved_total:
                             self.stdout.write(f'Merged {len(dupes)} duplicate department(s) into "{dept_name}" and reassigned {moved_total} user(s).')
-                    self.stdout.write(f'Department already exists: {dept_name}')
+                    # Ensure affiliate is set to Merban for canonical departments
+                    if getattr(dept, 'affiliate_id', None) != getattr(merban, 'id', None):
+                        Department.objects.filter(pk=dept.pk).update(affiliate=merban)
+                        self.stdout.write(f'Linked department to MERBAN CAPITAL: {dept_name}')
+                    else:
+                        self.stdout.write(f'Department already exists: {dept_name}')
                 else:
-                    dept = Department.objects.create(name=dept_name, description=dept_desc)
+                    dept = Department.objects.create(name=dept_name, description=dept_desc, affiliate=merban)
                     self.stdout.write(f'Created department: {dept_name}')
 
                 created_departments[dept_name] = dept

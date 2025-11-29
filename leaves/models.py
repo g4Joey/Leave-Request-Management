@@ -280,40 +280,6 @@ class LeaveRequest(models.Model):
     def is_rejected(self):
         return self.status == 'rejected'
     
-    def get_dynamic_status_display(self):
-        """Get status display that reflects the actual workflow based on employee role"""
-        from leaves.services import ApprovalWorkflowService
-        
-        # For completed/rejected statuses, use standard display
-        if self.status in ['approved', 'rejected', 'cancelled']:
-            return self.get_status_display()
-        
-        # Get the handler to determine the workflow
-        try:
-            handler = ApprovalWorkflowService.get_handler(self)
-            flow = handler.get_approval_flow()
-            
-            # Map status to next required role
-            if self.status == 'pending':
-                next_role = flow.get('pending', '')
-                if next_role == 'hr':
-                    return 'Pending HR Approval'
-                elif next_role == 'ceo':
-                    return 'Pending CEO Approval'
-                else:
-                    return 'Pending Manager Approval'
-            elif self.status == 'manager_approved':
-                return 'Manager Approved - Pending HR'
-            elif self.status == 'hr_approved':
-                return 'HR Approved - Pending CEO'
-            elif self.status == 'ceo_approved':
-                return 'CEO Approved - Pending HR'
-        except Exception:
-            pass
-        
-        # Fallback to standard display
-        return self.get_status_display()
-    
     @property
     def current_approval_stage(self):
         """Return which stage of approval this request is at"""
@@ -331,6 +297,50 @@ class LeaveRequest(models.Model):
             return 'rejected'
         else:
             return 'unknown'
+    
+    def get_dynamic_status_display(self):
+        """Return context-aware status display based on affiliate's approval workflow"""
+        # Get affiliate name for workflow determination
+        affiliate_name = None
+        try:
+            if hasattr(self, 'employee') and self.employee:
+                if hasattr(self.employee, 'department') and self.employee.department:
+                    if hasattr(self.employee.department, 'affiliate') and self.employee.department.affiliate:
+                        affiliate_name = self.employee.department.affiliate.name
+                elif hasattr(self.employee, 'affiliate') and self.employee.affiliate:
+                    affiliate_name = self.employee.affiliate.name
+        except Exception:
+            pass
+        
+        # Terminal states (same for all workflows)
+        if self.status == 'approved':
+            return 'Approved'
+        elif self.status == 'rejected':
+            return 'Rejected'
+        elif self.status == 'cancelled':
+            return 'Cancelled'
+        
+        # Determine workflow type
+        is_ceo_first_flow = affiliate_name in ['SDSL', 'SBL']
+        
+        # Contextual status labels based on workflow
+        if is_ceo_first_flow:
+            # SDSL/SBL: CEO → HR (HR is final approver)
+            if self.status == 'pending':
+                return 'Pending CEO Approval'
+            elif self.status == 'ceo_approved':
+                return 'CEO Approved - Pending HR Approval'
+        else:
+            # Merban Capital: Manager → HR → CEO (CEO is final approver)
+            if self.status == 'pending':
+                return 'Pending Manager Approval'
+            elif self.status == 'manager_approved':
+                return 'Manager Approved - Pending HR Approval'
+            elif self.status == 'hr_approved':
+                return 'HR Approved - Pending CEO Approval'
+        
+        # Fallback to status display
+        return self.get_status_display()
     
     @property
     def next_approver_role(self):

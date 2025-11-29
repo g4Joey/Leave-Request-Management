@@ -13,7 +13,7 @@ function ManagerDashboard() {
   const [loadingActionById, setLoadingActionById] = useState({});
   const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
   const PAGE_SIZE = 15;
-  // Pagination & filters for Leave Records (approved + rejected)
+  // Pagination & filters for Approval Records (approved + rejected)
   const [recordsPage, setRecordsPage] = useState(0);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsSearch, setRecordsSearch] = useState('');
@@ -35,15 +35,15 @@ function ManagerDashboard() {
           status: status
         };
         
-        const res = await api.get('/leaves/manager/approval_records/', { params });
+        const res = await api.get('/leaves/manager/', { params });
         const data = res.data;
-        allItems = data.results || data.results || data;
+        allItems = data.results || data;
         
-        setRecordsHasMore(Boolean(data?.has_more));
+        setRecordsHasMore(data && typeof data === 'object' && 'next' in data ? Boolean(data.next) : allItems.length === PAGE_SIZE);
       } else {
         // Fetch both approved and rejected in parallel, then combine and sort
         const [approvedRes, rejectedRes] = await Promise.all([
-          api.get('/leaves/manager/approval_records/', { 
+          api.get('/leaves/manager/', { 
             params: { 
               ordering: '-created_at', 
               limit: Math.ceil(PAGE_SIZE / 2), 
@@ -52,7 +52,7 @@ function ManagerDashboard() {
               status: 'approved'
             }
           }),
-          api.get('/leaves/manager/approval_records/', { 
+          api.get('/leaves/manager/', { 
             params: { 
               ordering: '-created_at', 
               limit: Math.ceil(PAGE_SIZE / 2), 
@@ -63,8 +63,8 @@ function ManagerDashboard() {
           })
         ]);
         
-        const approvedItems = approvedRes.data.results || approvedRes.data?.results || approvedRes.data || [];
-        const rejectedItems = rejectedRes.data.results || rejectedRes.data?.results || rejectedRes.data || [];
+        const approvedItems = approvedRes.data.results || approvedRes.data;
+        const rejectedItems = rejectedRes.data.results || rejectedRes.data;
         
         // Combine and sort by created_at descending
         allItems = [...approvedItems, ...rejectedItems].sort((a, b) => 
@@ -72,9 +72,9 @@ function ManagerDashboard() {
         ).slice(0, PAGE_SIZE);
         
         // Check if there are more records
-        const hasMoreApproved = Boolean(approvedRes?.data?.has_more);
-        const hasMoreRejected = Boolean(rejectedRes?.data?.has_more);
-        setRecordsHasMore(hasMoreApproved || hasMoreRejected);
+        const hasMoreApproved = approvedRes.data && typeof approvedRes.data === 'object' && 'next' in approvedRes.data ? Boolean(approvedRes.data.next) : false;
+        const hasMoreRejected = rejectedRes.data && typeof rejectedRes.data === 'object' && 'next' in rejectedRes.data ? Boolean(rejectedRes.data.next) : false;
+        setRecordsHasMore(hasMoreApproved || hasMoreRejected || allItems.length === PAGE_SIZE);
       }
       
       setLeaveRecords(allItems);
@@ -130,7 +130,8 @@ function ManagerDashboard() {
         await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
       }
       // Global toast and optional haptics
-      showToast({ type: 'success', message: `Request ${action}ed successfully.` });
+      const verb = action === 'approve' ? 'approved' : 'rejected';
+      showToast({ type: 'success', message: `Request ${verb} successfully.` });
       if (navigator && 'vibrate' in navigator) {
         try { navigator.vibrate(40); } catch (_) { /* noop */ }
       }
@@ -318,10 +319,6 @@ function ManagerDashboard() {
                               <strong>Comments:</strong> {request.approval_comments}
                             </p>
                           )}
-                          {/* Show current status as of now for records */}
-                          <div className="mt-1 text-xs text-gray-700">
-                            Status: {request.status_display || request.stage_label || request.status}
-                          </div>
                           <div className="text-xs text-gray-400 mt-1">
                             Submitted: {new Date(request.created_at).toLocaleDateString()} | 
                             {request.approved_by_name && (

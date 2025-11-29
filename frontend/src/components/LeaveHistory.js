@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../services/api';
 
@@ -7,6 +8,7 @@ function LeaveHistory() {
   const [loading, setLoading] = useState(true);
   const [cancelModal, setCancelModal] = useState({ open: false, request: null, comments: '', loading: false });
   const { showToast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -36,7 +38,9 @@ function LeaveHistory() {
   };
 
   const canCancel = (request) => {
-    return request.status === 'pending';
+    if (!user) return false;
+    // Allow cancellation before final approval for own requests only.
+    return request.employee_id === user.id && ['pending','manager_approved','ceo_approved'].includes(request.status);
   };
 
   const handleCancelRequest = async () => {
@@ -88,7 +92,9 @@ function LeaveHistory() {
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
-                        {request.status}
+                        {(request.stage_label && ['pending','manager_approved','hr_approved','ceo_approved'].includes(request.status))
+                          ? request.stage_label
+                          : request.status_display || request.status}
                       </span>
                     </div>
                     <div className="ml-4">

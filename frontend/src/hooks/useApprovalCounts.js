@@ -28,8 +28,14 @@ export const useApprovalCounts = () => {
     
     // Refresh counts every 30 seconds
     const interval = setInterval(fetchCounts, 30000);
+    // Also refresh immediately when approval actions occur elsewhere
+    const onChanged = () => fetchCounts();
+    window.addEventListener('approval:changed', onChanged);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('approval:changed', onChanged);
+    };
   }, []);
 
   return { counts, loading, refreshCounts: fetchCounts };

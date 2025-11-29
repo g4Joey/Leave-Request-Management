@@ -2,24 +2,31 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { Dialog } from '@headlessui/react';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import OverlapAdvisory from './OverlapAdvisory';
 
 function CEOApprovals() {
   const { showToast } = useToast();
-  const [requests, setRequests] = useState({
-    hod_manager: [],
-    hr: [],
-    staff: []
-  });
-  const [loading, setLoading] = useState(true);
-  const [loadingActionById, setLoadingActionById] = useState({});
-  const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
-  const [activeTab, setActiveTab] = useState('staff'); // Default to staff tab
-  const [ceoAffiliate, setCeoAffiliate] = useState(''); // Store CEO's affiliate
-  // CEO Approval Records
-  const [recordsLoading, setRecordsLoading] = useState(false);
-  const [recordsGroups, setRecordsGroups] = useState({ hod_manager: [], hr: [], staff: [] });
-  const [recordsActiveTab, setRecordsActiveTab] = useState('staff');
+  const { user } = useAuth();
+    // Determine affiliate simplification upfront so initial hooks order remains constant across renders.
+    const affiliateName = (user?.affiliate_name || '').toUpperCase();
+    const isSimplified = affiliateName === 'SDSL' || affiliateName === 'SBL';
+    const [requests, setRequests] = useState({
+      hod_manager: [],
+      hr: [],
+      staff: []
+    });
+    const [loading, setLoading] = useState(true);
+    const [loadingActionById, setLoadingActionById] = useState({});
+    const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
+    const [activeTab, setActiveTab] = useState(isSimplified ? 'staff' : 'hod_manager');
+    const [approvalRecords, setApprovalRecords] = useState([]);
+    const [recordsLoading, setRecordsLoading] = useState(false);
+    const [recordsSearch, setRecordsSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState(''); // 'approved', 'rejected', or '' for all
+    const [recordsPage, setRecordsPage] = useState(0);
+    const [recordsHasMore, setRecordsHasMore] = useState(false);
+    const PAGE_SIZE = 20;
 
   const fetchCEORequests = useCallback(async () => {
     try {
@@ -32,25 +39,6 @@ function CEOApprovals() {
         hr: [],
         staff: []
       });
-      
-      // Store CEO's affiliate from response
-      setCeoAffiliate(response.data.ceo_affiliate || '');
-      
-      // Set active tab based on affiliate and available requests
-      const affiliate = (response.data.ceo_affiliate || '').toUpperCase();
-      if (affiliate === 'SDSL' || affiliate === 'SBL') {
-        // SDSL and SBL CEOs should only see staff tab
-        setActiveTab('staff');
-      } else {
-        // Merban CEO: default to first tab with requests
-        if (response.data.categories.hod_manager?.length > 0) {
-          setActiveTab('hod_manager');
-        } else if (response.data.categories.hr?.length > 0) {
-          setActiveTab('hr');
-        } else {
-          setActiveTab('staff');
-        }
-      }
     } catch (error) {
       console.error('Error fetching CEO requests:', error);
       showToast({ type: 'error', message: 'Failed to load approval requests' });
@@ -61,31 +49,35 @@ function CEOApprovals() {
 
   useEffect(() => {
     fetchCEORequests();
-    fetchCEORecords();
+    fetchApprovalRecords();
   }, [fetchCEORequests]);
 
-  const fetchCEORecords = async () => {
+  const fetchApprovalRecords = useCallback(async (page = 0, search = recordsSearch, status = statusFilter) => {
     try {
       setRecordsLoading(true);
-      const res = await api.get('/leaves/manager/approval_records/', { params: { ordering: '-created_at', limit: 50 } });
-      const groups = (res.data && res.data.groups) || { hod_manager: [], hr: [], staff: [] };
-      setRecordsGroups(groups);
-      // Set records tab depending on affiliate (SDSL/SBL only staff tab)
-      const aff = (ceoAffiliate || '').toUpperCase();
-      if (aff === 'SDSL' || aff === 'SBL') {
-        setRecordsActiveTab('staff');
-      } else {
-        const first = groups.hod_manager?.length ? 'hod_manager' : (groups.hr?.length ? 'hr' : 'staff');
-        setRecordsActiveTab(first);
-      }
-    } catch (e) {
-      console.error('Error fetching CEO approval records:', e);
-      setRecordsGroups({ hod_manager: [], hr: [], staff: [] });
-      setRecordsActiveTab('staff');
+      const params = {
+        ordering: '-created_at',
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+        search: search || undefined,
+        status: status || undefined
+      };
+      
+      const response = await api.get('/leaves/manager/recent_activity/', { params });
+      const data = response.data;
+      const items = data.results || data || [];
+      
+      setApprovalRecords(items);
+      setRecordsPage(page);
+      setRecordsHasMore(data && typeof data === 'object' && 'next' in data ? Boolean(data.next) : items.length === PAGE_SIZE);
+    } catch (error) {
+      console.error('Error fetching approval records:', error);
+      setApprovalRecords([]);
+      setRecordsHasMore(false);
     } finally {
       setRecordsLoading(false);
     }
-  };
+  }, [recordsSearch, statusFilter, PAGE_SIZE]);
 
   const handleAction = async (requestId, action, comments = '') => {
     setLoadingActionById(prev => ({ ...prev, [requestId]: action }));
@@ -102,9 +94,10 @@ function CEOApprovals() {
         staff: prev.staff.filter(req => req.id !== requestId)
       }));
       
+      const verb = action === 'approve' ? 'approved' : 'rejected';
       showToast({ 
         type: 'success', 
-        message: `Request ${action}ed successfully as CEO.` 
+        message: `Request ${verb} successfully as CEO.` 
       });
     } catch (error) {
       console.error(`Error ${action}ing request:`, error);
@@ -159,7 +152,6 @@ function CEOApprovals() {
 
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-        {/* Overlap Advisory Banner */}
         <OverlapAdvisory 
           leaveRequest={{
             ...request,
@@ -168,23 +160,19 @@ function CEOApprovals() {
           }}
           className="mb-4"
         />
-        
         <div className="flex justify-between items-start mb-4">
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {getEmployeeName(request)}
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-900">{getEmployeeName(request)}</h3>
             <div className="text-sm text-gray-600 space-y-1 mt-2">
               <p><span className="font-medium">Department:</span> {getEmployeeDepartment(request)}</p>
               <p><span className="font-medium">Employee ID:</span> {request.employee_id || 'N/A'}</p>
-              <p><span className="font-medium">Role:</span> 
+              <p>
+                <span className="font-medium">Role:</span>
                 <span className={`ml-1 px-2 py-1 rounded-full text-xs font-medium ${
                   categoryType === 'hod_manager' ? 'bg-purple-100 text-purple-800' :
-                  categoryType === 'hr' ? 'bg-blue-100 text-blue-800' :
-                  'bg-gray-100 text-gray-800'
+                  categoryType === 'hr' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                 }`}>
-                  {categoryType === 'hod_manager' ? 'HOD/Manager' : 
-                   categoryType === 'hr' ? 'HR Staff' : 'Staff Member'}
+                  {categoryType === 'hod_manager' ? 'HOD/Manager' : categoryType === 'hr' ? 'HR Staff' : 'Staff Member'}
                 </span>
               </p>
             </div>
@@ -236,9 +224,7 @@ function CEOApprovals() {
             <button
               onClick={() => handleAction(request.id, 'approve')}
               disabled={isApproving || isRejecting}
-              className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 
-                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors
-                       flex items-center justify-center"
+              className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
               {isApproving ? (
                 <>
@@ -249,15 +235,13 @@ function CEOApprovals() {
                   Approving...
                 </>
               ) : (
-                'Final Approve'
+                isSimplified ? 'Approve' : 'Final Approve'
               )}
             </button>
             <button
               onClick={() => handleReject(request.id)}
               disabled={isApproving || isRejecting}
-              className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 
-                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors
-                       flex items-center justify-center"
+              className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
               {isRejecting ? (
                 <>
@@ -285,7 +269,14 @@ function CEOApprovals() {
     );
   }
 
-  const tabs = [
+  const tabs = isSimplified ? [
+    {
+      key: 'staff',
+      label: 'Staff Requests',
+      count: requests.staff.length,
+      description: 'Leave requests from staff members awaiting first CEO approval'
+    }
+  ] : [
     { 
       key: 'hod_manager', 
       label: 'HOD/Manager Requests', 
@@ -305,14 +296,9 @@ function CEOApprovals() {
       description: 'Leave requests from regular staff members'
     }
   ];
-  
-  // Filter tabs for SDSL and SBL CEOs - they should only see staff tab
-  const affiliate = ceoAffiliate.toUpperCase();
-  const visibleTabs = (affiliate === 'SDSL' || affiliate === 'SBL') 
-    ? tabs.filter(tab => tab.key === 'staff')
-    : tabs;
 
   const totalPending = requests.hod_manager.length + requests.hr.length + requests.staff.length;
+  const approvalLabel = isSimplified ? 'Pending CEO Approval' : 'Pending Final Approval';
 
   return (
     <div className="space-y-6">
@@ -327,7 +313,7 @@ function CEOApprovals() {
           </p>
           <div className="mt-4">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-              {totalPending} Pending Final Approval{totalPending !== 1 ? 's' : ''}
+              {totalPending} {approvalLabel}{totalPending !== 1 ? 's' : ''}
             </span>
           </div>
         </div>
@@ -337,7 +323,7 @@ function CEOApprovals() {
       <div className="bg-white shadow rounded-lg">
         <div className="border-b border-gray-200">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
-            {visibleTabs.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -364,7 +350,7 @@ function CEOApprovals() {
 
         {/* Tab Content */}
         <div className="p-6">
-          {visibleTabs.map((tab) => (
+          {tabs.map((tab) => (
             <div key={tab.key} className={activeTab === tab.key ? 'block' : 'hidden'}>
               <div className="mb-4">
                 <p className="text-sm text-gray-600">{tab.description}</p>
@@ -393,6 +379,185 @@ function CEOApprovals() {
               )}
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Approval Records Section */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:p-6">
+          <h4 className="text-md leading-6 font-semibold text-gray-900 mb-4">Approval Records</h4>
+          <p className="text-sm text-gray-600 mb-4">Recent requests you have approved or rejected</p>
+          
+          {/* Search and Filter Controls */}
+          <div className="mb-4 flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Search by employee name..."
+                value={recordsSearch}
+                onChange={(e) => setRecordsSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setRecordsPage(0);
+                    fetchApprovalRecords(0, recordsSearch, statusFilter);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              />
+            </div>
+            <div className="sm:w-48">
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setRecordsPage(0);
+                  fetchApprovalRecords(0, recordsSearch, e.target.value);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              >
+                <option value="">All Statuses</option>
+                <option value="approved">Approved Only</option>
+                <option value="rejected">Rejected Only</option>
+              </select>
+            </div>
+            <button
+              onClick={() => {
+                setRecordsPage(0);
+                fetchApprovalRecords(0, recordsSearch, statusFilter);
+              }}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+              Search
+            </button>
+            {(recordsSearch || statusFilter) && (
+              <button
+                onClick={() => {
+                  setRecordsSearch('');
+                  setStatusFilter('');
+                  setRecordsPage(0);
+                  fetchApprovalRecords(0, '', '');
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          
+          {recordsLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto"></div>
+            </div>
+          ) : approvalRecords.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-gray-500">No approval records found</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {approvalRecords.map((record) => {
+                const isApproved = record.status === 'approved';
+                const statusColor = isApproved 
+                  ? 'bg-green-100 text-green-800 ring-green-200' 
+                  : 'bg-red-100 text-red-800 ring-red-200';
+                
+                return (
+                  <div key={`record-${record.id}`} className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {record.employee_name || 'Employee'} — {record.leave_type_name}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(record.start_date).toLocaleDateString()} - {new Date(record.end_date).toLocaleDateString()} 
+                              <span className="ml-1">({record.total_days} working days)</span>
+                            </p>
+                            {record.reason && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                <strong>Reason:</strong> {record.reason}
+                              </p>
+                            )}
+                            {record.hr_comments && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                <strong>HR Comments:</strong> {record.hr_comments}
+                              </p>
+                            )}
+                            <div className="text-xs text-gray-400 mt-1">
+                              Submitted: {new Date(record.created_at).toLocaleDateString()}
+                              {record.ceo_approval_date && (
+                                <span> | Processed: {new Date(record.ceo_approval_date).toLocaleDateString()}</span>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor} ml-4`}>
+                            {isApproved ? 'Approved' : 'Rejected'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {/* Pagination Controls */}
+          {approvalRecords.length > 0 && (
+            <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
+              <div className="flex-1 flex justify-between sm:hidden">
+                <button
+                  onClick={() => {
+                    const newPage = Math.max(0, recordsPage - 1);
+                    fetchApprovalRecords(newPage, recordsSearch, statusFilter);
+                  }}
+                  disabled={recordsPage === 0}
+                  className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => {
+                    fetchApprovalRecords(recordsPage + 1, recordsSearch, statusFilter);
+                  }}
+                  disabled={!recordsHasMore}
+                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-gray-700">
+                    Showing page <span className="font-medium">{recordsPage + 1}</span>
+                  </p>
+                </div>
+                <div>
+                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                    <button
+                      onClick={() => {
+                        const newPage = Math.max(0, recordsPage - 1);
+                        fetchApprovalRecords(newPage, recordsSearch, statusFilter);
+                      }}
+                      disabled={recordsPage === 0}
+                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => {
+                        fetchApprovalRecords(recordsPage + 1, recordsSearch, statusFilter);
+                      }}
+                      disabled={!recordsHasMore}
+                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -440,78 +605,6 @@ function CEOApprovals() {
           </div>
         </div>
       </Dialog>
-
-      {/* CEO Approval Records */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">Approval Records</h3>
-          <p className="text-sm text-gray-600">Previously processed requests, grouped by submitter category.</p>
-        </div>
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
-            {(affiliate === 'SDSL' || affiliate === 'SBL' ? ['staff'] : ['hod_manager', 'hr', 'staff']).map((key) => {
-              const label = key === 'hod_manager' ? 'HOD/Manager Requests' : (key === 'hr' ? 'HR Requests' : 'Staff Requests');
-              const count = (recordsGroups[key] || []).length;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setRecordsActiveTab(key)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
-                    recordsActiveTab === key ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  {label}
-                  {count > 0 && (
-                    <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
-                      recordsActiveTab === key ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-900'
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-        <div className="p-6">
-          {recordsLoading ? (
-            <div className="text-center py-12 text-gray-500">Loading records…</div>
-          ) : (
-            (recordsGroups[recordsActiveTab] || []).length === 0 ? (
-              <div className="px-4 py-12 text-center text-gray-500">No approval records found.</div>
-            ) : (
-              <ul className="divide-y divide-gray-200">
-                {(recordsGroups[recordsActiveTab] || []).map((request) => (
-                  <li key={`ceo-record-${request.id}`}>
-                    <div className="px-4 py-3 sm:px-6">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">
-                            {request.employee_name} — {request.leave_type_name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} 
-                            <span className="ml-1">({request.total_days} working days)</span>
-                          </p>
-                          {request.reason && (
-                            <p className="text-xs text-gray-600 mt-1">
-                              <strong>Reason:</strong> {request.reason}
-                            </p>
-                          )}
-                          {/* Show current status as of now */}
-                          <div className="mt-1 text-xs text-gray-700">
-                            Status: {request.status_display || request.stage_label || request.status}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )
-          )}
-        </div>
-      </div>
     </div>
   );
 }

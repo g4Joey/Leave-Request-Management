@@ -51,6 +51,7 @@ class ApprovalRoutingService:
             logger.exception("Failed to evaluate department affiliate override for employee %s: %s", getattr(employee, 'id', None), e)
 
         if not affiliate:
+            logger.debug(f"No affiliate found for employee {getattr(employee, 'email', '?')}, using default CEO")
             return cls._get_default_ceo()
 
         # CEOs are looked up strictly by their affiliate
@@ -60,7 +61,12 @@ class ApprovalRoutingService:
                 .filter(affiliate=affiliate)
                 .first()
             )
-            return ceo or cls._get_default_ceo()
+            if ceo:
+                logger.debug(f"Found CEO {getattr(ceo, 'email', '?')} for affiliate {getattr(affiliate, 'name', '?')}")
+                return ceo
+            else:
+                logger.warning(f"No CEO found for affiliate {getattr(affiliate, 'name', '?')} (id={getattr(affiliate, 'id', None)}), using default CEO")
+                return cls._get_default_ceo()
         except Exception as e:
             logger.exception("Failed to determine CEO for employee %s: %s", getattr(employee, 'id', None), e)
             return cls._get_default_ceo()
@@ -121,6 +127,7 @@ class ApprovalHandler(ABC):
     
     def can_approve(self, user: CustomUser, current_status: str) -> bool:
         """Check if user can approve at the current status."""
+        logger = logging.getLogger('leaves')
         flow = self.get_approval_flow()
         required_role = flow.get(current_status)
         user_role = getattr(user, 'role', None)
@@ -145,12 +152,23 @@ class ApprovalHandler(ABC):
         
         # Basic role check
         if user_role != required_role:
+            logger.debug(f"can_approve FALSE: user role {user_role} != required {required_role} for status {current_status}")
             return False
             
         # For CEO approval, ensure it's the correct CEO for the employee's affiliate
         if required_role == 'ceo':
             expected_ceo = ApprovalRoutingService.get_ceo_for_employee(self.leave_request.employee)
-            return bool(expected_ceo and getattr(user, 'id', None) == getattr(expected_ceo, 'id', None))
+            user_id = getattr(user, 'id', None)
+            expected_id = getattr(expected_ceo, 'id', None)
+            result = bool(expected_ceo and user_id == expected_id)
+            if not result:
+                logger.warning(
+                    f"CEO approval check failed for LR#{getattr(self.leave_request, 'id', '?')}: "
+                    f"user={getattr(user, 'email', '?')} (id={user_id}, affiliate={getattr(getattr(user, 'affiliate', None), 'name', None)}), "
+                    f"employee={getattr(self.leave_request.employee, 'email', '?')} (affiliate={getattr(getattr(self.leave_request.employee, 'affiliate', None), 'name', None)}), "
+                    f"expected_ceo={getattr(expected_ceo, 'email', '?') if expected_ceo else None} (id={expected_id})"
+                )
+            return result
             
         return True
     
@@ -183,8 +201,11 @@ class MerbanApprovalHandler(ApprovalHandler):
         emp = self.leave_request.employee
         role = getattr(emp, 'role', None)
         if role in ['manager', 'hod', 'hr']:
+            # Skip manager stage: requests may be created directly as 'manager_approved' (escalated)
+            # Provide mapping for both possible initial statuses ('pending' for legacy, 'manager_approved' for escalated)
             return {
-                'pending': 'hr',
+                'pending': 'hr',            # legacy path if status still 'pending'
+                'manager_approved': 'hr',    # escalated path (we set status when creating)
                 'hr_approved': 'ceo'
             }
         # Default staff flow

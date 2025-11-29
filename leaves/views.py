@@ -5,7 +5,6 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
-from rest_framework.exceptions import PermissionDenied, ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
@@ -30,10 +29,15 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
     ViewSet for leave types - read only for employees.
     HR-only actions provided for configuring global entitlements per leave type.
     """
-    # Default queryset used when no request context yet
     queryset = LeaveType.objects.filter(is_active=True)
     serializer_class = LeaveTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):  # type: ignore[override]
+        """Return all leave types for HR, only active for others"""
+        if self._is_hr(self.request):
+            return LeaveType.objects.all()
+        return LeaveType.objects.filter(is_active=True)
 
     def _is_hr(self, request) -> bool:
         user = request.user
@@ -48,18 +52,6 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
         return getattr(user, 'is_superuser', False) or (
             hasattr(user, 'role') and getattr(user, 'role') in ['hr', 'admin']
         )
-
-    # Allow HR to optionally see inactive leave types in listings
-    def get_queryset(self):  # type: ignore[override]
-        qs = LeaveType.objects.all()
-        include_inactive = str(self.request.query_params.get('include_inactive', '')).strip().lower() in ['1', 'true', 'yes']
-        if not include_inactive:
-            qs = qs.filter(is_active=True)
-        else:
-            # Only HR/Admin can request inactive types
-            if not self._is_hr(self.request):
-                qs = qs.filter(is_active=True)
-        return qs.order_by('name')
 
     @action(detail=True, methods=['get'])
     def entitlement_summary(self, request, pk=None):
@@ -82,66 +74,6 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
             'total_balances': total,
             'common_entitled_days': common_entitled_days,
         })
-
-    @action(detail=True, methods=['post'])
-    def activate(self, request, pk=None):
-        """
-        HR-only: Activate a leave type (make it selectable everywhere).
-        """
-        if not self._is_hr(request):
-            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
-        # Use full queryset to find inactive leave types too
-        try:
-            lt = LeaveType.objects.get(pk=pk)
-        except LeaveType.DoesNotExist:
-            return Response({'detail': 'Leave type not found'}, status=status.HTTP_404_NOT_FOUND)
-        if not lt.is_active:
-            lt.is_active = True
-            lt.save(update_fields=['is_active', 'updated_at']) if hasattr(lt, 'updated_at') else lt.save(update_fields=['is_active'])
-        return Response({'message': 'Leave type activated', 'id': lt.id, 'name': lt.name, 'is_active': lt.is_active})
-
-    @action(detail=True, methods=['post'])
-    def deactivate(self, request, pk=None):
-        """
-        HR-only: Deactivate a leave type (hide from dropdowns and lists for employees).
-        """
-        if not self._is_hr(request):
-            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
-        lt = self.get_object()
-        if lt.is_active:
-            lt.is_active = False
-            lt.save(update_fields=['is_active', 'updated_at']) if hasattr(lt, 'updated_at') else lt.save(update_fields=['is_active'])
-        return Response({'message': 'Leave type deactivated', 'id': lt.id, 'name': lt.name, 'is_active': lt.is_active})
-
-    @action(detail=False, methods=['post'])
-    def create_type(self, request):
-        """
-        HR-only: Create a new leave type. Initial entitlements remain 0 until configured.
-        Body: { name: string, description?: string, max_days_per_request?: int, requires_medical_certificate?: bool }
-        """
-        if not self._is_hr(request):
-            return Response({'detail': 'Only HR can perform this action'}, status=status.HTTP_403_FORBIDDEN)
-        name = (request.data.get('name') or '').strip()
-        if not name:
-            return Response({'error': 'name is required'}, status=status.HTTP_400_BAD_REQUEST)
-        description = (request.data.get('description') or '').strip() or ''
-        try:
-            max_days = request.data.get('max_days_per_request')
-            max_days = int(max_days) if max_days is not None and str(max_days).strip() != '' else None
-        except (TypeError, ValueError):
-            return Response({'error': 'max_days_per_request must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
-        requires_med = bool(request.data.get('requires_medical_certificate') or False)
-        # Prevent duplicates by case-insensitive name match
-        if LeaveType.objects.filter(name__iexact=name).exists():
-            return Response({'error': 'A leave type with this name already exists'}, status=status.HTTP_400_BAD_REQUEST)
-        lt = LeaveType.objects.create(
-            name=name,
-            description=description,
-            is_active=True,
-            max_days_per_request=max_days if max_days is not None else 0,
-            requires_medical_certificate=requires_med,
-        )
-        return Response(self.get_serializer(lt).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def set_entitlement(self, request, pk=None):
@@ -205,6 +137,42 @@ class LeaveTypeViewSet(viewsets.ReadOnlyModelViewSet):
             'updated': updated,
             'created': created,
             'entitled_days': entitled_days,
+        })
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """HR-only: Activate a leave type"""
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can activate leave types'}, status=status.HTTP_403_FORBIDDEN)
+
+        leave_type = self.get_object()
+        if leave_type.is_active:
+            return Response({'detail': 'Leave type is already active'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        leave_type.is_active = True
+        leave_type.save(update_fields=['is_active'])
+        
+        return Response({
+            'message': f'{leave_type.name} has been activated',
+            'leave_type': LeaveTypeSerializer(leave_type).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """HR-only: Deactivate a leave type"""
+        if not self._is_hr(request):
+            return Response({'detail': 'Only HR can deactivate leave types'}, status=status.HTTP_403_FORBIDDEN)
+
+        leave_type = self.get_object()
+        if not leave_type.is_active:
+            return Response({'detail': 'Leave type is already inactive'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        leave_type.is_active = False
+        leave_type.save(update_fields=['is_active'])
+        
+        return Response({
+            'message': f'{leave_type.name} has been deactivated',
+            'leave_type': LeaveTypeSerializer(leave_type).data
         })
 
 
@@ -416,7 +384,24 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
     
     def get_queryset(self):  # type: ignore[override]
-        """Return leave requests for the current user"""
+        """Return appropriate queryset.
+
+        For approval / oversight actions we need visibility across employees, not just the
+        requesting user's own leave requests. Previous implementation restricted all actions
+        which caused HR/CEO pages to miss items and permission errors (CEO approving others).
+        """
+        # Actions that require cross-employee visibility
+        cross_actions = {
+            'pending_approvals', 'hr_approvals_categorized', 'ceo_approvals_categorized',
+            'recent_activity', 'approve', 'reject'
+        }
+        user = getattr(self.request, 'user', None)
+        
+        # Only provide cross-employee visibility for specific approval/oversight actions
+        if self.action in cross_actions:
+            return LeaveRequest.objects.select_related('employee', 'employee__department', 'employee__department__affiliate')
+        
+        # For all other actions (history, list, dashboard), show only the user's own requests
         return LeaveRequest.objects.filter(employee=self.request.user)
     
     def get_serializer_class(self):  # type: ignore[override]
@@ -439,15 +424,44 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             
             # Log the validated data for debugging
             logger.info(f'Leave request data: {serializer.validated_data}')
-            # IMPORTANT: Do NOT auto-advance any stage at creation time.
-            # All new requests must start at 'pending' to allow cancellation and follow the proper flow:
-            # - Merban staff: pending -> manager -> HR -> CEO
-            # - Merban manager/HOD: pending -> HR -> CEO
-            # - Merban HR: pending -> CEO
-            # - SDSL/SBL staff: pending -> CEO -> HR (final)
-            # - SDSL/SBL CEO self-requests: pending -> HR (final)
-            # The correct next approver is determined by ApprovalWorkflowService based on status and role.
-            serializer.validated_data['status'] = 'pending'
+            
+            # Stage initialization rules on creation:
+            # - Default: keep status='pending' and let ApprovalWorkflowService drive stages
+            # - Merban staff with no manager/HOD assigned: skip manager stage (set to manager_approved)
+            # - Do NOT auto-set HR-approved for HR users; HR should approve (self-approve allowed) via Approvals page
+            user_role = getattr(user, 'role', None)
+            has_manager = hasattr(user, 'manager') and user.manager is not None
+
+            # Determine affiliate to decide whether to skip manager when no manager exists
+            try:
+                from .services import ApprovalRoutingService
+                affiliate_name = ApprovalRoutingService.get_employee_affiliate_name(user)
+            except Exception:
+                affiliate_name = 'DEFAULT'
+
+            # Refined skip logic:
+            # Only skip manager stage if requester is manager/hod/hr OR truly lacks both a direct manager and a department HOD.
+            # Staff with a department HOD but no direct manager should still start at 'pending'.
+            try:
+                dept_hod = getattr(getattr(user, 'department', None), 'hod', None)
+            except Exception:
+                dept_hod = None
+            # Skip / escalate logic:
+            # - Manager or HOD requester: skip manager stage (move to manager_approved)
+            # - HR requester (Merban): start at manager_approved so HR can act (self-approval)
+            # - HR requester (SDSL/SBL CEO-first flow): start at ceo_approved so HR finalizes directly
+            # - Staff with neither manager nor HOD (Merban only): escalate to manager_approved
+            if user_role in ['manager', 'hod']:
+                serializer.validated_data['status'] = 'manager_approved'
+            elif user_role == 'hr':
+                if affiliate_name in ['SDSL', 'SBL']:
+                    serializer.validated_data['status'] = 'ceo_approved'
+                else:
+                    serializer.validated_data['status'] = 'manager_approved'
+            else:
+                if not has_manager and not dept_hod and affiliate_name not in ['SDSL', 'SBL']:
+                    serializer.validated_data['status'] = 'manager_approved'
+                    logger.info(f'Staff {user.username} has neither manager nor HOD; auto-escalating to HR stage.')
             
             leave_request = serializer.save(employee=user)
             logger.info(f'Leave request created successfully: ID={leave_request.id}, status={leave_request.status}')
@@ -544,10 +558,18 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         total_days_taken = sum(req.total_days or 0 for req in current_year_requests.filter(status='approved'))
         pending_days = sum(req.total_days or 0 for req in current_year_requests.filter(status='pending'))
         
-        # Recent requests (last 5) with dynamic status display
+        # Recent requests (last 5) with stage-aware labels
         recent_requests = user_requests[:5]
         recent_serializer = LeaveRequestListSerializer(recent_requests, many=True)
         recent_data = recent_serializer.data
+        # Prefer stage_label when it indicates the next pending approver for better UX
+        for item in recent_data:
+            try:
+                if item.get('stage_label') and item.get('status') in ['pending', 'manager_approved', 'hr_approved']:
+                    item['status_display'] = item['stage_label']
+            except Exception:
+                # Non-fatal; keep default labels
+                pass
         
         dashboard_data = {
             'summary': {
@@ -564,18 +586,20 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         return Response(dashboard_data)
 
 
-class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
+class ManagerLeaveViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Managers to view and approve leave requests - supports R4
+    Note: Despite being ModelViewSet, actual create/update/delete are not exposed.
+    Only custom actions (approve, reject, etc.) perform writes.
     """
-    # Use list serializer for list-like endpoints to include affiliate/department details
-    serializer_class = LeaveRequestListSerializer
+    serializer_class = LeaveRequestListSerializer  # Use list serializer with employee_department, employee_role, etc.
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['status', 'leave_type', 'start_date', 'employee']
     search_fields = ['employee__first_name', 'employee__last_name', 'reason']
     ordering_fields = ['created_at', 'start_date', 'end_date']
     ordering = ['-created_at']
+    http_method_names = ['get', 'put', 'head', 'options']  # Disable POST, DELETE, PATCH
     
     def get_queryset(self):  # type: ignore[override]
         """Return leave requests available to the current approver.
@@ -588,7 +612,12 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         - others: none
         """
         user = self.request.user
-        qs = LeaveRequest.objects.all()
+        qs = LeaveRequest.objects.select_related(
+            'employee', 
+            'employee__affiliate', 
+            'employee__department', 
+            'employee__department__affiliate'
+        )
         role = getattr(user, 'role', None)
 
         # Superuser/admin: full access
@@ -597,28 +626,19 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
         if role == 'manager':
             # Direct reports or same department where user is HOD/Manager, but EXCLUDE own requests
-            # Additionally, exclude SDSL/SBL affiliates entirely because their flow is CEO-first (no manager stage)
-            return (
-                qs.filter(
-                    Q(employee__manager=user) | Q(employee__department__hod=user)
-                )
-                .exclude(employee=user)
-                .exclude(
-                    Q(employee__department__affiliate__name__iexact='SDSL') |
-                    Q(employee__department__affiliate__name__iexact='SBL') |
-                    Q(employee__affiliate__name__iexact='SDSL') |
-                    Q(employee__affiliate__name__iexact='SBL')
-                )
-            )
+            return qs.filter(
+                Q(employee__manager=user) | Q(employee__department__hod=user)
+            ).exclude(employee=user)
 
         if role == 'hr':
             # Items that have passed Manager stage or are pending (to allow visibility)
-            return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'approved', 'rejected'])
+            # Include 'ceo_approved' for SDSL/SBL CEO-first flow where HR gives final approval
+            return qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
 
         if role == 'ceo':
-            # For CEO, include items that are pending CEO action (pending for SDSL/SBL, hr_approved for Merban)
-            # and optionally previously acted ones for visibility.
-            return qs.filter(status__in=['pending', 'hr_approved', 'ceo_approved', 'approved', 'rejected'])
+            # Items that require or have passed CEO stage.
+            # Merban: hr_approved; SDSL/SBL: pending. Include approved/rejected for record views.
+            return qs.filter(status__in=['pending', 'hr_approved', 'approved', 'rejected'])
 
         # Everyone else: no access
         return qs.none()
@@ -667,136 +687,36 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         """Get leave requests pending approval for current user's role"""
         user = request.user
         user_role = getattr(user, 'role', None)
-        stage_override = (request.query_params.get('stage') or '').lower().strip() if request.query_params.get('stage') else ''
         
         # Filter requests based on user's role and approval stage
         if user_role == 'manager':
             # Managers see requests pending their approval
-            # Safety: manager/HR/admin/CEO requests should never be in manager queue (staff-only)
-            # Also, exclude SDSL/SBL affiliates entirely (CEO-first; manager should not see these)
-            pending_requests = (
-                self.get_queryset()
-                .filter(status='pending')
-                .exclude(employee__role__in=['manager', 'hr', 'ceo', 'admin'])
-                .exclude(
-                    Q(employee__department__affiliate__name__iexact='SDSL') |
-                    Q(employee__department__affiliate__name__iexact='SBL') |
-                    Q(employee__affiliate__name__iexact='SDSL') |
-                    Q(employee__affiliate__name__iexact='SBL')
-                )
-            )
-        elif user_role == 'hr' or (stage_override == 'hr' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
-            # HR sees:
-            # - Merban: staff manager_approved + manager/HOD/HR pending (skip-manager flow)
-            # - SDSL/SBL: staff ceo_approved + SDSL/SBL CEO pending (CEO skip-CEO flow, HR is final)
-            from itertools import chain
-
-            # Build filters for Merban affiliate regardless of whether affiliate is on department or user
-            merban_filter = (
-                Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
-                Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
-            )
-            sdsl_filter = (
-                Q(employee__department__affiliate__name__iexact='SDSL') |
-                Q(employee__affiliate__name__iexact='SDSL')
-            )
-            sbl_filter = (
-                Q(employee__department__affiliate__name__iexact='SBL') |
-                Q(employee__affiliate__name__iexact='SBL')
-            )
-
-            # Merban staff requests that are manager-approved (exclude admin submitters)
-            merban_staff_qs = (
-                self.get_queryset()
-                .filter(status='manager_approved')
-                .filter(merban_filter)
-                .exclude(employee__role='admin')
-            )
-
-            # Merban manager/HOD/HR pending requests (these skip manager approval stage)
-            merban_manager_hod_hr_qs = (
-                self.get_queryset()
-                .filter(status='pending')
-                .filter(merban_filter)
-                .filter(employee__role__in=['manager', 'hod', 'hr'])
-                .exclude(employee__role='admin')
-            )
-
-            # SDSL/SBL staff CEO-approved requests (exclude admin submitters)
-            sdsl_sbl_staff_ceo_approved_qs = (
-                self.get_queryset()
-                .filter(status='ceo_approved')
-                .filter(sdsl_filter | sbl_filter)
-                .exclude(employee__role='admin')
-            )
-
-            # SDSL CEO pending requests (CEO skips CEO stage, goes to HR - HR is final)
-            sdsl_ceo_pending_qs = (
-                self.get_queryset()
-                .filter(status='pending')
-                .filter(sdsl_filter)
-                .filter(employee__role='ceo')
-            )
-
-            # SBL CEO pending requests (CEO skips CEO stage, goes to HR - HR is final)
-            sbl_ceo_pending_qs = (
-                self.get_queryset()
-                .filter(status='pending')
-                .filter(sbl_filter)
-                .filter(employee__role='ceo')
-            )
-
-            # Use list() and chain() instead of union() to avoid ORDER BY issues
-            pending_requests = list(chain(
-                merban_staff_qs, 
-                merban_manager_hod_hr_qs, 
-                sdsl_sbl_staff_ceo_approved_qs,
-                sdsl_ceo_pending_qs,
-                sbl_ceo_pending_qs
-            ))
-        elif user_role == 'ceo' or (stage_override == 'ceo' and (getattr(user, 'is_superuser', False) or user_role == 'admin')):
+            pending_requests = self.get_queryset().filter(status='pending')
+        elif user_role == 'hr':
+            # HR sees items where HR is the required approver at the current status,
+            # across affiliates and special cases (e.g., manager/HR self-requests).
+            from .services import ApprovalWorkflowService
+            candidates = self.get_queryset().filter(status__in=['pending', 'manager_approved', 'ceo_approved'])
+            ids = []
+            for req in candidates:
+                if ApprovalWorkflowService.can_user_approve(req, user):
+                    ids.append(req.id)
+            pending_requests = self.get_queryset().filter(id__in=ids)
+        elif user_role == 'ceo':
             # CEO sees requests that require their approval - filtered by affiliate and workflow
             from .services import ApprovalWorkflowService
-            
-            # Get CEO's affiliate for filtering
-            ceo_affiliate = getattr(user, 'affiliate', None)
-            ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
-            
             # Standard (Merban): hr_approved; SDSL/SBL: pending
             candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
             filtered_ids = []
             for req in candidate_qs:
                 handler = ApprovalWorkflowService.get_handler(req)
                 if handler.can_approve(user, req.status):
-                    # Double-check affiliate matching for safety
-                    req_affiliate_name = ''
-                    if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
-                        req_affiliate_name = req.employee.affiliate.name.strip().upper()
-                    elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
-                        req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
-                    
-                    # Only include if affiliates match (or admin/superuser)
-                    if getattr(user, 'is_superuser', False) or not ceo_affiliate_name or req_affiliate_name == ceo_affiliate_name:
-                        filtered_ids.append(req.id)
-            
+                    filtered_ids.append(req.id)
             pending_requests = self.get_queryset().filter(id__in=filtered_ids)
         elif user_role == 'admin':
             # For admin, default to manager-stage queue to avoid mixing stages in Manager UI
             # Admins can still browse all requests via list endpoints
-            # Safety: hide manager/HR/admin/CEO submitters from manager-stage view (staff-only)
-            # Additionally, hide SDSL/SBL staff pending items (CEO-first affiliates) from the admin manager queue to reduce confusion
-            from django.db.models import Q as _Q
-            pending_requests = (
-                self.get_queryset()
-                .filter(status='pending')
-                .exclude(employee__role__in=['manager', 'hr', 'ceo', 'admin'])
-                .exclude(
-                    _Q(employee__department__affiliate__name__iexact='SDSL') |
-                    _Q(employee__department__affiliate__name__iexact='SBL') |
-                    _Q(employee__affiliate__name__iexact='SDSL') |
-                    _Q(employee__affiliate__name__iexact='SBL')
-                )
-            )
+            pending_requests = self.get_queryset().filter(status='pending')
         else:
             # No approval permissions
             pending_requests = self.get_queryset().none()
@@ -820,14 +740,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def ceo_approvals_categorized(self, request):
-        """CEO-specific endpoint that categorizes pending requests by submitter role
-        
-        Filters requests by CEO's affiliate:
-        - Merban CEO sees Merban requests (all categories: staff, hod_manager, hr)
-        - SDSL CEO sees SDSL requests (only staff category)
-        - SBL CEO sees SBL requests (only staff category)
-        """
-        from .services import ApprovalWorkflowService
+        """CEO-specific endpoint that categorizes pending requests by submitter role"""
+        import logging
+        logger = logging.getLogger('leaves')
         user = request.user
         user_role = getattr(user, 'role', None)
         
@@ -835,41 +750,16 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': 'Only CEOs can access this endpoint'}, 
                           status=status.HTTP_403_FORBIDDEN)
         
-        # Get CEO's affiliate for filtering
-        ceo_affiliate = getattr(user, 'affiliate', None)
-        ceo_affiliate_name = getattr(ceo_affiliate, 'name', '').strip().upper() if ceo_affiliate else ''
-        
-        # Get requests that this CEO can approve (filtered by affiliate and workflow stage)
-        candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved']).exclude(employee__role='admin')
-        
-        # Filter to only requests this CEO can actually approve
-        filtered_requests = []
+        # Get all requests pending CEO approval (Merban: hr_approved; SDSL/SBL: pending)
+        from .services import ApprovalWorkflowService
+        # Use global queryset (already widened in get_queryset) & filter by candidate statuses.
+        candidate_qs = self.get_queryset().filter(status__in=['pending', 'hr_approved'])
+        ids = []
         for req in candidate_qs:
-            handler = ApprovalWorkflowService.get_handler(req)
-            can = handler.can_approve(user, req.status)
-
-            # Determine employee affiliate (user or department)
-            req_affiliate_name = ''
-            if hasattr(req.employee, 'affiliate') and req.employee.affiliate:
-                req_affiliate_name = req.employee.affiliate.name.strip().upper()
-            elif hasattr(req.employee, 'department') and req.employee.department and hasattr(req.employee.department, 'affiliate'):
-                req_affiliate_name = req.employee.department.affiliate.name.strip().upper()
-
-            same_aff = (req_affiliate_name == ceo_affiliate_name) if ceo_affiliate_name else True
-
-            if can and (getattr(user, 'is_superuser', False) or same_aff):
-                filtered_requests.append(req)
-                continue
-
-            # Fallback: If CEO is SDSL/SBL and the request is pending with no affiliate/department,
-            # surface it to that CEO to avoid hiding legitimate CEO-first items due to missing data.
-            if req.status == 'pending' and ceo_affiliate_name in ['SDSL', 'SBL']:
-                no_aff = not getattr(req.employee, 'affiliate', None)
-                no_dept = not getattr(req.employee, 'department', None)
-                if no_aff and no_dept:
-                    filtered_requests.append(req)
-        
-        serializer = self.get_serializer(filtered_requests, many=True)
+            if ApprovalWorkflowService.can_user_approve(req, user):
+                ids.append(req.id)
+        pending_requests = self.get_queryset().filter(id__in=ids)
+        serializer = self.get_serializer(pending_requests, many=True)
         
         # Categorize by submitter role
         categorized = {
@@ -881,8 +771,9 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         for request_data in serializer.data:
             # Get the employee role from the request
             submitter_role = request_data.get('employee_role', 'staff')
+            logger.debug(f"CEO approvals categorizing: LR#{request_data.get('id')} employee={request_data.get('employee_name')} role={submitter_role}")
             
-            if submitter_role == 'manager':
+            if submitter_role in ['manager', 'hod']:
                 categorized['hod_manager'].append(request_data)
             elif submitter_role == 'hr':
                 categorized['hr'].append(request_data)
@@ -896,11 +787,62 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 'hod_manager': len(categorized['hod_manager']),
                 'hr': len(categorized['hr']),
                 'staff': len(categorized['staff'])
-            },
-            'ceo_affiliate': ceo_affiliate_name  # Include for frontend filtering
+            }
         }
         
         return Response(response_data)
+
+    @action(detail=False, methods=['get'])
+    def hr_approvals_categorized(self, request):
+        """HR-specific endpoint: categorize approvable pending requests by affiliate.
+
+        Groups: Merban Capital, SDSL, SBL. Only includes requests where HR can approve now.
+        """
+        import logging
+        logger = logging.getLogger('leaves')
+        user = request.user
+        if getattr(user, 'role', None) != 'hr' and not getattr(user, 'is_superuser', False):
+            return Response({'detail': 'Only HR can access this endpoint'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .services import ApprovalWorkflowService, ApprovalRoutingService
+        # HR should only see items that are actually awaiting HR action:
+        # - manager_approved (standard/Merban or manager/HOD skip)
+        # - ceo_approved (CEO-first SDSL/SBL flow or HR self-request in those affiliates)
+        candidate_qs = self.get_queryset().filter(status__in=['manager_approved', 'ceo_approved'])
+        logger.info(f"HR categorization: Found {candidate_qs.count()} candidate requests with status manager_approved or ceo_approved")
+        
+        groups = {'Merban Capital': [], 'SDSL': [], 'SBL': []}
+
+        for req in candidate_qs.select_related('employee__department__affiliate', 'employee__affiliate'):
+            try:
+                can_approve = ApprovalWorkflowService.can_user_approve(req, user)
+                aff_name = ApprovalRoutingService.get_employee_affiliate_name(req.employee)
+                logger.info(f"HR categorization: LR#{req.id} status={req.status} affiliate={aff_name} can_approve={can_approve}")
+                
+                if not can_approve:
+                    continue
+                    
+                # Normalize common variants
+                if aff_name in ['MERBAN', 'MERBAN CAPITAL']:
+                    key = 'Merban Capital'
+                elif aff_name == 'SDSL':
+                    key = 'SDSL'
+                elif aff_name == 'SBL':
+                    key = 'SBL'
+                else:
+                    # Skip other affiliates for HR segmentation (still accessible via generic list)
+                    logger.info(f"HR categorization: LR#{req.id} skipped - affiliate '{aff_name}' not in known groups")
+                    continue
+                groups[key].append(req)
+                logger.info(f"HR categorization: LR#{req.id} added to {key} group")
+            except Exception as e:
+                logger.error(f"HR categorization: Error processing LR#{req.id}: {e}")
+                continue
+
+        # Serialize per group
+        serialized_groups = {k: self.get_serializer(v, many=True).data for k, v in groups.items()}
+        counts = {k: len(v) for k, v in groups.items()}
+        return Response({'groups': serialized_groups, 'counts': counts, 'total': sum(counts.values())})
 
     @action(detail=False, methods=['get'])
     def recent_activity(self, request):
@@ -942,133 +884,6 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({
             'count': len(data),
             'results': data,
-        })
-
-    @action(detail=False, methods=['get'])
-    def approval_records(self, request):
-        """Return Approval Records tailored per role with grouping where required.
-
-        - manager: requests acted on by this manager (approved or rejected)
-        - hr: requests acted on by this HR user, grouped by affiliate (Merban Capital, SDSL, SBL)
-        - ceo: requests acted on by this CEO, grouped by submitter category (hod_manager, hr, staff)
-
-        Query params: search, status, ordering, limit, offset
-        """
-        from django.db.models import Q
-        user = request.user
-        role = getattr(user, 'role', None)
-
-        # Parse common query params
-        search = (request.query_params.get('search') or '').strip()
-        status_param = (request.query_params.get('status') or '').strip()  # optional: approved/rejected
-        ordering = (request.query_params.get('ordering') or '-created_at').strip()
-        try:
-            limit = int(request.query_params.get('limit', 50))
-        except Exception:
-            limit = 50
-        try:
-            offset = int(request.query_params.get('offset', 0))
-        except Exception:
-            offset = 0
-
-        base_qs = LeaveRequest.objects.all()
-
-        # Filter by who acted based on role
-        if getattr(user, 'is_superuser', False) and not role:
-            # superuser without role: return none by default to avoid massive payload
-            acted_qs = base_qs.none()
-        elif getattr(user, 'is_superuser', False) and role == 'admin':
-            # Admin: show items they approved as CEO-equivalent (ceo_approved_by)
-            acted_qs = base_qs.filter(ceo_approved_by=user)
-        elif role == 'manager':
-            acted_qs = base_qs.filter(manager_approved_by=user)
-        elif role == 'hr':
-            acted_qs = base_qs.filter(hr_approved_by=user)
-        elif role == 'ceo':
-            acted_qs = base_qs.filter(ceo_approved_by=user)
-        else:
-            acted_qs = base_qs.none()
-
-        # Optional status filter (approved/rejected only for records context)
-        if status_param in ['approved', 'rejected']:
-            acted_qs = acted_qs.filter(status=status_param)
-
-        # Optional search across common fields
-        if search:
-            acted_qs = acted_qs.filter(
-                Q(employee__first_name__icontains=search) |
-                Q(employee__last_name__icontains=search) |
-                Q(reason__icontains=search) |
-                Q(leave_type__name__icontains=search)
-            )
-
-        # Apply ordering then pagination window (best-effort)
-        try:
-            acted_qs = acted_qs.order_by(ordering)
-        except Exception:
-            acted_qs = acted_qs.order_by('-created_at')
-
-        # For grouping responses, we may need full list; but keep window to avoid huge payloads
-        window_qs = acted_qs[offset: offset + limit]
-
-        # Role-specific shaping
-        if role == 'hr' or (getattr(user, 'is_superuser', False) and role == 'admin'):
-            # Group by affiliate using serializer-provided employee_department_affiliate
-            data = LeaveRequestListSerializer(window_qs, many=True).data
-            groups = {'Merban Capital': [], 'SDSL': [], 'SBL': [], 'Other': []}
-            for item in data:
-                raw = (item.get('employee_department_affiliate') or '').strip()
-                key = 'Other'
-                if raw.upper() in ['MERBAN CAPITAL', 'MERBAN']:
-                    key = 'Merban Capital'
-                elif raw.upper() == 'SDSL':
-                    key = 'SDSL'
-                elif raw.upper() == 'SBL':
-                    key = 'SBL'
-                groups.setdefault(key, []).append(item)
-            counts = {k: len(v) for k, v in groups.items()}
-            return Response({
-                'role': 'hr',
-                'total': len(data),
-                'counts': counts,
-                'groups': groups,
-                'limit': limit,
-                'offset': offset,
-                'has_more': (offset + limit) < acted_qs.count(),
-            })
-
-        if role == 'ceo' or (getattr(user, 'is_superuser', False) and role == 'admin'):
-            # Group CEO records by submitter category: hod_manager, hr, staff
-            data = LeaveRequestListSerializer(window_qs, many=True).data
-            groups = {'hod_manager': [], 'hr': [], 'staff': []}
-            for item in data:
-                submitter_role = (item.get('employee_role') or 'staff').lower()
-                if submitter_role == 'manager' or submitter_role == 'hod':
-                    groups['hod_manager'].append(item)
-                elif submitter_role == 'hr':
-                    groups['hr'].append(item)
-                else:
-                    groups['staff'].append(item)
-            counts = {k: len(v) for k, v in groups.items()}
-            return Response({
-                'role': 'ceo',
-                'total': len(data),
-                'counts': counts,
-                'groups': groups,
-                'limit': limit,
-                'offset': offset,
-                'has_more': (offset + limit) < acted_qs.count(),
-            })
-
-        # Default: manager (or none)
-        data = LeaveRequestListSerializer(window_qs, many=True).data
-        return Response({
-            'role': role or 'unknown',
-            'count': len(data),
-            'results': data,
-            'limit': limit,
-            'offset': offset,
-            'has_more': (offset + limit) < acted_qs.count(),
         })
     
     @action(detail=True, methods=['get'])
@@ -1167,10 +982,14 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             user = request.user
             comments = request.data.get('approval_comments', '')
             
-            logger.info(f'Attempting to approve leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
+            logger.info(f'Attempting to approve leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")}, affiliate: {getattr(getattr(user, "affiliate", None), "name", "None")})')
             
             # Authorization: ensure user can act on this request
-            if not self._user_can_act_on(user, leave_request):
+            can_act = self._user_can_act_on(user, leave_request)
+            logger.info(f'User can act on request: {can_act}')
+            
+            if not can_act:
+                logger.warning(f'User {user.email} denied action on LR#{pk}: _user_can_act_on returned False')
                 return Response({'error': 'You are not allowed to act on this request'}, status=status.HTTP_403_FORBIDDEN)
 
             # Check if request can be approved
@@ -1200,11 +1019,11 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                 
                 logger.info(f'Leave request {pk} approved by {user.username}, new status: {leave_request.status}')
                 
-            except (PermissionDenied, ValidationError) as ve:
-                logger.warning(f'Approval validation failed for request {pk}: {str(ve)}')
-                return Response({'error': str(ve)}, status=status.HTTP_403_FORBIDDEN)
+            except PermissionDenied as pd:
+                error_msg = str(pd) if str(pd) else 'You do not have permission to approve this request at this stage'
+                logger.warning(f'Permission denied for request {pk} approval by {user.username}: {error_msg}')
+                return Response({'error': error_msg}, status=status.HTTP_403_FORBIDDEN)
             except ValueError as ve:
-                # Legacy exception for backward compatibility
                 logger.warning(f'Approval validation failed for request {pk}: {str(ve)}')
                 return Response({'error': str(ve)}, status=status.HTTP_403_FORBIDDEN)
             
@@ -1224,12 +1043,7 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             leave_request = self.get_object()
             user = request.user
-            # Support both keys for backward/forward compatibility
-            comments = (
-                request.data.get('rejection_comments')
-                or request.data.get('approval_comments')
-                or ''
-            )
+            comments = request.data.get('approval_comments', '')
             
             logger.info(f'Attempting to reject leave request {pk} by user {user.username} (role: {getattr(user, "role", "unknown")})')
             
@@ -1299,55 +1113,14 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
             if user_role == 'manager':
                 counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
             elif user_role == 'hr':
-                # HR: Merban staff manager_approved + Merban manager/HOD/HR pending + SDSL/SBL staff ceo_approved + SDSL/SBL CEO pending
+                # HR: Merban manager_approved + SDSL/SBL ceo_approved
                 from django.db.models import Q
-                merban_filter = (
-                    Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
-                    Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
-                )
-                sdsl_filter = (
-                    Q(employee__department__affiliate__name__iexact='SDSL') |
-                    Q(employee__affiliate__name__iexact='SDSL')
-                )
-                sbl_filter = (
-                    Q(employee__department__affiliate__name__iexact='SBL') |
-                    Q(employee__affiliate__name__iexact='SBL')
-                )
-                
-                # Merban staff requests that are manager_approved
-                merban_staff_count = self.get_queryset().filter(
-                    status='manager_approved'
-                ).filter(merban_filter).count()
-                
-                # Merban manager/HOD/HR pending requests (skip-manager flow)
-                merban_mgr_hod_hr_count = self.get_queryset().filter(
-                    status='pending'
-                ).filter(merban_filter).filter(
-                    employee__role__in=['manager', 'hod', 'hr']
+                merban_count = self.get_queryset().filter(status='manager_approved').exclude(
+                    Q(employee__department__affiliate__name__in=['SDSL', 'SBL']) |
+                    Q(employee__affiliate__name__in=['SDSL', 'SBL'])
                 ).count()
-                
-                # SDSL/SBL staff CEO-approved requests
-                sdsl_sbl_ceo_approved_count = self.get_queryset().filter(
-                    status='ceo_approved'
-                ).filter(sdsl_filter | sbl_filter).count()
-                
-                # SDSL CEO pending requests
-                sdsl_ceo_pending_count = self.get_queryset().filter(
-                    status='pending'
-                ).filter(sdsl_filter).filter(employee__role='ceo').count()
-                
-                # SBL CEO pending requests
-                sbl_ceo_pending_count = self.get_queryset().filter(
-                    status='pending'
-                ).filter(sbl_filter).filter(employee__role='ceo').count()
-                
-                counts['hr_approvals'] = (
-                    merban_staff_count + 
-                    merban_mgr_hod_hr_count + 
-                    sdsl_sbl_ceo_approved_count +
-                    sdsl_ceo_pending_count +
-                    sbl_ceo_pending_count
-                )
+                ceo_approved_count = self.get_queryset().filter(status='ceo_approved').count()
+                counts['hr_approvals'] = merban_count + ceo_approved_count
             elif user_role == 'ceo':
                 # Use same logic as pending_approvals endpoint
                 from .services import ApprovalWorkflowService
@@ -1359,82 +1132,8 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
                         ceo_count += 1
                 counts['ceo_approvals'] = ceo_count
             elif user_role == 'admin':
-                from django.db.models import Q as _Q
-                # Mirror pending_approvals(admin) manager queue: exclude manager/HR/CEO/admin submitters and SDSL/SBL affiliates
-                counts['manager_approvals'] = (
-                    self.get_queryset()
-                    .filter(status='pending')
-                    .exclude(employee__role__in=['manager', 'hr', 'ceo', 'admin'])
-                    .exclude(
-                        _Q(employee__department__affiliate__name__iexact='SDSL') |
-                        _Q(employee__department__affiliate__name__iexact='SBL') |
-                        _Q(employee__affiliate__name__iexact='SDSL') |
-                        _Q(employee__affiliate__name__iexact='SBL')
-                    )
-                    .count()
-                )
-                # HR approvals for admin: Merban staff manager_approved + Merban manager/HOD/HR pending + SDSL/SBL staff ceo_approved + SDSL/SBL CEO pending
-                merban_filter = (
-                    _Q(employee__department__affiliate__name__iexact='MERBAN CAPITAL') |
-                    _Q(employee__affiliate__name__iexact='MERBAN CAPITAL')
-                )
-                sdsl_filter = (
-                    _Q(employee__department__affiliate__name__iexact='SDSL') |
-                    _Q(employee__affiliate__name__iexact='SDSL')
-                )
-                sbl_filter = (
-                    _Q(employee__department__affiliate__name__iexact='SBL') |
-                    _Q(employee__affiliate__name__iexact='SBL')
-                )
-                
-                # Merban staff requests that are manager_approved
-                merban_staff_count = (
-                    self.get_queryset()
-                    .filter(status='manager_approved')
-                    .filter(merban_filter)
-                    .exclude(employee__role='admin')
-                    .count()
-                )
-                # Merban manager/HOD/HR pending requests (skip-manager flow)
-                merban_mgr_hod_hr_count = (
-                    self.get_queryset()
-                    .filter(status='pending')
-                    .filter(merban_filter)
-                    .filter(employee__role__in=['manager', 'hod', 'hr'])
-                    .exclude(employee__role='admin')
-                    .count()
-                )
-                # SDSL/SBL staff CEO-approved requests
-                sdsl_sbl_ceo_approved_count = (
-                    self.get_queryset()
-                    .filter(status='ceo_approved')
-                    .filter(sdsl_filter | sbl_filter)
-                    .exclude(employee__role='admin')
-                    .count()
-                )
-                # SDSL CEO pending requests
-                sdsl_ceo_pending_count = (
-                    self.get_queryset()
-                    .filter(status='pending')
-                    .filter(sdsl_filter)
-                    .filter(employee__role='ceo')
-                    .count()
-                )
-                # SBL CEO pending requests
-                sbl_ceo_pending_count = (
-                    self.get_queryset()
-                    .filter(status='pending')
-                    .filter(sbl_filter)
-                    .filter(employee__role='ceo')
-                    .count()
-                )
-                counts['hr_approvals'] = (
-                    merban_staff_count + 
-                    merban_mgr_hod_hr_count + 
-                    sdsl_sbl_ceo_approved_count +
-                    sdsl_ceo_pending_count +
-                    sbl_ceo_pending_count
-                )
+                counts['manager_approvals'] = self.get_queryset().filter(status='pending').count()
+                counts['hr_approvals'] = self.get_queryset().filter(status__in=['manager_approved', 'ceo_approved']).count()
                 counts['ceo_approvals'] = self.get_queryset().filter(status='hr_approved').count()
 
             counts['total'] = counts['manager_approvals'] + counts['hr_approvals'] + counts['ceo_approvals']
@@ -1533,14 +1232,13 @@ class ManagerLeaveViewSet(viewsets.ReadOnlyModelViewSet):
 
 class IsManagerPermission(permissions.BasePermission):
     """
-    Custom permission to only allow managers to approve/reject leaves
+    Custom permission to only allow managers, HR, CEOs, and admins to approve/reject leaves
     """
     def has_permission(self, request, view) -> bool:  # type: ignore[override]
         user = request.user
         try:
             from users.models import CustomUser
             if isinstance(user, CustomUser):
-                # Approver roles: manager, HR, CEO, admin, or superuser
                 return user.is_superuser or user.role in ['manager', 'hr', 'ceo', 'admin']
         except Exception:
             pass

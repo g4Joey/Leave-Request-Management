@@ -9,10 +9,6 @@ function resolveApiBaseUrl() {
   try {
     const { protocol, hostname } = window.location;
     const port = window.location.port;
-    // If running the React dev server (commonly port 3000), default to Django on :8000
-    if (port === '3000') {
-      return 'http://127.0.0.1:8000/api';
-    }
     // In production (unified Docker) Django lives on the same origin.
     // Use same-origin /api.
     const portPart = port ? `:${port}` : '';
@@ -24,6 +20,15 @@ function resolveApiBaseUrl() {
 }
 
 const API_URL = resolveApiBaseUrl();
+
+// Helpful runtime visibility for debugging login/base URL issues in dev
+if (typeof window !== 'undefined') {
+  // Only log once per load
+  if (!window.__API_BASE_LOGGED) {
+    console.info('[API] Base URL resolved to:', API_URL);
+    window.__API_BASE_LOGGED = true;
+  }
+}
 
 const api = axios.create({
   baseURL: API_URL,

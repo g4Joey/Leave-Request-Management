@@ -206,7 +206,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     employee_email = serializers.CharField(source='employee.email', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     employee_role = serializers.CharField(source='employee.role', read_only=True)
-    employee_department = serializers.CharField(source='employee.department.name', read_only=True)
+    employee_department = serializers.SerializerMethodField()
     employee_department_affiliate = serializers.SerializerMethodField()
     employee_department_id = serializers.SerializerMethodField()
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
@@ -225,6 +225,17 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     hr_approval_date = serializers.DateTimeField(read_only=True)
     stage_label = serializers.SerializerMethodField()
     
+    def get_employee_department(self, obj):
+        """Get the employee's department name"""
+        try:
+            if getattr(obj, 'employee', None) and getattr(obj.employee, 'department', None):
+                dept_name = getattr(obj.employee.department, 'name', None)
+                if dept_name:
+                    return dept_name
+        except Exception:
+            pass
+        return 'No Department'
+
     def get_employee_department_affiliate(self, obj):
         """Get the affiliate name for the employee's department"""
         try:
@@ -239,7 +250,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
                     return obj.employee.affiliate.name
         except Exception:
             pass
-        return 'Other'
+        return 'Unknown Affiliate'
 
     def get_employee_department_id(self, obj):
         try:

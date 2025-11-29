@@ -133,7 +133,8 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         for alias in legacy_aliases:
             role_filter |= Q(role=alias)
         users_with_role = User.objects.filter(is_active=True).filter(role_filter)
-        if user_affiliate and not getattr(request.user, 'is_superuser', False):
+        # Global HR should see all affiliates; restrict only if non-HR and not superuser
+        if user_affiliate and not getattr(request.user, 'is_superuser', False) and getattr(request.user, 'role', None) not in ['hr']:
             users_with_role = users_with_role.filter(
                 Q(department__affiliate_id=user_affiliate) | Q(affiliate_id=user_affiliate)
             )
@@ -225,7 +226,7 @@ class RoleEntitlementViewSet(viewsets.ViewSet):
         for alias in legacy_aliases:
             role_filter |= Q(role=alias)
         users_with_role = User.objects.filter(is_active=True).filter(role_filter)
-        if user_affiliate and not getattr(request.user, 'is_superuser', False):
+        if user_affiliate and not getattr(request.user, 'is_superuser', False) and getattr(request.user, 'role', None) not in ['hr']:
             users_with_role = users_with_role.filter(
                 Q(department__affiliate_id=user_affiliate) | Q(affiliate_id=user_affiliate)
             )

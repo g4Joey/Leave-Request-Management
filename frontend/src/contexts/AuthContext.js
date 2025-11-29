@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
 const normalizeProfile = (profile = {}, token = null) => {
@@ -38,33 +38,97 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const isWarningActive = useRef(false);
+  const warningTimer = useRef(null);
+  const logoutTimer = useRef(null);
 
+  // Initialize auth state on mount: load token, fetch profile, then clear loading
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        try {
-          const response = await api.get('/users/me/');
-          const profile = response.data || {};
-          const normalized = normalizeProfile(profile, token);
-          // Defensive logging if role missing or unexpected
-          if (!normalized.role) {
-            console.warn('AuthContext: Missing role in profile payload', profile);
+      try {
+        const token = localStorage.getItem('token');
+        if (token) {
+          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          try {
+            const response = await api.get('/users/me/');
+            if (cancelled) return;
+            const profile = response.data || {};
+            const normalized = normalizeProfile(profile, token);
+            if (!normalized.role) {
+              console.warn('AuthContext: Missing role in profile payload', profile);
+            }
+            setUser(normalized);
+          } catch (e) {
+            // Token might be invalid; clear it and proceed unauthenticated
+            localStorage.removeItem('token');
+            localStorage.removeItem('refresh_token');
+            delete api.defaults.headers.common['Authorization'];
+            setUser(null);
           }
-          setUser(normalized);
-        } catch (e) {
-          // token might be invalid; clear it
-          localStorage.removeItem('token');
-          localStorage.removeItem('refresh_token');
-          delete api.defaults.headers.common['Authorization'];
-          setUser(null);
         }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     };
     init();
+    return () => { cancelled = true; };
   }, []);
+
+  const hardLogout = () => {
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
+      delete api.defaults.headers.common['Authorization'];
+    } catch (_) {}
+    setUser(null);
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
+  };
+
+  const clearAllTimers = React.useCallback(() => {
+    if (warningTimer.current) clearTimeout(warningTimer.current);
+    if (logoutTimer.current) clearTimeout(logoutTimer.current);
+  }, []);
+
+  const startTimers = React.useCallback(() => {
+    clearAllTimers();
+    setShowTimeoutWarning(false);
+    isWarningActive.current = false;
+
+    warningTimer.current = setTimeout(() => {
+      setShowTimeoutWarning(true);
+      isWarningActive.current = true;
+      logoutTimer.current = setTimeout(() => {
+        hardLogout();
+      }, 2 * 60 * 1000); // 2 minutes
+    }, 10 * 60 * 1000); // 10 minutes
+  }, [clearAllTimers]);
+
+  const onActivity = React.useCallback(() => {
+    if (!isWarningActive.current) {
+      startTimers();
+    }
+  }, [startTimers]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const activityEvents = ['mousemove', 'keydown', 'click', 'touchstart', 'wheel', 'scroll'];
+    activityEvents.forEach((evt) => window.addEventListener(evt, onActivity, { passive: true }));
+    startTimers();
+
+    return () => {
+      clearAllTimers();
+      activityEvents.forEach((evt) => window.removeEventListener(evt, onActivity));
+    };
+  }, [user, onActivity, startTimers, clearAllTimers]);
+
+  const keepSessionActive = () => {
+    startTimers();
+  };
 
   const login = async (email, password) => {
     try {
@@ -133,7 +197,26 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {!loading && (
+        <>
+          {children}
+          {showTimeoutWarning && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black bg-opacity-40" />
+              <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Session Inactivity</h3>
+                <p className="text-sm text-gray-700 mb-4">Your session will timeout in 2 minutes.</p>
+                <button
+                  onClick={keepSessionActive}
+                  className="inline-flex justify-center rounded-md bg-primary-600 text-white px-4 py-2 text-sm font-medium hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                >
+                  Keep My Session Active
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </AuthContext.Provider>
   );
 }

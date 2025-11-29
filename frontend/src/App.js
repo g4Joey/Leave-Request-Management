@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -10,6 +10,7 @@ import CEOApprovals from './components/CEOApprovals';
 import HRApprovals from './components/HRApprovals';
 import StaffManagement from './components/StaffManagement';
 import AffiliatePage from './components/AffiliatePage';
+import DepartmentPage from './components/DepartmentPage';
 import MyProfile from './components/MyProfile';
 import AdminSystemReset from './components/AdminSystemReset';
 import AdminSettings from './components/AdminSettings';
@@ -51,7 +52,6 @@ function App() {
     <AuthProvider>
       <ToastProvider>
         <ErrorBoundary>
-          <Router>
             <div className="min-h-screen bg-gray-50">
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -108,6 +108,14 @@ function App() {
                               </HRRoute>
                             }
                           />
+                          <Route
+                            path="/staff/departments/:id"
+                            element={
+                              <HRRoute>
+                                <DepartmentPage />
+                              </HRRoute>
+                            }
+                          />
                                                     <Route
                             path="/admin/settings"
                             element={
@@ -132,7 +140,6 @@ function App() {
               />
             </Routes>
             </div>
-          </Router>
         </ErrorBoundary>
       </ToastProvider>
     </AuthProvider>
