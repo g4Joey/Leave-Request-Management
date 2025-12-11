@@ -11,10 +11,8 @@ function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Show demo/test accounts only in development, or when explicitly enabled
-  const showDemoLogins =
-    import.meta.env.VITE_SHOW_DEMO_LOGINS === 'true' ||
-    import.meta.env.MODE !== 'production';
+  // Demo accounts disabled per user request
+  const showDemoLogins = false;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
