@@ -1,18 +1,37 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState, useEffect } from 'react';
 
-const ToastContext = createContext({ showToast: () => {} });
+interface ToastOptions {
+  type: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+  duration?: number;
+}
+
+interface Toast extends ToastOptions {
+  id: number;
+}
+
+interface ToastContextType {
+  showToast: (opts: ToastOptions) => void;
+  removeToast: (id: number) => void;
+}
+
+const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function useToast() {
-  return useContext(ToastContext);
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
 }
 
 let idCounter = 0;
 
-export function ToastProvider({ children }) {
-  const [toasts, setToasts] = useState([]);
-  const timeoutsRef = useRef({});
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const timeoutsRef = useRef<{ [key: number]: ReturnType<typeof setTimeout> }>({});
 
-  const removeToast = useCallback((id) => {
+  const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
     if (timeoutsRef.current[id]) {
       clearTimeout(timeoutsRef.current[id]);
@@ -20,9 +39,9 @@ export function ToastProvider({ children }) {
     }
   }, []);
 
-  const showToast = useCallback((opts) => {
+  const showToast = useCallback((opts: ToastOptions) => {
     const id = ++idCounter;
-    const toast = {
+    const toast: Toast = {
       id,
       type: opts.type || 'info',
       message: opts.message || String(opts),
@@ -30,7 +49,6 @@ export function ToastProvider({ children }) {
     };
     setToasts((prev) => [...prev, toast]);
     timeoutsRef.current[id] = setTimeout(() => removeToast(id), toast.duration);
-    return id;
   }, [removeToast]);
 
   useEffect(() => {
@@ -59,16 +77,18 @@ export function ToastProvider({ children }) {
                 ? 'bg-green-50 border-green-300'
                 : t.type === 'error'
                 ? 'bg-red-50 border-red-300'
+                : t.type === 'warning'
+                ? 'bg-amber-50 border-amber-300'
                 : 'bg-white border-gray-200'
             }`}
           >
             <span
               className={`inline-flex h-5 w-5 flex-none items-center justify-center rounded-full text-xs font-bold ${
-                t.type === 'success' ? 'bg-green-600 text-white' : t.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-600 text-white'
+                t.type === 'success' ? 'bg-green-600 text-white' : t.type === 'error' ? 'bg-red-600 text-white' : t.type === 'warning' ? 'bg-amber-500 text-white' : 'bg-gray-600 text-white'
               }`}
               aria-hidden="true"
             >
-              {t.type === 'success' ? '✓' : t.type === 'error' ? '!' : 'i'}
+              {t.type === 'success' ? '✓' : t.type === 'error' ? '!' : t.type === 'warning' ? '!' : 'i'}
             </span>
             <div className="text-sm text-gray-900 flex-1">{t.message}</div>
             <button

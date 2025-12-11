@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertTriangle, CheckCircle, Sliders } from 'lucide-react';
@@ -37,7 +37,7 @@ function AdminOverlapSettings() {
       await api.put('/notifications/settings/overlap/', { min_days: minDays, enabled });
       setSuccess('Settings saved successfully');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
+    } catch (err: any) {
       const detail = err?.response?.data?.detail || err?.message || 'Unknown error';
       setError(`Failed to save settings: ${detail}`);
     } finally {

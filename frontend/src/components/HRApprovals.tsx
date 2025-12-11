@@ -4,21 +4,21 @@ import { useToast } from '../contexts/ToastContext';
 import api from '../services/api';
 import OverlapAdvisory from './OverlapAdvisory';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Clock, User, Briefcase, Calendar, FileText, ChevronRight, Search, Building } from 'lucide-react';
+import { Check, X, Clock, User, Briefcase, Calendar, FileText, ChevronRight, Building } from 'lucide-react';
 import Skeleton from './common/Skeleton';
 
 function HRApprovals() {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [actionModal, setActionModal] = useState({ open: false, action: '', comments: '' });
   const [actingId, setActingId] = useState(null);
-  const [groupedApprovals, setGroupedApprovals] = useState({});
+  const [groupedApprovals, setGroupedApprovals] = useState<any>({});
   const [activeTab, setActiveTab] = useState('Merban Capital');
   const [recordsLoading, setRecordsLoading] = useState(false);
-  const [recordsGroups, setRecordsGroups] = useState({ 'Merban Capital': [], 'SDSL': [], 'SBL': [] });
+  const [recordsGroups, setRecordsGroups] = useState<any>({ 'Merban Capital': [], 'SDSL': [], 'SBL': [] });
   const [recordsActiveTab, setRecordsActiveTab] = useState('Merban Capital');
 
   useEffect(() => {
@@ -33,7 +33,7 @@ function HRApprovals() {
       const requests = response.data.requests || [];
       setPendingApprovals(requests);
       
-      const grouped = requests.reduce((acc, request) => {
+      const grouped = requests.reduce((acc: any, request: any) => {
         const affiliate = getEmployeeAffiliate(request);
         if (!acc[affiliate]) {
           acc[affiliate] = [];
