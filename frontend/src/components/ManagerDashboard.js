@@ -3,15 +3,18 @@ import api from '../services/api';
 import { Dialog } from '@headlessui/react';
 import { useToast } from '../contexts/ToastContext';
 import OverlapAdvisory from './OverlapAdvisory';
+import { emitApprovalChanged } from '../utils/approvalEvents';
 
 function ManagerDashboard() {
   const { showToast } = useToast();
   const [pendingRequests, setPendingRequests] = useState([]);
+  const [pendingInterrupts, setPendingInterrupts] = useState([]);
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   // Track which action is loading per request id: 'approve' | 'reject' | undefined
   const [loadingActionById, setLoadingActionById] = useState({});
   const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
+  const [recallModal, setRecallModal] = useState({ open: false, request: null, resumeDate: '', reason: '', loading: false });
   const PAGE_SIZE = 15;
   // Pagination & filters for Approval Records (approved + rejected)
   const [recordsPage, setRecordsPage] = useState(0);
@@ -92,8 +95,9 @@ function ManagerDashboard() {
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [pendingRes] = await Promise.all([
+        const [pendingRes, interruptsRes] = await Promise.all([
           api.get('/leaves/manager/pending_approvals/'),
+          api.get('/leaves/manager/pending_interrupts/').catch(() => ({ data: { results: [] } })),
         ]);
         // API returns an object { requests: [...], count, user_role, approval_stage }
         const pendingArray = Array.isArray(pendingRes.data)
@@ -103,7 +107,11 @@ function ManagerDashboard() {
               : (pendingRes.data && Array.isArray(pendingRes.data.results)
                   ? pendingRes.data.results
                   : []));
+        const interruptArray = Array.isArray(pendingRes.data?.interrupts)
+          ? pendingRes.data.interrupts
+          : (Array.isArray(interruptsRes?.data?.results) ? interruptsRes.data.results : []);
         setPendingRequests(pendingArray);
+        setPendingInterrupts(interruptArray);
         // Don't load leave records initially - only when user searches
       } catch (error) {
         console.error('Error fetching pending requests:', error);
@@ -129,6 +137,7 @@ function ManagerDashboard() {
       if (hasSearched) {
         await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
       }
+      emitApprovalChanged();
       // Global toast and optional haptics
       const verb = action === 'approve' ? 'approved' : 'rejected';
       showToast({ type: 'success', message: `Request ${verb} successfully.` });
@@ -144,6 +153,54 @@ function ManagerDashboard() {
       }
     } finally {
       setLoadingActionById((prev) => ({ ...prev, [requestId]: undefined }));
+    }
+  };
+
+  const openRecallModal = (request) => {
+    const todayIso = new Date().toISOString().split('T')[0];
+    const maxDate = new Date(request.end_date).toISOString().split('T')[0];
+    const minDate = new Date(request.start_date).toISOString().split('T')[0];
+    const defaultDate = todayIso > maxDate ? maxDate : todayIso < minDate ? minDate : todayIso;
+    setRecallModal({ open: true, request, resumeDate: defaultDate, reason: '', loading: false });
+  };
+
+  const handleInterruptAction = async (interruptId, action, reason = '') => {
+    const endpoint = action === 'approve' ? 'manager-approve' : 'manager-reject';
+    setLoadingActionById((prev) => ({ ...prev, [`interrupt-${interruptId}`]: action }));
+    try {
+      await api.post(`/leaves/manager/interrupts/${interruptId}/${endpoint}/`, { reason });
+      showToast({ type: 'success', message: action === 'approve' ? 'Early return approved (pending HR).' : 'Early return rejected.' });
+      setPendingInterrupts((prev) => prev.filter((i) => i.id !== interruptId));
+      emitApprovalChanged();
+    } catch (error) {
+      console.error('Interrupt action failed', error);
+      const detail = error?.response?.data?.detail || error?.response?.data?.error || 'Failed to process early return.';
+      showToast({ type: 'error', message: detail });
+    } finally {
+      setLoadingActionById((prev) => ({ ...prev, [`interrupt-${interruptId}`]: undefined }));
+    }
+  };
+
+  const submitRecall = async () => {
+    if (!recallModal.request || !recallModal.resumeDate) {
+      showToast({ type: 'error', message: 'Select a resume date for the recall.' });
+      return;
+    }
+    try {
+      setRecallModal((prev) => ({ ...prev, loading: true }));
+      await api.post(`/leaves/manager/${recallModal.request.id}/recall/`, {
+        resume_date: recallModal.resumeDate,
+        reason: recallModal.reason
+      });
+      showToast({ type: 'success', message: 'Recall sent to staff for confirmation.' });
+      setRecallModal({ open: false, request: null, resumeDate: '', reason: '', loading: false });
+      await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
+      emitApprovalChanged();
+    } catch (error) {
+      console.error('Error recalling staff:', error);
+      setRecallModal((prev) => ({ ...prev, loading: false }));
+      const detail = error?.response?.data?.detail || error?.response?.data?.error || 'Failed to create recall.';
+      showToast({ type: 'error', message: detail });
     }
   };
 
@@ -171,26 +228,29 @@ function ManagerDashboard() {
       </div>
 
       <ul className="divide-y divide-gray-200">
-        {pendingRequests.length > 0 ? (
-          pendingRequests.map((request) => (
-            <li key={request.id}>
-              <div className="px-4 py-4 sm:px-6">
+        {pendingRequests.length + pendingInterrupts.length > 0 ? (
+          [...pendingInterrupts.map((interrupt) => ({ ...interrupt, _isInterrupt: true })), ...pendingRequests.map((request) => ({ ...request, _isInterrupt: false }))].map((request) => (
+            <li key={`${request._isInterrupt ? 'interrupt-' : ''}${request.id}`}>
+              <div className={`px-4 py-4 sm:px-6 ${request._isInterrupt ? 'bg-amber-50 border-l-4 border-amber-400' : ''}`}>
                 {/* Overlap Advisory Banner */}
-                <OverlapAdvisory 
-                  leaveRequest={{
-                    ...request,
-                    employee_department_id: request.employee_department_id || request.department_id,
-                    employee_id: request.employee_id || request.employee
-                  }}
-                  className="mb-3"
-                />
+                {!request._isInterrupt && (
+                  <OverlapAdvisory 
+                    leaveRequest={{
+                      ...request,
+                      employee_department_id: request.employee_department_id || request.department_id,
+                      employee_id: request.employee_id || request.employee
+                    }}
+                    className="mb-3"
+                  />
+                )}
                 
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-primary-600">
+                        <p className="text-sm font-medium text-primary-600 flex items-center gap-2">
                           {getEmployeeName(request)}
+                          {request._isInterrupt && <span className="text-amber-700 text-xs px-2 py-0.5 rounded-full bg-amber-200">Early return</span>}
                         </p>
                         <p className="text-sm text-gray-900">
                           {request.leave_type_name || 'Leave Request'}
@@ -199,22 +259,46 @@ function ManagerDashboard() {
                           {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
                           <span className="ml-2">({request.total_days} working days)</span>
                         </p>
+                        {request._isInterrupt && (
+                          <p className="text-xs text-amber-700 mt-1">Requested resume: {new Date(request.requested_resume_date).toLocaleDateString()}</p>
+                        )}
                       </div>
                       <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleAction(request.id, 'approve')}
-                          disabled={Boolean(loadingActionById[request.id])}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                        >
-                          {loadingActionById[request.id] === 'approve' ? 'Processing...' : 'Approve'}
-                        </button>
-                        <button
-                          onClick={() => setRejectModal({ open: true, requestId: request.id, reason: '' })}
-                          disabled={Boolean(loadingActionById[request.id])}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                        >
-                          {loadingActionById[request.id] === 'reject' ? 'Processing...' : 'Reject'}
-                        </button>
+                        {request._isInterrupt ? (
+                          <>
+                            <button
+                              onClick={() => handleInterruptAction(request.id, 'approve')}
+                              disabled={Boolean(loadingActionById[`interrupt-${request.id}`])}
+                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            >
+                              {loadingActionById[`interrupt-${request.id}`] === 'approve' ? 'Processing...' : 'Approve Return'}
+                            </button>
+                            <button
+                              onClick={() => handleInterruptAction(request.id, 'reject')}
+                              disabled={Boolean(loadingActionById[`interrupt-${request.id}`])}
+                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                            >
+                              {loadingActionById[`interrupt-${request.id}`] === 'reject' ? 'Processing...' : 'Reject'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleAction(request.id, 'approve')}
+                              disabled={Boolean(loadingActionById[request.id])}
+                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            >
+                              {loadingActionById[request.id] === 'approve' ? 'Processing...' : 'Approve'}
+                            </button>
+                            <button
+                              onClick={() => setRejectModal({ open: true, requestId: request.id, reason: '' })}
+                              disabled={Boolean(loadingActionById[request.id])}
+                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                            >
+                              {loadingActionById[request.id] === 'reject' ? 'Processing...' : 'Reject'}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     {request.reason && (
@@ -225,7 +309,7 @@ function ManagerDashboard() {
                       </div>
                     )}
                     <div className="mt-2 text-xs text-gray-400">
-                      Submitted: {new Date(request.created_at).toLocaleString()}
+                      {request._isInterrupt ? 'Requested' : 'Submitted'}: {new Date(request.created_at).toLocaleString()}
                     </div>
                   </div>
                 </div>
@@ -235,7 +319,13 @@ function ManagerDashboard() {
         ) : (
           <li>
             <div className="px-4 py-8 text-center text-gray-500">
-              No pending leave requests to review.
+                      <div className="text-center py-12">
+                        <svg className="mx-auto h-12 w-12 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No pending approvals</h3>
+                        <p className="text-gray-500">All staff requests have been processed.</p>
+                      </div>
             </div>
           </li>
         )}
@@ -319,6 +409,16 @@ function ManagerDashboard() {
                               <strong>Comments:</strong> {request.approval_comments}
                             </p>
                           )}
+                          {request.interruption_note && (
+                            <p className="text-xs text-blue-700 mt-2 bg-blue-50 border border-blue-200 rounded p-2">
+                              <strong>Interruption:</strong> {request.interruption_note}
+                            </p>
+                          )}
+                          {request.actual_resume_date && (
+                            <p className="text-xs text-gray-600 mt-1">
+                              <strong>Actual Resume:</strong> {new Date(request.actual_resume_date).toLocaleDateString()}
+                            </p>
+                          )}
                           <div className="text-xs text-gray-400 mt-1">
                             Submitted: {new Date(request.created_at).toLocaleDateString()} | 
                             {request.approved_by_name && (
@@ -326,9 +426,19 @@ function ManagerDashboard() {
                             )}
                           </div>
                         </div>
-                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor}`}>
-                          {isApproved ? 'Approved' : 'Rejected'}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor}`}>
+                            {isApproved ? 'Approved' : 'Rejected'}
+                          </span>
+                          {isApproved && (request.interruption_credited_days || 0) === 0 && (
+                            <button
+                              onClick={() => openRecallModal(request)}
+                              className="inline-flex items-center px-3 py-1 border border-blue-300 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                              Recall Staff
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -371,6 +481,66 @@ function ManagerDashboard() {
           </button>
         </div>
       )}
+
+      {/* Recall Modal */}
+      <Dialog open={recallModal.open} onClose={() => setRecallModal({ open: false, request: null, resumeDate: '', reason: '', loading: false })} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="mx-auto w-full max-w-md rounded bg-white p-6 shadow-lg">
+            <Dialog.Title className="text-lg font-semibold text-gray-900">Recall Staff From Leave</Dialog.Title>
+            <Dialog.Description className="mt-1 text-sm text-gray-600">
+              Choose the date the staff should resume and optionally add a note.
+            </Dialog.Description>
+            {recallModal.request && (
+              <div className="mt-3 text-sm text-gray-700">
+                {recallModal.request.employee_name} — {recallModal.request.leave_type_name}
+                <div className="text-xs text-gray-500">{new Date(recallModal.request.start_date).toLocaleDateString()} - {new Date(recallModal.request.end_date).toLocaleDateString()}</div>
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Resume Date</label>
+                <input
+                  type="date"
+                  value={recallModal.resumeDate}
+                  onChange={(e) => setRecallModal((prev) => ({ ...prev, resumeDate: e.target.value }))}
+                  min={recallModal.request ? new Date(recallModal.request.start_date).toISOString().split('T')[0] : undefined}
+                  max={recallModal.request ? new Date(recallModal.request.end_date).toISOString().split('T')[0] : undefined}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
+                  disabled={recallModal.loading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>
+                <textarea
+                  rows={3}
+                  value={recallModal.reason}
+                  onChange={(e) => setRecallModal((prev) => ({ ...prev, reason: e.target.value }))}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
+                  disabled={recallModal.loading}
+                  placeholder="Add a note for the staff member"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={() => setRecallModal({ open: false, request: null, resumeDate: '', reason: '', loading: false })}
+                className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm"
+                disabled={recallModal.loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitRecall}
+                disabled={recallModal.loading}
+                className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+              >
+                {recallModal.loading ? 'Sending...' : 'Send Recall'}
+              </button>
+            </div>
+          </Dialog.Panel>
+        </div>
+      </Dialog>
       {/* Reject Reason Modal */}
       <Dialog open={rejectModal.open} onClose={() => setRejectModal({ open: false, requestId: null, reason: '' })} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />

@@ -4,12 +4,14 @@ import { Dialog } from '@headlessui/react';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import OverlapAdvisory from './OverlapAdvisory';
+import { emitApprovalChanged } from '../utils/approvalEvents';
 
-function CEOApprovals() {
+function CEOApprovals({ overrideAffiliate }) {
   const { showToast } = useToast();
   const { user } = useAuth();
     // Determine affiliate simplification upfront so initial hooks order remains constant across renders.
-    const affiliateName = (user?.affiliate_name || '').toUpperCase();
+    const enforcedAffiliate = (overrideAffiliate || '').toUpperCase();
+    const affiliateName = enforcedAffiliate || (user?.affiliate_name || '').toUpperCase();
     const isSimplified = affiliateName === 'SDSL' || affiliateName === 'SBL';
     const [requests, setRequests] = useState({
       hod_manager: [],
@@ -32,12 +34,30 @@ function CEOApprovals() {
     try {
       setLoading(true);
       // Get categorized pending requests for CEO approval
-      const response = await api.get('/leaves/manager/ceo_approvals_categorized/');
-      
-      setRequests(response.data.categories || {
+      const response = await api.get('/leaves/manager/ceo_approvals_categorized/', {
+        params: overrideAffiliate ? { affiliate: overrideAffiliate } : undefined
+      });
+      const categories = response.data.categories || {
         hod_manager: [],
         hr: [],
         staff: []
+      };
+
+      const filterByAffiliate = (items = []) => {
+        if (!affiliateName) return items;
+        const target = affiliateName.toUpperCase();
+        return items.filter(req => {
+          const aff = (req.employee_department_affiliate || '').toUpperCase();
+          const role = (req.employee_role || '').toLowerCase();
+          if (role === 'ceo') return false;
+          return aff === target;
+        });
+      };
+
+      setRequests({
+        hod_manager: filterByAffiliate(categories.hod_manager),
+        hr: filterByAffiliate(categories.hr),
+        staff: filterByAffiliate(categories.staff)
       });
     } catch (error) {
       console.error('Error fetching CEO requests:', error);
@@ -60,7 +80,8 @@ function CEOApprovals() {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         search: search || undefined,
-        status: status || undefined
+        status: status || undefined,
+        ...(overrideAffiliate ? { affiliate: overrideAffiliate } : {})
       };
       
       const response = await api.get('/leaves/manager/recent_activity/', { params });
@@ -93,6 +114,7 @@ function CEOApprovals() {
         hr: prev.hr.filter(req => req.id !== requestId),
         staff: prev.staff.filter(req => req.id !== requestId)
       }));
+      emitApprovalChanged();
       
       const verb = action === 'approve' ? 'approved' : 'rejected';
       showToast({ 
@@ -306,10 +328,10 @@ function CEOApprovals() {
       <div className="bg-white overflow-hidden shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">
-            CEO Approvals Portal
+            {overrideAffiliate ? `${overrideAffiliate} CEO Approvals` : 'CEO Approvals Portal'}
           </h3>
           <p className="text-sm text-gray-600">
-            Review and approve leave requests requiring final CEO authorization.
+            {overrideAffiliate ? `Review and approve leave requests for ${overrideAffiliate} as seen by its CEO.` : 'Review and approve leave requests requiring final CEO authorization.'}
           </p>
           <div className="mt-4">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
@@ -321,25 +343,18 @@ function CEOApprovals() {
 
       {/* Tabs */}
       <div className="bg-white shadow rounded-lg">
-        <div className="border-b border-gray-200">
+            <div className="border-b border-gray-200">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
-                  activeTab === tab.key
-                    ? 'border-primary-500 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap`}
+                style={{ borderBottomColor: 'var(--primary)', color: 'var(--primary)' }}
               >
                 {tab.label}
                 {tab.count > 0 && (
-                  <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
-                    activeTab === tab.key 
-                      ? 'bg-primary-100 text-primary-600' 
-                      : 'bg-gray-100 text-gray-900'
-                  }`}>
+                  <span className={`ml-2 py-0.5 px-2 rounded-full text-xs`} style={{ backgroundColor: 'var(--primary)', color: 'var(--on-primary)' }}>
                     {tab.count}
                   </span>
                 )}
@@ -357,15 +372,15 @@ function CEOApprovals() {
               </div>
               
               {requests[tab.key].length === 0 ? (
-                <div className="text-center py-12">
-                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No pending approvals</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    All {tab.label.toLowerCase()} have been processed.
-                  </p>
-                </div>
+                  <div className="text-center py-12">
+                    <svg className="mx-auto h-12 w-12 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No pending approvals</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      All hod/manager requests have been processed.
+                    </p>
+                  </div>
               ) : (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   {requests[tab.key].map((request) => (
@@ -489,6 +504,20 @@ function CEOApprovals() {
                                 <span> | Processed: {new Date(record.ceo_approval_date).toLocaleDateString()}</span>
                               )}
                             </div>
+                              {/* Final actor label */}
+                              {(() => {
+                                const ceoDate = record.ceo_approval_date ? new Date(record.ceo_approval_date) : null;
+                                const rejDate = record.rejection_date ? new Date(record.rejection_date) : null;
+                                if (rejDate && (!ceoDate || rejDate >= ceoDate)) {
+                                    const label = (user?.role === 'ceo') ? 'You rejected' : 'CEO rejected';
+                                    return <p className="text-xs text-red-600 mt-1">{label}: {new Date(rejDate).toLocaleDateString()} {new Date(rejDate).toLocaleTimeString()}</p>;
+                                  }
+                                  if (ceoDate) {
+                                    const label = (user?.role === 'ceo') ? 'You approved' : 'CEO approved';
+                                    return <p className="text-xs text-green-600 mt-1">{label}: {ceoDate.toLocaleDateString()} {ceoDate.toLocaleTimeString()}</p>;
+                                }
+                                return null;
+                              })()}
                           </div>
                           <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor} ml-4`}>
                             {isApproved ? 'Approved' : 'Rejected'}

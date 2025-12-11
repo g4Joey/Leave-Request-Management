@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const parseNumericId = (value) => {
   if (value === null || value === undefined) {
@@ -86,6 +87,7 @@ export default function AffiliatePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { user } = useAuth();
   const [affiliate, setAffiliate] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -660,7 +662,7 @@ export default function AffiliatePage() {
       <div className="text-center text-gray-600">
         Affiliate not found.
         <div>
-          <button onClick={() => navigate('/staff')} className="mt-3 text-sky-600 hover:underline">Back to Staff</button>
+          <button onClick={() => navigate('/staff')} className="mt-3 px-3 py-1.5 text-sm btn-cancel">Back to Staff</button>
         </div>
       </div>
     );
@@ -670,7 +672,7 @@ export default function AffiliatePage() {
     <div className="max-w-5xl mx-auto">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <button onClick={() => navigate('/staff')} className="text-sm text-gray-600 hover:underline">← Back</button>
+          <button onClick={() => navigate('/staff')} className="px-3 py-1.5 text-sm btn-cancel">← Back</button>
           <h1 className="text-2xl font-semibold mt-1">{affiliate.name}</h1>
         </div>
         <div className="flex items-center gap-4">
@@ -738,7 +740,7 @@ export default function AffiliatePage() {
                 onClick={() => navigate(`/staff/departments/${d.id}`)}
                 role="button"
                 title={`Open ${d.name}`}
-                className="border border-gray-200 rounded-lg overflow-hidden bg-white hover:shadow-md cursor-pointer"
+                className="card-improved overflow-hidden cursor-pointer hover:shadow-md"
               >
                 <div className="w-full px-4 py-4 text-left">
                   <div className="flex items-center justify-between">
@@ -751,7 +753,7 @@ export default function AffiliatePage() {
                         {(typeof d.staff_count === 'number' ? d.staff_count : (staffCountByDept[d.name] || 0))} staff member{(typeof d.staff_count === 'number' ? d.staff_count : (staffCountByDept[d.name] || 0)) !== 1 ? 's' : ''}
                       </p>
                       {d.manager ? (
-                        <p className="text-sm text-blue-600 mt-1">
+                        <p className="text-sm text-gray-700 mt-1">
                           <span className="font-medium">HOD:</span> {d.manager.name} ({d.manager.employee_id})
                         </p>
                       ) : (
@@ -1093,7 +1095,7 @@ export default function AffiliatePage() {
               </div>
             )}
             <div className="flex-shrink-0 flex justify-end gap-2 mt-4 bg-white">
-              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200" disabled={benefitsModal.loading}>Cancel</button>
+              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium btn-cancel" disabled={benefitsModal.loading}>Cancel</button>
               <button onClick={saveBenefits} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700" disabled={benefitsModal.loading}>{benefitsModal.loading ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
@@ -1136,24 +1138,42 @@ export default function AffiliatePage() {
                             <p className="text-sm text-gray-600 mt-1">{request.start_date} to {request.end_date} ({request.total_days} days)</p>
                             {request.reason && <p className="text-sm text-gray-600 mt-1"><span className="font-medium">Reason:</span> {request.reason}</p>}
                             {/* final approver/rejector */}
-                            {(() => {
-                              const mgr = request.manager_approval_date || null;
-                              const hr = request.hr_approval_date || null;
-                              const ceo = request.ceo_approval_date || null;
-                              const rej = request.rejection_date || null;
-                              const candidates = [
-                                { role: 'CEO', date: ceo },
-                                { role: 'HR', date: hr },
-                                { role: 'Manager', date: mgr },
-                                { role: 'Rejected', date: rej },
-                              ].filter(c => c.date);
-                              if (candidates.length) {
-                                candidates.sort((a, b) => new Date(b.date) - new Date(a.date));
-                                const top = candidates[0];
-                                return <p className="text-sm text-gray-600 mt-2"><span className="font-medium">Final:</span> {top.role} {top.role === 'Rejected' ? 'rejected' : 'approved'} {new Date(top.date).toLocaleString()}</p>;
-                              }
-                              return null;
-                            })()}
+                                                    {(() => {
+                                                      // use `user` from top-level useAuth() call
+                                                      const mgr = request.manager_approval_date ? new Date(request.manager_approval_date) : null;
+                                                      const hr = request.hr_approval_date ? new Date(request.hr_approval_date) : null;
+                                                      const ceo = request.ceo_approval_date ? new Date(request.ceo_approval_date) : null;
+                                                      const rej = request.rejection_date ? new Date(request.rejection_date) : null;
+
+                                                      // Build events
+                                                      const events = [];
+                                                      if (mgr) events.push({ key: 'manager', roleLabel: 'Manager', date: mgr, verb: 'approved' });
+                                                      if (hr) events.push({ key: 'hr', roleLabel: 'HR', date: hr, verb: 'approved' });
+                                                      if (ceo) events.push({ key: 'ceo', roleLabel: 'CEO', date: ceo, verb: 'approved' });
+                                                      if (rej) events.push({ key: 'rejected', roleLabel: 'Rejected', date: rej, verb: 'rejected' });
+
+                                                      if (events.length === 0) return null;
+                                                      events.sort((a, b) => a.date - b.date); // chronological
+                                                      const latest = events[events.length - 1];
+
+                                                      // Determine label and color
+                                                      const isRejected = latest.key === 'rejected';
+                                                      let label = '';
+                                                      if (isRejected) {
+                                                        // Try to infer rejector role: pick the latest approver event before rejection
+                                                        const beforeRej = events.slice(0, events.length - 1).reverse().find(e => ['manager','hr','ceo'].includes(e.key));
+                                                        const rejector = beforeRej ? beforeRej.roleLabel : 'Rejected';
+                                                        const isYou = (user && ((rejector === 'HR' && user.role === 'hr') || (rejector === 'CEO' && user.role === 'ceo') || (rejector === 'Manager' && user.role === 'manager')));
+                                                        label = isYou ? 'You rejected' : `${rejector} rejected`;
+                                                      } else {
+                                                        const roleLabel = latest.roleLabel || 'Approver';
+                                                        const isYou = (user && ((latest.key === 'hr' && user.role === 'hr') || (latest.key === 'ceo' && user.role === 'ceo') || (latest.key === 'manager' && user.role === 'manager')));
+                                                        label = isYou ? 'You approved' : `${roleLabel} approved`;
+                                                      }
+
+                                                      const colorClass = isRejected ? 'text-red-600' : 'text-green-600';
+                                                      return <p className={`text-sm ${colorClass} mt-2`}><span className="font-medium">Final:</span> {label} {latest.date.toLocaleString()}</p>;
+                                                    })()}
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${request.status === 'approved' ? 'bg-green-100 text-green-800' : request.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>{request.status}</span>

@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../services/api';
 import OverlapAdvisory from './OverlapAdvisory';
+import { emitApprovalChanged } from '../utils/approvalEvents';
 
 function HRApprovals() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ function HRApprovals() {
   const [recordsPage, setRecordsPage] = useState(0);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const PAGE_SIZE = 20;
+  const [expandedRecordIds, setExpandedRecordIds] = useState(new Set());
 
   useEffect(() => {
     fetchPendingApprovals();
@@ -89,14 +91,20 @@ function HRApprovals() {
     return aff || 'Other';
   };
 
-  const handleAction = async (requestId, action, comments = '') => {
+  const handleAction = async (request, action, comments = '') => {
     try {
-      if (action === 'approve') {
-        await api.put(`/leaves/manager/${requestId}/approve/`, { approval_comments: comments || '' });
+      const isInterrupt = request?._is_interrupt || request?.is_interrupt || request?.isInterrupt;
+      if (isInterrupt) {
+        const interruptId = request?.id;
+        const endpoint = action === 'approve' ? 'hr-approve' : 'hr-reject';
+        await api.post(`/leaves/manager/interrupts/${interruptId}/${endpoint}/`, { reason: comments || '' });
+      } else if (action === 'approve') {
+        await api.put(`/leaves/manager/${request.id}/approve/`, { approval_comments: comments || '' });
       } else if (action === 'reject') {
-        await api.put(`/leaves/manager/${requestId}/reject/`, { approval_comments: comments || '' });
+        await api.put(`/leaves/manager/${request.id}/reject/`, { approval_comments: comments || '' });
       }
       await fetchPendingApprovals();
+      emitApprovalChanged();
       setActionModal({ open: false, action: '', comments: '' });
       setSelectedRequest(null);
       const verb = action === 'approve' ? 'approved' : 'rejected';
@@ -176,115 +184,121 @@ function HRApprovals() {
             Review and process leave requests that require HR approval. These requests have been approved by managers and are awaiting your decision.
           </p>
 
-          {groups['Merban Capital'].length + groups['SDSL'].length + groups['SBL'].length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-gray-400 text-lg mb-2">📋</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No pending approvals</h3>
-              <p className="text-gray-500">All leave requests are currently processed.</p>
+          <div className="space-y-6">
+            <div className="border-b border-gray-200">
+              <nav className="flex space-x-8 px-2" aria-label="Tabs">
+                {['Merban Capital','SDSL','SBL'].map(key => {
+                  const count = groups[key].length;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setActiveAffiliate(key)}
+                      className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap`}
+                      style={activeAffiliate === key ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                    >
+                      {key}
+                      <span className={`ml-2 py-0.5 px-2 rounded-full text-xs`} style={activeAffiliate === key ? { backgroundColor: 'var(--primary)', color: 'var(--on-primary)' } : { backgroundColor: '#f3f4f6', color: '#111827' }}>{count}</span>
+                    </button>
+                  );
+                })}
+              </nav>
             </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="border-b border-gray-200">
-                <nav className="flex space-x-8 px-2" aria-label="Tabs">
-                  {['Merban Capital','SDSL','SBL'].map(key => {
-                    const count = groups[key].length;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setActiveAffiliate(key)}
-                        className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeAffiliate === key ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                      >
-                        {key}
-                        {count > 0 && (
-                          <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${activeAffiliate === key ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-900'}`}>{count}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </nav>
-              </div>
-              <div className="space-y-4">
-                {groups[activeAffiliate].map((request) => (
-                  <div key={request.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow bg-white">
-                    <OverlapAdvisory 
-                      leaveRequest={{
-                        ...request,
-                        employee_department_id: request.employee_department_id || request.department_id,
-                        employee_id: request.employee_id || request.employee
-                      }}
-                      className="mb-4"
-                    />
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-medium text-gray-900">
-                          {request.employee_name || 'Employee'}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          {request.employee_department} • {getEmployeeAffiliate(request)}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Employee ID: {request.employee_id || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        {getDynamicStatusBadge(request)}
-                      </div>
+
+            <div className="space-y-4">
+              {['Merban Capital','SDSL','SBL'].map((key) => (
+                <div key={key} className={activeAffiliate === key ? 'block' : 'hidden'}>
+                  {groups[key].length === 0 ? (
+                    <div className="text-center py-12">
+                      <svg className="mx-auto h-12 w-12 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <h3 className="text-lg font-medium text-gray-900 mt-4">No pending approvals</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Leave Type</label>
-                        <p className="mt-1 text-sm text-gray-900">{request.leave_type_name}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Duration</label>
-                        <p className="mt-1 text-sm text-gray-900">
-                          {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
-                          <span className="ml-2 text-gray-500">({request.total_days} days)</span>
-                        </p>
-                      </div>
-                      {request.created_at && (
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700">Submitted</label>
-                          <p className="mt-1 text-sm text-gray-900">{new Date(request.created_at).toLocaleString()}</p>
-                        </div>
-                      )}
+                  ) : (
+                    <div className="space-y-4">
+                      {groups[key].map((request) => {
+                        const isInterrupt = request._is_interrupt || request.is_interrupt || request.isInterrupt;
+                        if (isInterrupt) {
+                          return (
+                            <div key={`interrupt-${request.id}`} className="border border-amber-200 rounded-lg p-6 hover:shadow-md transition-shadow bg-amber-50 border-l-4 border-amber-400">
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+                                    {request.employee_name || 'Employee'}
+                                    <span className="text-amber-800 text-xs px-2 py-0.5 rounded-full bg-amber-200">Early return</span>
+                                  </h3>
+                                  <p className="text-sm text-gray-600">{request.leave_type_name}</p>
+                                  <p className="text-sm text-gray-500">{new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} ({request.total_days} working days)</p>
+                                  <p className="text-sm text-amber-800 mt-1">Requested resume: {new Date(request.requested_resume_date).toLocaleDateString()}</p>
+                                </div>
+                                <div className="text-right">{getDynamicStatusBadge({ status_display: 'Pending HR' })}</div>
+                              </div>
+                              {request.reason && (
+                                <div className="mb-4 text-sm text-gray-900 bg-white p-3 rounded-md border border-amber-100">
+                                  <strong>Reason:</strong> {request.reason}
+                                </div>
+                              )}
+                              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-amber-200">
+                                <button onClick={() => openActionModal(request, 'reject')} className="px-4 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500">Reject</button>
+                                <button onClick={() => openActionModal(request, 'approve')} className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500">Approve</button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={request.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow bg-white">
+                            <OverlapAdvisory 
+                              leaveRequest={{
+                                ...request,
+                                employee_department_id: request.employee_department_id || request.department_id,
+                                employee_id: request.employee_id || request.employee
+                              }}
+                              className="mb-4"
+                            />
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1">
+                                <h3 className="text-lg font-medium text-gray-900">{request.employee_name || 'Employee'}</h3>
+                                <p className="text-sm text-gray-600">{request.employee_department} • {getEmployeeAffiliate(request)}</p>
+                                <p className="text-sm text-gray-500 mt-1">Employee ID: {request.employee_id || 'N/A'}</p>
+                              </div>
+                              <div className="text-right">{getDynamicStatusBadge(request)}</div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Leave Type</label>
+                                <p className="mt-1 text-sm text-gray-900">{request.leave_type_name}</p>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Duration</label>
+                                <p className="mt-1 text-sm text-gray-900">{new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}<span className="ml-2 text-gray-500">({request.total_days} days)</span></p>
+                              </div>
+                            </div>
+                            {request.reason && (
+                              <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700">Reason</label>
+                                <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">{request.reason}</p>
+                              </div>
+                            )}
+                            {request.manager_approval_comments && (
+                              <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700">Manager's Comments</label>
+                                <p className="mt-1 text-sm text-gray-900 bg-green-50 p-3 rounded-md border-l-4 border-green-400">{request.manager_approval_comments}</p>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                              <button onClick={() => openActionModal(request, 'reject')} className="px-4 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500">Reject</button>
+                              <button onClick={() => openActionModal(request, 'approve')} className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500">Approve</button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    {request.reason && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700">Reason</label>
-                        <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">{request.reason}</p>
-                      </div>
-                    )}
-                    {request.manager_approval_comments && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700">Manager's Comments</label>
-                        <p className="mt-1 text-sm text-gray-900 bg-green-50 p-3 rounded-md border-l-4 border-green-400">
-                          {request.manager_approval_comments}
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
-                      <button
-                        onClick={() => openActionModal(request, 'reject')}
-                        className="px-4 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        onClick={() => openActionModal(request, 'approve')}
-                        className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      >
-                        Approve
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {groups[activeAffiliate].length === 0 && (
-                  <div className="px-4 py-12 text-center text-gray-500">No pending requests for {activeAffiliate}.</div>
-                )}
-              </div>
+                  )}
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -365,44 +379,52 @@ function HRApprovals() {
                 const statusColor = isApproved 
                   ? 'bg-green-100 text-green-800 ring-green-200' 
                   : 'bg-red-100 text-red-800 ring-red-200';
-                
+
                 return (
-                  <div key={`record-${record.id}`} className="py-4">
+                  <button
+                    key={`record-${record.id}`}
+                    className="w-full py-3 text-left"
+                    onClick={() => {
+                      const next = new Set(expandedRecordIds);
+                      const key = record.id;
+                      if (next.has(key)) next.delete(key); else next.add(key);
+                      setExpandedRecordIds(next);
+                    }}
+                  >
                     <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {record.employee_name || 'Employee'} — {record.leave_type_name}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(record.start_date).toLocaleDateString()} - {new Date(record.end_date).toLocaleDateString()} 
-                              <span className="ml-1">({record.total_days} working days)</span>
-                            </p>
-                            {record.reason && (
-                              <p className="text-xs text-gray-600 mt-1">
-                                <strong>Reason:</strong> {record.reason}
-                              </p>
-                            )}
-                            {record.hr_comments && (
-                              <p className="text-xs text-gray-600 mt-1">
-                                <strong>HR Comments:</strong> {record.hr_comments}
-                              </p>
-                            )}
-                            <div className="text-xs text-gray-400 mt-1">
-                              Submitted: {new Date(record.created_at).toLocaleDateString()}
-                              {record.hr_approval_date && (
-                                <span> | Processed: {new Date(record.hr_approval_date).toLocaleDateString()}</span>
-                              )}
-                            </div>
-                          </div>
-                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor} ml-4`}>
-                            {isApproved ? 'Approved' : 'Rejected'}
-                          </span>
-                        </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{record.employee_name || 'Employee'} — {record.leave_type_name}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(record.start_date).toLocaleDateString()} - {new Date(record.end_date).toLocaleDateString()} 
+                          <span className="ml-1">({record.total_days} working days)</span>
+                        </p>
                       </div>
+                      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor} ml-4`}>
+                        {isApproved ? 'Approved' : 'Rejected'}
+                      </span>
                     </div>
-                  </div>
+                    {expandedRecordIds.has(record.id) && (
+                      <div className="mt-3 space-y-2 text-xs text-gray-700">
+                        {record.reason && <div><strong>Reason:</strong> {record.reason}</div>}
+                        {record.hr_comments && <div><strong>HR Comments:</strong> {record.hr_comments}</div>}
+                        <div className="text-gray-500">Submitted: {new Date(record.created_at).toLocaleString()}</div>
+                        {record.timeline_events && record.timeline_events.length > 0 && (
+                          <div className="space-y-1">
+                            {record.timeline_events.map((ev, idx) => (
+                              <div key={idx} className="flex items-start gap-2">
+                                <span className="text-gray-400">•</span>
+                                <div>
+                                  <div className="font-semibold">{(ev.is_self ? 'You' : (ev.actor_name || 'Someone')) + ' ' + ((ev.action || '').replace(/_/g, ' '))}</div>
+                                  <div className="text-gray-500">{new Date(ev.timestamp).toLocaleString()}</div>
+                                  {ev.note ? <div className="text-gray-600">{ev.note}</div> : null}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </button>
                 );
               })}
             </div>
@@ -501,7 +523,7 @@ function HRApprovals() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleAction(selectedRequest?.id, actionModal.action, actionModal.comments)}
+                  onClick={() => handleAction(selectedRequest, actionModal.action, actionModal.comments)}
                   disabled={actionModal.action === 'reject' && !actionModal.comments.trim()}
                   className={`px-4 py-2 rounded-md ${actionModal.action === 'approve' ? 'bg-primary-600 hover:bg-primary-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >

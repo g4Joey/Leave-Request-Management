@@ -198,6 +198,16 @@ static/
 
 # Database
 *.sqlite3
+
+# Exclude AWS-specific deployment artifacts for LeaveMate export
+AWS_CLOUDSHELL_DEPLOYMENT_GUIDE.md
+AWS_SECRETS_GUIDE.md
+MANUAL_AWS_SETUP.md
+README_AWS.md
+deploy-to-aws.bat
+leave_management/settings_aws.py
+scripts/setup-aws-infrastructure.bat
+scripts/setup-aws-infrastructure.sh
 *.db
 
 # Local environment variables

@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "@google/gemini-cli": "^0.15.3"
+    "@google/gemini-cli": "^0.15.3",
+    "nodemailer": "^7.0.11"
   }
 }

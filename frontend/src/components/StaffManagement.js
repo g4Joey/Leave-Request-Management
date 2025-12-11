@@ -5,6 +5,53 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import RoleManagement from './RoleManagement';
 
+function ErrorDetailsModal({ open, onClose, details = {}, title = 'Error details' }) {
+  if (!open) return null;
+  const pretty = (v) => {
+    try {
+      return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+    } catch (e) {
+      return String(v);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+      <div className="bg-white rounded-md shadow p-4 w-full max-w-2xl">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-lg font-semibold">{title}</h3>
+            {details?.message && <div className="text-sm text-gray-600 mt-1">{details.message}</div>}
+          </div>
+          <div>
+            <button onClick={onClose} className="text-sm text-gray-500">Close</button>
+          </div>
+        </div>
+        <div className="space-y-3 max-h-[60vh] overflow-auto">
+          <div>
+            <div className="text-xs text-gray-500">Endpoint</div>
+            <div className="text-sm font-mono text-gray-700">{details?.endpoint || '-'}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Status</div>
+            <div className="text-sm text-gray-700">{details?.status ?? '-'}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Headers</div>
+            <pre className="text-xs bg-gray-50 p-2 rounded border">{pretty(details?.headers || {})}</pre>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Body</div>
+            <pre className="text-xs bg-gray-50 p-2 rounded border">{pretty(details?.body ?? details?.raw ?? '-')}</pre>
+          </div>
+        </div>
+        <div className="flex justify-end mt-3">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-md bg-primary-600 text-white">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Base sidebar items (grade-entitlements will be conditionally included for privileged roles)
 // Added Affiliates tab to the top per request
 const BASE_SIDEBAR_ITEMS = [
@@ -103,6 +150,11 @@ function StaffManagement() {
     if (!user) return false;
     return user.is_superuser || ['hr','admin'].includes(user.role);
   }, [user]);
+  const isHrOrAdmin = useMemo(() => {
+    if (!user) return false;
+    return user.is_superuser || ['hr', 'admin'].includes(user.role);
+  }, [user]);
+  const defaultBalanceYear = useMemo(() => new Date().getFullYear(), []);
 
   // Build sidebar items dynamically (hide Role Management unless privileged)
   const SIDEBAR_ITEMS = useMemo(() => {
@@ -123,14 +175,18 @@ function StaffManagement() {
   const [employeeQuery, setEmployeeQuery] = useState('');
   const fileInputRef = useRef(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState({ open: false, name: '', id: null, value: '' , loading: false});
+  const [createErrorDetails, setCreateErrorDetails] = useState(null);
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
   const [profileRoleSaving, setProfileRoleSaving] = useState(false);
   const [profileEditFields, setProfileEditFields] = useState({ employee_id: '', hire_date: '', new_email: '', new_password: '' });
   const [profileFieldsSaving, setProfileFieldsSaving] = useState(false);
   const [resetPasswordSaving, setResetPasswordSaving] = useState(false);
   const [updateEmailSaving, setUpdateEmailSaving] = useState(false);
+  const [profileBalances, setProfileBalances] = useState({ loading: false, error: null, items: [], year: defaultBalanceYear, availableYears: [], exporting: false });
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
+  const [leaveHistoryFilters, setLeaveHistoryFilters] = useState({ leaveType: '', status: '', startDate: '', endDate: '', text: '' });
+  const [exportingAll, setExportingAll] = useState(false);
   const [newDepartmentModal, setNewDepartmentModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [newAffiliateModal, setNewAffiliateModal] = useState({ open: false, loading: false, name: '', description: '' });
   const [deleteEmployeeModal, setDeleteEmployeeModal] = useState({ open: false, selected: {}, processing: false });
@@ -260,6 +316,7 @@ function StaffManagement() {
           try {
             // CEO name: prefer affiliate.ceo from backend serializer; fallback to staff lookup
             let ceoName = null;
+      
             if (aff?.ceo) {
               ceoName = (aff.ceo.name && aff.ceo.name.trim()) ? aff.ceo.name.trim() : (aff.ceo.email || null);
             }
@@ -356,12 +413,88 @@ function StaffManagement() {
         new_password: '',
         department_id: normalized.department_id || ''
       });
+      if (isHrOrAdmin) {
+        loadEmployeeBalances(emp.id, profileBalances.year || defaultBalanceYear);
+      } else {
+        setProfileBalances((prev) => ({ ...prev, items: [], error: null, year: defaultBalanceYear }));
+      }
     } catch (e) {
       const status = e.response?.status;
       const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load profile';
       console.error('[StaffManagement] Failed to load profile', { status, error: e, response: e.response?.data });
       setProfileModal({ open: true, loading: false, employee: emp, data: null, error: msg });
       showToast({ type: 'error', message: msg });
+    }
+  };
+
+  const normalizeBalanceRow = (item, idx = 0) => {
+    const entitled = Number(item.entitled_days ?? item.entitled ?? 0) || 0;
+    const used = Number(item.used_days ?? item.used ?? 0) || 0;
+    const pending = Number(item.pending_days ?? item.pending ?? 0) || 0;
+    const remaining = Number(item.remaining_days ?? item.remaining ?? entitled - used - pending) || 0;
+    return {
+      key: `${item.leave_type?.id || item.leave_type_id || item.leave_type || idx}`,
+      leaveType: item.leave_type?.name || item.leave_type_name || 'Leave type',
+      entitled,
+      used,
+      pending,
+      remaining,
+    };
+  };
+
+  const loadEmployeeBalances = useCallback(async (employeeId, year) => {
+    if (!employeeId) return;
+    const safeYear = year || defaultBalanceYear;
+    setProfileBalances((prev) => ({ ...prev, loading: true, error: null, year: safeYear }));
+    try {
+      const res = await api.get(`/leaves/balances/employee/${employeeId}/current_year/`, { params: { year: safeYear } });
+      const { items = [], available_years = [] } = res.data || {};
+      const rows = (items || []).map((it, idx) => normalizeBalanceRow(it, idx));
+      setProfileBalances((prev) => ({
+        ...prev,
+        loading: false,
+        items: rows,
+        availableYears: Array.isArray(available_years) && available_years.length ? available_years : (prev.availableYears?.length ? prev.availableYears : [safeYear]),
+        error: null,
+        year: safeYear,
+      }));
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to load leave balances';
+      console.error('Failed to load balances', e.response?.data || e.message);
+      setProfileBalances((prev) => ({ ...prev, loading: false, items: [], error: msg, year: safeYear }));
+      showToast({ type: 'error', message: msg });
+    }
+  }, [defaultBalanceYear, showToast]);
+
+  const handleBalanceYearChange = (year) => {
+    if (!profileModal.employee) return;
+    loadEmployeeBalances(profileModal.employee.id, year);
+  };
+
+  const exportBalancesCsv = () => {
+    const rows = profileBalances.items || [];
+    if (!rows.length) {
+      showToast({ type: 'info', message: 'No balances to export yet' });
+      return;
+    }
+    setProfileBalances((prev) => ({ ...prev, exporting: true }));
+    try {
+      const header = ['Leave Type', 'Entitled', 'Used', 'Pending', 'Remaining'];
+      const csvLines = [header.join(',')].concat(rows.map((r) => (
+        [r.leaveType, r.entitled, r.used, r.pending, r.remaining]
+          .map((v) => (typeof v === 'string' && v.includes(',') ? `"${v}"` : v))
+          .join(',')
+      )));
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `leave-balances-${profileModal.employee?.id || 'employee'}-${profileBalances.year}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: 'Balances exported' });
+    } finally {
+      setProfileBalances((prev) => ({ ...prev, exporting: false }));
     }
   };
 
@@ -671,6 +804,7 @@ function StaffManagement() {
     }
     console.log('[StaffManagement] Opening leave history for employee:', emp);
     setLeaveHistoryModal({ open: true, loading: true, employee: emp, requests: [], searchQuery: '' });
+    setLeaveHistoryFilters({ leaveType: '', status: '', startDate: '', endDate: '', text: '' });
     try {
       // Use the HOD endpoint to get all leave requests for this employee
       const res = await api.get(`/leaves/manager/?employee=${emp.id}&ordering=-created_at`);
@@ -688,19 +822,59 @@ function StaffManagement() {
 
   // Filter leave history requests based on search query
   const filteredLeaveHistory = useMemo(() => {
-    const query = leaveHistoryModal.searchQuery?.trim().toLowerCase();
-    if (!query) return leaveHistoryModal.requests;
-    
-    return leaveHistoryModal.requests.filter(request => 
-      request.leave_type_name?.toLowerCase().includes(query) ||
-      request.leave_type?.name?.toLowerCase().includes(query) ||
-      request.reason?.toLowerCase().includes(query) ||
-      request.status?.toLowerCase().includes(query) ||
-      request.approval_comments?.toLowerCase().includes(query) ||
-      request.start_date?.includes(query) ||
-      request.end_date?.includes(query)
+    const requests = leaveHistoryModal.requests || [];
+    const filters = leaveHistoryFilters || {};
+    const textQuery = (filters.text || leaveHistoryModal.searchQuery || '').trim().toLowerCase();
+
+    const hasAnyFilter = Boolean(
+      textQuery || filters.leaveType || filters.status || filters.startDate || filters.endDate
     );
-  }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery]);
+
+    if (!hasAnyFilter) return requests;
+
+    const toISO = (val) => {
+      if (!val) return null;
+      const s = String(val).split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const dt = new Date(val);
+      if (!isNaN(dt)) {
+        const y = dt.getFullYear(); const m = String(dt.getMonth() + 1).padStart(2, '0'); const d = String(dt.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+      return null;
+    };
+
+    return requests.filter((r) => {
+      // Leave type
+      if (filters.leaveType) {
+        const t = String(r.leave_type_name || r.leave_type?.name || '').trim();
+        if (t !== filters.leaveType) return false;
+      }
+
+      // Status
+      if (filters.status) {
+        if (String(r.status || '').toLowerCase() !== String(filters.status || '').toLowerCase()) return false;
+      }
+
+      // Date range: check overlap with request start/end
+      const startISO = toISO(r.start_date);
+      const endISO = toISO(r.end_date);
+      if (filters.startDate) {
+        if (!endISO || endISO < filters.startDate) return false;
+      }
+      if (filters.endDate) {
+        if (!startISO || startISO > filters.endDate) return false;
+      }
+
+      // Text search across common fields
+      if (textQuery) {
+        const hay = `${r.leave_type_name || ''} ${r.leave_type?.name || ''} ${r.reason || ''} ${r.approval_comments || ''} ${r.manager?.name || ''} ${r.hr?.name || ''} ${r.ceo?.name || ''}`.toLowerCase();
+        if (!hay.includes(textQuery)) return false;
+      }
+
+      return true;
+    });
+  }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery, leaveHistoryFilters]);
 
   // Handle navigation state from other pages (e.g., DepartmentPage) to open modals
   const location = useLocation();
@@ -1220,26 +1394,47 @@ function StaffManagement() {
   };
 
   const handleExportAllLeaveRequestsCSV = async () => {
+    if (!canManageGradeEntitlements) {
+      showToast({ type: 'warning', message: 'You are not authorized to export all leave requests.' });
+      return;
+    }
     try {
-      showToast({ type: 'info', message: 'Exporting all leave requests...' });
-      const response = await api.get('/leaves/requests/export-all/', {
-        responseType: 'blob', // Important for downloading files
-      });
-
-      const blob = new Blob([response.data], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
+      setExportingAll(true);
+      showToast({ type: 'info', message: 'Preparing leave requests export...' });
+      // Use a non-ambiguous list-action alias to avoid DRF router pk collisions
+      const res = await api.get('/leaves/requests/export_all_list/', { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'all_leave_requests.csv';
+      a.setAttribute('download', 'all_leave_requests.csv');
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
-
-      showToast({ type: 'success', message: 'All leave requests exported successfully.' });
-    } catch (error) {
-      console.error('Error exporting all leave requests:', error);
-      showToast({ type: 'error', message: 'Failed to export all leave requests.' });
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: 'All leave requests exported.' });
+    } catch (e) {
+      console.error('[StaffManagement] Export all error:', e);
+      // Try to parse blob/json messages when available
+      try {
+        const reader = new FileReader();
+        if (e?.response?.data && typeof e.response.data.text === 'function') {
+          const text = await e.response.data.text();
+          let parsed = null;
+          try { parsed = JSON.parse(text); } catch (_) { parsed = text; }
+          showToast({ type: 'error', message: parsed?.detail || parsed || 'Export failed' });
+        } else {
+          showToast({ type: 'error', message: e.response?.data?.detail || e.message || 'Export failed' });
+        }
+      } catch (_err) {
+        showToast({ type: 'error', message: 'Export failed — please check server logs.' });
+      }
+    } finally {
+      setExportingAll(false);
     }
   };
+
+  
 
   const downloadTemplateCSV = () => {
   const csv = `name,email,affiliate,department,role,employee_id,hire_date
@@ -1323,19 +1518,19 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
           aria-label="Staff navigation"
           onKeyDown={handleSidebarKeyDown}
         >
-          <div className="bg-white rounded-md shadow divide-y">
+          <div className="bg-green-600 text-white rounded-md shadow divide-y">
             {SIDEBAR_ITEMS.map((item) => {
               const isActive = item.id === active;
-              const activeClass = isActive ? 'bg-sky-50 border-sky-500 text-sky-700' : 'hover:bg-gray-50';
+              const activeClass = isActive ? 'bg-green-700 text-white' : 'hover:bg-green-500/90 text-white/90';
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActive(item.id)}
-                  className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 border-b ${activeClass}`}
+                  onClick={() => setActive(isActive ? 'employees' : item.id)}
+                  className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 border-b border-green-600/80 ${activeClass}`}
                   aria-current={isActive ? 'page' : undefined}
                 >
                   <span className="font-medium">{item.label}</span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-white/90">
                     {item.id === 'employees' ? employees.length : ''}
                   </span>
                 </button>
@@ -1446,7 +1641,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                                 {dept.staff_count} staff member{dept.staff_count !== 1 ? 's' : ''}
                               </p>
                               {dept.manager ? (
-                                <p className="text-sm text-blue-600 mt-1">
+                                <p className="text-sm text-gray-700 mt-1">
                                   <span className="font-medium">HOD:</span> {dept.manager.name} ({dept.manager.employee_id})
                                 </p>
                               ) : (
@@ -1678,12 +1873,15 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   >
                     Export Staff List CSV
                   </button>
-                  <button
-                    onClick={handleExportAllLeaveRequestsCSV}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-200 text-blue-700 hover:bg-blue-50"
-                  >
-                    Export All Leave Requests
-                  </button>
+                  {canManageGradeEntitlements && (
+                    <button
+                      onClick={handleExportAllLeaveRequestsCSV}
+                      disabled={exportingAll}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
+                    >
+                      {exportingAll ? 'Exporting...' : 'Export All Leave Requests'}
+                    </button>
+                  )}
                 </div>
               </section>
             )}
@@ -1876,6 +2074,71 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                   </div>
                 </div>
 
+                {/* Leave Balances (HR/Admin only) */}
+                {isHrOrAdmin && (
+                  <div className="border border-gray-200 rounded-md p-3 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold text-gray-700">Leave balances</div>
+                        <div className="text-xs text-gray-500">Entitled, used, pending, and remaining</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="border rounded-md px-2 py-1 text-xs"
+                          value={profileBalances.year}
+                          onChange={(e) => handleBalanceYearChange(Number(e.target.value) || defaultBalanceYear)}
+                          disabled={profileBalances.loading}
+                        >
+                          {Array.from(new Set((profileBalances.availableYears?.length ? profileBalances.availableYears : [defaultBalanceYear - 1, defaultBalanceYear, defaultBalanceYear + 1]))).sort((a, b) => a - b).map((y) => (
+                            <option key={y} value={y}>{y}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={exportBalancesCsv}
+                          disabled={profileBalances.loading || profileBalances.exporting || !profileBalances.items.length}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium border border-gray-200 text-gray-700 disabled:opacity-50"
+                        >
+                          {profileBalances.exporting ? 'Exporting…' : 'Export CSV'}
+                        </button>
+                      </div>
+                    </div>
+                    {profileBalances.loading ? (
+                      <div className="text-xs text-gray-500">Loading balances…</div>
+                    ) : profileBalances.error ? (
+                      <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{profileBalances.error}</div>
+                    ) : (
+                      <div className="overflow-x-auto -mx-1">
+                        {profileBalances.items.length ? (
+                          <table className="min-w-full text-xs mx-1">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="text-left px-2 py-1 font-medium text-gray-600">Leave Type</th>
+                                <th className="text-right px-2 py-1 font-medium text-gray-600">Entitled</th>
+                                <th className="text-right px-2 py-1 font-medium text-gray-600">Used</th>
+                                <th className="text-right px-2 py-1 font-medium text-gray-600">Pending</th>
+                                <th className="text-right px-2 py-1 font-medium text-gray-600">Remaining</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {profileBalances.items.map((row) => (
+                                <tr key={row.key} className="border-t border-gray-100">
+                                  <td className="px-2 py-1 text-gray-800">{row.leaveType}</td>
+                                  <td className="px-2 py-1 text-right text-gray-700">{row.entitled}</td>
+                                  <td className="px-2 py-1 text-right text-gray-700">{row.used}</td>
+                                  <td className="px-2 py-1 text-right text-gray-700">{row.pending}</td>
+                                  <td className="px-2 py-1 text-right font-semibold text-gray-900">{row.remaining}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="text-xs text-gray-500 px-1 py-2">No balances found for {profileBalances.year}.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Password Reset - Admin/HR Only */}
                 {(user?.role === 'hr' || user?.role === 'admin' || user?.is_superuser) && (
                   <div>
@@ -1908,6 +2171,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                 onClick={() => {
                   setProfileModal({ open: false, loading: false, employee: null, data: null });
                   setProfileEditFields({ employee_id: '', hire_date: '', new_email: '', new_password: '' });
+                  setProfileBalances({ loading: false, error: null, items: [], year: defaultBalanceYear, availableYears: [], exporting: false });
                 }} 
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200"
               >
@@ -1948,7 +2212,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
               </div>
             )}
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200" disabled={benefitsModal.loading}>Cancel</button>
+              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium btn-cancel" disabled={benefitsModal.loading}>Cancel</button>
               <button onClick={saveBenefits} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700" disabled={benefitsModal.loading}>{benefitsModal.loading ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
@@ -2467,16 +2731,69 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
               </button>
             </div>
             
-            {/* Search Bar */}
+            {/* Filters Bar */}
             {!leaveHistoryModal.loading && leaveHistoryModal.requests.length > 0 && (
-              <div className="mb-4">
-                <input
-                  type="text"
-                  placeholder="Search by leave type, reason, status, or dates..."
-                  value={leaveHistoryModal.searchQuery}
-                  onChange={(e) => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: e.target.value }))}
-                  className="w-full border rounded-md px-3 py-2 text-sm"
-                />
+              <div className="mb-4 space-y-3">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    placeholder="Text search (reason, approver name)..."
+                    value={leaveHistoryFilters.text || leaveHistoryModal.searchQuery}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setLeaveHistoryFilters(prev => ({ ...prev, text: v }));
+                      setLeaveHistoryModal(prev => ({ ...prev, searchQuery: v }));
+                    }}
+                    className="flex-1 border rounded-md px-3 py-2 text-sm"
+                  />
+                  <button
+                    onClick={() => { setLeaveHistoryFilters({ leaveType: '', status: '', startDate: '', endDate: '', text: '' }); setLeaveHistoryModal(prev => ({ ...prev, searchQuery: '' })); }}
+                    className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <select
+                    value={leaveHistoryFilters.leaveType}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, leaveType: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="">All leave types</option>
+                    {Array.from(new Set(leaveHistoryModal.requests.map(r => (r.leave_type_name || r.leave_type?.name || '').toString()))).filter(Boolean).map((lt) => (
+                      <option key={lt} value={lt}>{lt}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={leaveHistoryFilters.status}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending</option>
+                    <option value="manager_approved">Manager Approved</option>
+                    <option value="hr_approved">HR Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+
+                  <input
+                    type="date"
+                    value={leaveHistoryFilters.startDate}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="Start date"
+                  />
+
+                  <input
+                    type="date"
+                    value={leaveHistoryFilters.endDate}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="End date"
+                  />
+                </div>
               </div>
             )}
             
@@ -2496,7 +2813,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                     <p>No leave requests match your search criteria.</p>
                     <button 
                       onClick={() => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: '' }))}
-                      className="text-blue-600 hover:text-blue-800 text-sm mt-2"
+                      className="text-green-600 hover:text-green-800 text-sm mt-2"
                     >
                       Clear search
                     </button>
@@ -2577,6 +2894,35 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
                             </p>
                           </div>
                         )}
+                        {/* Final approver / rejector */}
+                        {(() => {
+                          const mgr = request.manager_approval_date ? new Date(request.manager_approval_date) : null;
+                          const hr = request.hr_approval_date ? new Date(request.hr_approval_date) : null;
+                          const ceo = request.ceo_approval_date ? new Date(request.ceo_approval_date) : null;
+                          const rej = request.rejection_date ? new Date(request.rejection_date) : null;
+                          const events = [];
+                          if (mgr) events.push({ key: 'manager', roleLabel: 'Manager', date: mgr, verb: 'approved' });
+                          if (hr) events.push({ key: 'hr', roleLabel: 'HR', date: hr, verb: 'approved' });
+                          if (ceo) events.push({ key: 'ceo', roleLabel: 'CEO', date: ceo, verb: 'approved' });
+                          if (rej) events.push({ key: 'rejected', roleLabel: 'Rejected', date: rej, verb: 'rejected' });
+                          if (events.length === 0) return null;
+                          events.sort((a, b) => a.date - b.date);
+                          const latest = events[events.length - 1];
+                          const isRejected = latest.key === 'rejected';
+                          let label = '';
+                          if (isRejected) {
+                            const beforeRej = events.slice(0, events.length - 1).reverse().find(e => ['manager','hr','ceo'].includes(e.key));
+                            const rejector = beforeRej ? beforeRej.roleLabel : 'Rejected';
+                            const isYou = (user && ((rejector === 'HR' && user.role === 'hr') || (rejector === 'CEO' && user.role === 'ceo') || (rejector === 'Manager' && user.role === 'manager')));
+                            label = isYou ? 'You rejected' : `${rejector} rejected`;
+                          } else {
+                            const roleLabel = latest.roleLabel || 'Approver';
+                            const isYou = (user && ((latest.key === 'hr' && user.role === 'hr') || (latest.key === 'ceo' && user.role === 'ceo') || (latest.key === 'manager' && user.role === 'manager')));
+                            label = isYou ? 'You approved' : `${roleLabel} approved`;
+                          }
+                          const colorClass = isRejected ? 'text-red-600' : 'text-green-600';
+                          return <p className={`text-sm ${colorClass} mt-2`}><span className="font-medium">Final:</span> {label} {latest.date.toLocaleString()}</p>;
+                        })()}
                       </div>
                     ))}
                   </div>
@@ -2671,6 +3017,7 @@ Bob Wilson,bob.wilson@company.com,SBL,,senior_staff,EMP003,2023-08-22`;
           </div>
         </div>
       )}
+      {/* Export All removed — no error modal needed */}
     </div>
   );
 }
@@ -2679,9 +3026,13 @@ export default StaffManagement;
 
 function LeaveTypesList({ onConfigure }) {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const isHR = useMemo(() => user && (user.is_superuser || ['hr','admin'].includes(user.role)), [user]);
   const [loading, setLoading] = useState(true);
   const [types, setTypes] = useState([]);
   const [createModal, setCreateModal] = useState({ open: false, name: '', description: '', max_days_per_request: '', requires_medical_certificate: false, saving: false });
+  const [createErrorDetailsLocal, setCreateErrorDetailsLocal] = useState(null);
+  const [deleteModal, setDeleteModal] = useState({ open: false, id: null, name: '', deleting: false });
 
   const load = useCallback(async () => {
     try {
@@ -2710,6 +3061,20 @@ function LeaveTypesList({ onConfigure }) {
     }
   };
 
+  const deleteType = async (id) => {
+    try {
+      setDeleteModal(prev => ({ ...prev, deleting: true }));
+      await api.delete(`/leaves/types/${id}/`);
+      showToast({ type: 'success', message: 'Leave type deleted' });
+      setDeleteModal({ open: false, id: null, name: '', deleting: false });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Failed to delete leave type';
+      showToast({ type: 'error', message: msg });
+      setDeleteModal(prev => ({ ...prev, deleting: false }));
+    }
+  };
+
   const createType = async () => {
     const payload = {
       name: createModal.name.trim(),
@@ -2727,13 +3092,60 @@ function LeaveTypesList({ onConfigure }) {
     }
     try {
       setCreateModal(prev => ({ ...prev, saving: true }));
-      await api.post('/leaves/types/create_type/', payload);
+      // First check allowed methods via OPTIONS to provide a clearer error when POST is disallowed
+      try {
+        const opt = await api.options('/leaves/types/create_type/');
+        const allow = opt.headers?.allow || opt.headers?.Allow;
+        if (allow && !String(allow).toUpperCase().includes('POST')) {
+          // Server explicitly disallows POST on this endpoint — surface allowed methods
+          throw { _clientHint: true, message: `Server does not allow POST on /leaves/types/create_type/. Allowed: ${allow}` };
+        }
+      } catch (optErr) {
+        // OPTIONS may fail on some servers; proceed to attempt POST (fallbacks will be tried below)
+      }
+
+      try {
+        await api.post('/leaves/types/create_type/', payload);
+      } catch (innerErr) {
+        const status = innerErr?.response?.status;
+        if (status === 405 || innerErr?._clientHint) {
+          // If POST not allowed, try common alternate endpoints and show allowed header when available
+          let tried = [];
+          try {
+            tried.push('/leaves/types/');
+            await api.post('/leaves/types/', payload);
+          } catch (altErr) {
+            try {
+              tried.push('/leaves/types/create/');
+              await api.post('/leaves/types/create/', payload);
+            } catch (altErr2) {
+              // If we have server response details, include them; otherwise present attempted endpoints
+              const serverMsg = innerErr?.response?.data?.detail || innerErr?.response?.data?.error || innerErr?.message || 'Method not allowed';
+              throw { message: `Create failed. Server response: ${serverMsg}. Tried: ${tried.join(', ')}` };
+            }
+          }
+        } else {
+          throw innerErr;
+        }
+      }
       showToast({ type: 'success', message: 'Leave type created' });
       setCreateModal({ open: false, name: '', description: '', max_days_per_request: '', requires_medical_certificate: false, saving: false });
       await load();
     } catch (e) {
-      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to create leave type';
+      const msg = e?.message || e?.response?.data?.detail || e?.response?.data?.error || 'Failed to create leave type';
       showToast({ type: 'error', message: msg });
+      // capture structured details for debugging
+      const resp = e?.response;
+      const details = {
+        message: msg,
+        endpoint: resp?._url || resp?.config?.url || '/leaves/types/',
+        status: resp?.status || null,
+        headers: resp?.headers || null,
+        body: resp?.data || null,
+        raw: String(e),
+        timestamp: Date.now(),
+      };
+      setCreateErrorDetailsLocal(details);
       setCreateModal(prev => ({ ...prev, saving: false }));
     }
   };
@@ -2778,6 +3190,14 @@ function LeaveTypesList({ onConfigure }) {
             >
               {t.is_active ? 'Deactivate' : 'Activate'}
             </button>
+            {isHR && (
+              <button
+                onClick={() => setDeleteModal({ open: true, id: t.id, name: t.name, deleting: false })}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            )}
           </div>
         </li>
       ))}
@@ -2850,6 +3270,40 @@ function LeaveTypesList({ onConfigure }) {
             </div>
           </div>
         </div>
+      )}
+      {/* Delete confirmation modal for HR/admins */}
+      {deleteModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-2">Confirm delete</h3>
+            <div className="text-sm text-gray-700 mb-4">Are you sure you want to delete the leave type "{deleteModal.name}"? This action cannot be undone.</div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteModal({ open: false, id: null, name: '', deleting: false })}
+                className="px-3 py-1.5 rounded-md border"
+                disabled={deleteModal.deleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteType(deleteModal.id)}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white"
+                disabled={deleteModal.deleting}
+              >
+                {deleteModal.deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Create error details modal */}
+      {createErrorDetailsLocal && (
+        <ErrorDetailsModal
+          open={Boolean(createErrorDetailsLocal)}
+          onClose={() => setCreateErrorDetailsLocal(null)}
+          details={createErrorDetailsLocal}
+          title="Create leave type failed — details"
+        />
       )}
     </>
   );

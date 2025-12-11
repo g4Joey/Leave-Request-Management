@@ -21,6 +21,7 @@ export default function DepartmentPage() {
   const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
   const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
   const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
+  const [leaveHistoryFilters, setLeaveHistoryFilters] = useState({ leaveType: '', status: '', startDate: '', endDate: '', text: '', period: 'all' });
   const [profileEditFields, setProfileEditFields] = useState({ employee_id: '', hire_date: '', new_email: '', new_password: '' });
   const [profileFieldsSaving, setProfileFieldsSaving] = useState(false);
   const [profileRoleSaving, setProfileRoleSaving] = useState(false);
@@ -33,11 +34,18 @@ export default function DepartmentPage() {
   const handleRoleChange = (newRole) => setSelectedRole(newRole);
 
   const filteredLeaveHistory = useMemo(() => {
-    const qRaw = (leaveHistoryModal.searchQuery || '').trim();
-    const query = qRaw.toLowerCase();
     const requests = leaveHistoryModal.requests || [];
+    const filters = leaveHistoryFilters || {};
+    const textQuery = (filters.text || leaveHistoryModal.searchQuery || '').trim().toLowerCase();
 
-    const toISODate = (val) => {
+    const hasAnyFilter = Boolean(
+      textQuery || filters.leaveType || filters.status || filters.startDate || filters.endDate || (filters.period && filters.period !== 'all')
+    );
+
+    // If no filters and no text query, show only the last 5 requests (most recent first assumed already)
+    if (!hasAnyFilter) return requests.slice(0, 5);
+
+    const toISO = (val) => {
       if (!val) return null;
       const s = String(val).split('T')[0];
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
@@ -49,55 +57,57 @@ export default function DepartmentPage() {
       return null;
     };
 
-    const toUSDate = (val) => {
-      const iso = toISODate(val);
-      if (!iso) return null;
-      const [y, m, d] = iso.split('-');
-      return `${m}/${d}/${y}`;
-    };
-
-    // If no query, show only the last 5 requests (most recent first assumed already)
-    if (!query) return requests.slice(0, 5);
-
-    // Try to detect if the query is a date (mm/dd/yyyy or yyyy-mm-dd)
-    let parsedQueryDate = null;
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(qRaw)) {
-      const [mm, dd, yyyy] = qRaw.split('/').map((t) => t.padStart(2, '0'));
-      parsedQueryDate = `${yyyy}-${mm}-${dd}`;
-    } else if (/^\d{4}-\d{2}-\d{2}$/.test(qRaw)) {
-      parsedQueryDate = qRaw;
+    // Compute period threshold if requested
+    let periodThreshold = null;
+    if (filters.period && filters.period !== 'all') {
+      const now = new Date();
+      if (filters.period === 'ytd') {
+        periodThreshold = `${now.getFullYear()}-01-01`;
+      } else if (filters.period === '3m') {
+        const past = new Date(now);
+        past.setMonth(past.getMonth() - 3);
+        const y = past.getFullYear(); const m = String(past.getMonth() + 1).padStart(2, '0'); const d = String(past.getDate()).padStart(2, '0');
+        periodThreshold = `${y}-${m}-${d}`;
+      }
     }
 
-    return requests.filter((request) => {
-      const type = String(request.leave_type_name || request.leave_type?.name || '').toLowerCase();
-      const reason = String(request.reason || '').toLowerCase();
-      const status = String(request.status || '').toLowerCase();
-      const comments = String(request.approval_comments || '').toLowerCase();
-
-      if (type.includes(query) || reason.includes(query) || status.includes(query) || comments.includes(query)) return true;
-
-      // date string matching against start/end/created dates in either ISO or US format
-      const startISO = toISODate(request.start_date);
-      const endISO = toISODate(request.end_date);
-      const createdISO = toISODate(request.created_at);
-      const startUS = toUSDate(request.start_date);
-      const endUS = toUSDate(request.end_date);
-      const createdUS = toUSDate(request.created_at);
-
-      if (parsedQueryDate) {
-        if (parsedQueryDate === startISO || parsedQueryDate === endISO || parsedQueryDate === createdISO) return true;
+    return requests.filter((r) => {
+      // Leave type
+      if (filters.leaveType) {
+        const t = String(r.leave_type_name || r.leave_type?.name || '').trim();
+        if (t !== filters.leaveType) return false;
       }
 
-      if (startISO && startISO.includes(query)) return true;
-      if (endISO && endISO.includes(query)) return true;
-      if (createdISO && createdISO.includes(query)) return true;
-      if (startUS && startUS.toLowerCase().includes(query)) return true;
-      if (endUS && endUS.toLowerCase().includes(query)) return true;
-      if (createdUS && createdUS.toLowerCase().includes(query)) return true;
+      // Status
+      if (filters.status) {
+        if (String(r.status || '').toLowerCase() !== String(filters.status || '').toLowerCase()) return false;
+      }
 
-      return false;
+      // Date range filter: check overlap with request start/end
+      const startISO = toISO(r.start_date);
+      const endISO = toISO(r.end_date);
+      if (filters.startDate) {
+        if (!endISO || endISO < filters.startDate) return false;
+      }
+      if (filters.endDate) {
+        if (!startISO || startISO > filters.endDate) return false;
+      }
+
+      // Period filter (created_at)
+      if (periodThreshold) {
+        const createdISO = toISO(r.created_at);
+        if (!createdISO || createdISO < periodThreshold) return false;
+      }
+
+      // Text search across common fields
+      if (textQuery) {
+        const hay = `${r.leave_type_name || ''} ${r.leave_type?.name || ''} ${r.reason || ''} ${r.approval_comments || ''} ${r.manager?.name || ''} ${r.hr?.name || ''} ${r.ceo?.name || ''}`.toLowerCase();
+        if (!hay.includes(textQuery)) return false;
+      }
+
+      return true;
     });
-  }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery]);
+  }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery, leaveHistoryFilters]);
 
   const load = async () => {
     try {
@@ -340,6 +350,7 @@ export default function DepartmentPage() {
   const openLeaveHistory = async (emp) => {
     if (!emp || !emp.id) return;
     setLeaveHistoryModal({ open: true, loading: true, employee: emp, requests: [], searchQuery: '' });
+    setLeaveHistoryFilters({ leaveType: '', status: '', startDate: '', endDate: '', text: '', period: 'all' });
     try {
       const res = await api.get(`/leaves/manager/?employee=${emp.id}&ordering=-created_at`);
       const requests = res.data?.results || res.data || [];
@@ -517,7 +528,7 @@ export default function DepartmentPage() {
             } else {
               navigate('/staff');
             }
-          }} className="text-sm text-gray-600 hover:underline">← Back to Departments</button>
+          }} className="px-3 py-1.5 text-sm btn-cancel">← Back to Departments</button>
           <h2 className="text-2xl font-semibold mt-1">{department.name}</h2>
           {department.description && <p className="text-sm text-gray-600 mt-1">{department.description}</p>}
         </div>
@@ -730,7 +741,7 @@ export default function DepartmentPage() {
               </div>
             )}
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200" disabled={benefitsModal.loading}>Cancel</button>
+              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium btn-cancel" disabled={benefitsModal.loading}>Cancel</button>
               <button onClick={saveBenefits} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700" disabled={benefitsModal.loading}>{benefitsModal.loading ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
@@ -753,16 +764,79 @@ export default function DepartmentPage() {
               </button>
             </div>
             
-            {/* Search Bar */}
+            {/* Filters Bar */}
             {!leaveHistoryModal.loading && leaveHistoryModal.requests.length > 0 && (
-              <div className="mb-4">
-                <input
-                  type="text"
-                  placeholder="Search by leave type, reason, status, or dates..."
-                  value={leaveHistoryModal.searchQuery}
-                  onChange={(e) => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: e.target.value }))}
-                  className="w-full border rounded-md px-3 py-2 text-sm"
-                />
+              <div className="mb-4 space-y-3">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    placeholder="Text search (reason, approver name)..."
+                    value={leaveHistoryFilters.text || leaveHistoryModal.searchQuery}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setLeaveHistoryFilters(prev => ({ ...prev, text: v }));
+                      setLeaveHistoryModal(prev => ({ ...prev, searchQuery: v }));
+                    }}
+                    className="flex-1 border rounded-md px-3 py-2 text-sm"
+                  />
+                  <button
+                    onClick={() => { setLeaveHistoryFilters({ leaveType: '', status: '', startDate: '', endDate: '', text: '', period: 'all' }); setLeaveHistoryModal(prev => ({ ...prev, searchQuery: '' })); }}
+                    className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <select
+                    value={leaveHistoryFilters.leaveType}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, leaveType: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="">All leave types</option>
+                    {Array.from(new Set(leaveHistoryModal.requests.map(r => (r.leave_type_name || r.leave_type?.name || '').toString()))).filter(Boolean).map((lt) => (
+                      <option key={lt} value={lt}>{lt}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={leaveHistoryFilters.status}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending</option>
+                    <option value="manager_approved">Manager Approved</option>
+                    <option value="hr_approved">HR Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+
+                  <input
+                    type="date"
+                    value={leaveHistoryFilters.startDate}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="Start date"
+                  />
+
+                  <input
+                    type="date"
+                    value={leaveHistoryFilters.endDate}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="End date"
+                  />
+
+                  <select
+                    value={leaveHistoryFilters.period || 'all'}
+                    onChange={(e) => setLeaveHistoryFilters(prev => ({ ...prev, period: e.target.value }))}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="all">Period: All time</option>
+                    <option value="ytd">Period: Year-to-date</option>
+                    <option value="3m">Period: Last 3 months</option>
+                  </select>
+                </div>
               </div>
             )}
             
@@ -782,7 +856,7 @@ export default function DepartmentPage() {
                     <p>No leave requests match your search criteria.</p>
                     <button 
                       onClick={() => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: '' }))}
-                      className="text-blue-600 hover:text-blue-800 text-sm mt-2"
+                      className="text-green-600 hover:text-green-800 text-sm mt-2"
                     >
                       Clear search
                     </button>
@@ -863,6 +937,35 @@ export default function DepartmentPage() {
                             </p>
                           </div>
                         )}
+                        {/* Final approver / rejector */}
+                        {(() => {
+                          const mgr = request.manager_approval_date ? new Date(request.manager_approval_date) : null;
+                          const hr = request.hr_approval_date ? new Date(request.hr_approval_date) : null;
+                          const ceo = request.ceo_approval_date ? new Date(request.ceo_approval_date) : null;
+                          const rej = request.rejection_date ? new Date(request.rejection_date) : null;
+                          const events = [];
+                          if (mgr) events.push({ key: 'manager', roleLabel: 'Manager', date: mgr, verb: 'approved' });
+                          if (hr) events.push({ key: 'hr', roleLabel: 'HR', date: hr, verb: 'approved' });
+                          if (ceo) events.push({ key: 'ceo', roleLabel: 'CEO', date: ceo, verb: 'approved' });
+                          if (rej) events.push({ key: 'rejected', roleLabel: 'Rejected', date: rej, verb: 'rejected' });
+                          if (events.length === 0) return null;
+                          events.sort((a, b) => a.date - b.date);
+                          const latest = events[events.length - 1];
+                          const isRejected = latest.key === 'rejected';
+                          let label = '';
+                          if (isRejected) {
+                            const beforeRej = events.slice(0, events.length - 1).reverse().find(e => ['manager','hr','ceo'].includes(e.key));
+                            const rejector = beforeRej ? beforeRej.roleLabel : 'Rejected';
+                            const isYou = (user && ((rejector === 'HR' && user.role === 'hr') || (rejector === 'CEO' && user.role === 'ceo') || (rejector === 'Manager' && user.role === 'manager')));
+                            label = isYou ? 'You rejected' : `${rejector} rejected`;
+                          } else {
+                            const roleLabel = latest.roleLabel || 'Approver';
+                            const isYou = (user && ((latest.key === 'hr' && user.role === 'hr') || (latest.key === 'ceo' && user.role === 'ceo') || (latest.key === 'manager' && user.role === 'manager')));
+                            label = isYou ? 'You approved' : `${roleLabel} approved`;
+                          }
+                          const colorClass = isRejected ? 'text-red-600' : 'text-green-600';
+                          return <p className={`text-sm ${colorClass} mt-2`}><span className="font-medium">Final:</span> {label} {latest.date.toLocaleString()}</p>;
+                        })()}
                       </div>
                     ))}
                   </div>

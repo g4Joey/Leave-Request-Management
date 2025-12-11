@@ -11,6 +11,68 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+  --bg: #ffffff;
+  --card-bg: #ffffff;
+  --text: #111827;
+  --muted-border: #e5e7eb;
+  --primary: #16a34a; /* company green */
+  --primary-600: #15803d;
+  --primary-700: #166534;
+  --nav-bg: #ffffff;
+  --nav-text: #111827;
+  --on-primary: #ffffff;
+  --danger: #dc2626;
+  --danger-600: #b91c1c;
+}
+
+.dark {
+  --bg: #0b1220;
+  --card-bg: #0f1724;
+  --text: #e6eef3;
+  --muted-border: #1f2937;
+  --primary: #16a34a;
+  --primary-600: #15803d;
+  --nav-bg: #071026;
+  --nav-text: #e6eef3;
+}
+
+.app-root {
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: var(--on-primary);
+  border-radius: 0.375rem;
+  padding: 0.5rem 1rem;
+}
+
+.btn-cancel {
+  background-color: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.375rem;
+}
+
+.btn-reject {
+  background-color: var(--danger);
+  color: #fff;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--danger-600);
+}
+
+.card-improved {
+  background-color: var(--card-bg);
+  border: 1px solid var(--muted-border);
+  box-shadow: 0 1px 4px rgba(2,6,23,0.06);
+  border-radius: 0.5rem;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import { emitApprovalChanged } from '../utils/approvalEvents';
 
 function LeaveRequest() {
   const [leaveTypes, setLeaveTypes] = useState([]);
@@ -56,7 +57,7 @@ function LeaveRequest() {
         
         if (overlaps.length > 0) {
           if (overlaps.length === 1) {
-            message = `⚠️ This request overlaps with ${overlaps[0].name}'s ${overlaps[0].leave_type} leave.`;
+            message = `⚠️ This request overlaps with ${overlaps[0].name}'s ${overlaps[0].leave_type}.`;
           } else if (overlaps.length <= 3) {
             const names = overlaps.map(o => o.name).join(', ');
             message = `⚠️ This request overlaps with leaves from ${names}.`;
@@ -108,6 +109,7 @@ function LeaveRequest() {
         end_date: '',
         reason: ''
       });
+      emitApprovalChanged();
     } catch (error) {
       // Surface useful validation messages from API
       let text = 'Failed to submit leave request';
@@ -134,9 +136,25 @@ function LeaveRequest() {
   };
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    // Guard against weekend start dates on input change
+    if (name === 'start_date' && value) {
+      const day = new Date(value + 'T00:00:00');
+      const isWeekend = day.getUTCDay() === 6 || day.getUTCDay() === 0; // Sat=6, Sun=0 in UTC
+      if (isWeekend) {
+        setMessage({ type: 'error', text: 'Start date cannot be a weekend.' });
+        setFormData(prev => ({ ...prev, start_date: '', end_date: prev.end_date && prev.end_date < today ? '' : prev.end_date }));
+        setTimeout(() => {
+          setMessage(prev => (prev.text === 'Start date cannot be a weekend.' ? { type: '', text: '' } : prev));
+        }, 6000);
+        return;
+      }
+    }
+
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: value
     });
   };
 
@@ -197,6 +215,12 @@ function LeaveRequest() {
               min={today}
               max={maxDate}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+              onKeyDown={(evt) => {
+                // Prevent manual typing of weekend dates by blocking submission of invalid keystrokes; validation still runs on change.
+                if (evt.key === 'Enter') {
+                  evt.preventDefault();
+                }
+              }}
             />
           </div>
 

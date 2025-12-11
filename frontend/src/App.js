@@ -16,6 +16,7 @@ import AdminSystemReset from './components/AdminSystemReset';
 import AdminSettings from './components/AdminSettings';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './contexts/ToastContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
 function ProtectedRoute({ children }) {
@@ -25,7 +26,7 @@ function ProtectedRoute({ children }) {
 
 function ManagerRoute({ children }) {
   const { user } = useAuth();
-  const allowed = user && (user.role === 'manager' || user.is_superuser);
+  const allowed = user && (user.role === 'manager' || user.role === 'hr' || user.is_superuser);
   return allowed ? children : <Navigate to="/dashboard" />;
 }
 
@@ -50,9 +51,10 @@ function AdminRoute({ children }) {
 function App() {
   return (
     <AuthProvider>
+      <ThemeProvider>
       <ToastProvider>
         <ErrorBoundary>
-            <div className="min-h-screen bg-gray-50">
+            <div className="app-root">
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route
@@ -82,6 +84,22 @@ function App() {
                               <CEORoute>
                                 <CEOApprovals />
                               </CEORoute>
+                            }
+                          />
+                          <Route
+                            path="/ceo/sdsl"
+                            element={
+                              <AdminRoute>
+                                <CEOApprovals overrideAffiliate="SDSL" />
+                              </AdminRoute>
+                            }
+                          />
+                          <Route
+                            path="/ceo/sbl"
+                            element={
+                              <AdminRoute>
+                                <CEOApprovals overrideAffiliate="SBL" />
+                              </AdminRoute>
                             }
                           />
                           <Route
@@ -142,6 +160,7 @@ function App() {
             </div>
         </ErrorBoundary>
       </ToastProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }

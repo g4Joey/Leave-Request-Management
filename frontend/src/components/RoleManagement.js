@@ -16,42 +16,53 @@ function RoleManagement() {
     fetchRoleData();
   }, []);
 
+
+
   const fetchRoleData = async () => {
     try {
       setLoading(true);
       const response = await api.get('/leaves/role-entitlements/');
       const apiRoles = response.data.roles || [];
-      // Also fetch staff to compute accurate counts per role (in case backend counts are stale)
-      let staffList = [];
+      // Also fetch staff using the same normalization and flattening logic as Employees page
+      let staffPayload = [];
       try {
-        // request a large limit to avoid paginated partial results
-        const staffRes = await api.get('/users/staff/?limit=1000');
-        staffList = Array.isArray(staffRes.data?.results) ? staffRes.data.results : (Array.isArray(staffRes.data) ? staffRes.data : []);
+        const staffRes = await api.get('/users/staff/');
+        staffPayload = staffRes?.data || [];
       } catch (e) {
-        // ignore, we'll use backend counts if staff fetch fails
-        staffList = [];
+        staffPayload = [];
       }
 
-      const computedCounts = {};
-      staffList.forEach((s) => {
-        const raw = String(s.role || '').toLowerCase();
-        let roleNorm = raw;
-        if (raw === 'employee' || raw === 'staff') roleNorm = 'junior_staff';
-        else if (raw === 'senior' || raw === 'senior_staff') roleNorm = 'senior_staff';
-        else if (raw === 'hod' || raw === 'head_of_department' || raw === 'head' || raw === 'manager') roleNorm = 'manager';
-        else if (raw === 'ceo' || raw === 'executive') roleNorm = 'ceo';
-        else if (raw === '') roleNorm = 'junior_staff';
+      // Coerce into departments array like StaffManagement does
+      const depts = Array.isArray(staffPayload)
+        ? staffPayload
+        : (Array.isArray(staffPayload?.results) ? staffPayload.results : (Array.isArray(staffPayload?.data) ? staffPayload.data : []));
 
-        computedCounts[roleNorm] = (computedCounts[roleNorm] || 0) + 1;
+      const safeDepts = (depts || []).map((d) => ({ ...d, staff: Array.isArray(d?.staff) ? d.staff : [] }));
+
+      // Flatten employees and normalize roles same as StaffManagement
+      const byId = new Map();
+      safeDepts.forEach((d) => {
+        const deptName = (d?.name || '').toString();
+        (d.staff || []).forEach((s) => {
+          const roleNorm = (s.role === 'employee' || s.role === 'staff') ? 'junior_staff' : (s.role === 'hod' ? 'manager' : s.role);
+          if (roleNorm === 'admin') return; // skip admin
+
+          const record = { id: s.id, role: roleNorm };
+          byId.set(s.id, record);
+        });
       });
 
-      // merge counts, and filter out HR role from view per UX request
-      const merged = apiRoles
-        .map((r) => ({
-          ...r,
-          user_count: typeof computedCounts[r.role_code] === 'number' ? computedCounts[r.role_code] : (r.user_count || 0),
-        }))
-        .filter((r) => String(r.role_code || '').toLowerCase() !== 'hr');
+      const computedCounts = {};
+      Array.from(byId.values()).forEach((rec) => {
+        const r = rec.role || 'junior_staff';
+        computedCounts[r] = (computedCounts[r] || 0) + 1;
+      });
+
+      // merge counts (do not filter out HR here — show all roles)
+      const merged = apiRoles.map((r) => ({
+        ...r,
+        user_count: typeof computedCounts[r.role_code] === 'number' ? computedCounts[r.role_code] : (r.user_count || 0),
+      }));
       setRoles(merged);
       setLeaveTypes(response.data.leave_types || []);
     } catch (error) {
@@ -163,6 +174,7 @@ function RoleManagement() {
         <p className="text-sm text-gray-600 mb-6">
           Configure leave entitlements by employee role. Changes will apply to all users with the selected role.
         </p>
+        
       </div>
 
       {!selectedRole ? (
@@ -171,14 +183,14 @@ function RoleManagement() {
           {roles.map((role) => (
             <div
               key={role.role_code}
-              className={`p-6 border-2 rounded-lg cursor-pointer hover:shadow-md transition-all ${getRoleColor(role.role_code)}`}
+              className={`card-improved p-6 cursor-pointer hover:shadow-md transition-all ${getRoleColor(role.role_code)}`}
               onClick={() => selectRole(role.role_code)}
             >
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">{getRoleIcon(role.role_code)}</span>
                 <div>
                   <h3 className="font-semibold text-lg">{role.role_display}</h3>
-                  <p className="text-sm opacity-75">{role.user_count} user{role.user_count !== 1 ? 's' : ''}</p>
+                  <p className="text-sm opacity-75">{role.user_count || 0} user{(role.user_count || 0) !== 1 ? 's' : ''}</p>
                 </div>
               </div>
               
@@ -204,7 +216,7 @@ function RoleManagement() {
       ) : (
         /* Role Configuration View */
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-md">
             <div className="flex items-center gap-3">
               <span className="text-2xl">{getRoleIcon(selectedRole.role_code)}</span>
               <div>
@@ -216,7 +228,7 @@ function RoleManagement() {
             </div>
             <button
               onClick={() => setSelectedRole(null)}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm btn-cancel"
             >
               ← Back to Roles
             </button>

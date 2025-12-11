@@ -18,27 +18,25 @@ function Navbar() {
       </span>
     );
   };
+  const linkClass = 'inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium';
   
 
 
   return (
-    <nav className="bg-white shadow-lg">
+    <nav className="shadow-lg" style={{ backgroundColor: 'var(--nav-bg)', color: 'var(--nav-text)' }}>
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between h-16">
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-              <h1 className="text-xl font-bold text-gray-800">
+              <h1 className="text-2xl font-bold text-gray-800" style={{ marginLeft: '-12px' }}>
                 Leave Management
               </h1>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
               <Link
                 to="/dashboard"
-                className={`${
-                  isActive('/dashboard') || isActive('/')
-                    ? 'border-primary-500 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                className={linkClass}
+                style={isActive('/dashboard') || isActive('/') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
               >
                 Dashboard
               </Link>
@@ -52,105 +50,102 @@ function Navbar() {
                 <>
                   <Link
                     to="/request"
-                    className={`${
-                      isActive('/request')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                    className={linkClass}
+                    style={isActive('/request') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
                   >
                     Request Leave
                   </Link>
                   <Link
                     to="/history"
-                    className={`${
-                      isActive('/history')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                    className={linkClass}
+                    style={isActive('/history') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
                   >
                     Leave History
+                    <BadgeCount count={counts.recall_pending} />
                   </Link>
                 </>
               )}
               {user && (
                 <Link
-                  to="/profile"
-                  className={`${
-                    isActive('/profile')
-                      ? 'border-primary-500 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  My Profile
-                </Link>
+                    to="/profile"
+                    className={linkClass}
+                    style={isActive('/profile') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                  >
+                    My Profile
+                  </Link>
               )}
 
               {(() => {
                 const role = user?.role;
-                const canSeeHRApprovals = !!user && (role === 'hr' || user.is_superuser === true);
-                return canSeeHRApprovals && (
-                  <Link
-                    to="/hr-approvals"
-                    className={`${
-                      isActive('/hr-approvals')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    HR Approvals
-                    <BadgeCount count={counts.hr_approvals} />
-                  </Link>
+                const canSeeManager = !!user && (role === 'manager' || role === 'hr' || user.is_superuser === true);
+                return canSeeManager && (
+                    <Link
+                      to="/manager"
+                      className={linkClass}
+                      style={isActive('/manager') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                    >
+                      Manager Approvals
+                      <BadgeCount count={counts.manager_approvals} />
+                    </Link>
                 );
               })()}
-
               {(() => {
                 const role = user?.role;
-                const canSeeManager = !!user && (role === 'manager' || user.is_superuser === true);
-                return canSeeManager && (
-                  <Link
-                    to="/manager"
-                    className={`${
-                      isActive('/manager')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    Manager Approvals
-                    <BadgeCount count={counts.manager_approvals} />
-                  </Link>
+                const canSeeHRApprovals = !!user && (role === 'hr' || user.is_superuser === true);
+                return canSeeHRApprovals && (
+                    <Link
+                      to="/hr-approvals"
+                      className={linkClass}
+                      style={isActive('/hr-approvals') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                    >
+                      HR Approvals
+                      <BadgeCount count={counts.hr_approvals} />
+                    </Link>
                 );
               })()}
               {(() => {
                 const role = user?.role;
                 const canSeeCEO = !!user && (role === 'ceo' || user.is_superuser === true);
                 return canSeeCEO && (
-                  <Link
-                    to="/ceo"
-                    className={`${
-                      isActive('/ceo')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    CEO Approvals
-                    <BadgeCount count={counts.ceo_approvals} />
-                  </Link>
+                    <Link
+                      to="/ceo"
+                      className={linkClass}
+                      style={isActive('/ceo') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                    >
+                      CEO Approvals
+                      <BadgeCount count={counts.ceo_approvals} />
+                    </Link>
                 );
               })()}
+              {user?.is_superuser && (
+                <>
+                  <Link
+                    to="/ceo/sdsl"
+                    className={linkClass}
+                    style={isActive('/ceo/sdsl') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                  >
+                    SDSL CEO Approvals
+                  </Link>
+                  <Link
+                    to="/ceo/sbl"
+                    className={linkClass}
+                    style={isActive('/ceo/sbl') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                  >
+                    SBL CEO Approvals
+                  </Link>
+                </>
+              )}
               {(() => {
                 const role = user?.role;
                 const canSeeStaff = !!user && (role === 'hr' || user.is_superuser === true);
                 return canSeeStaff && (
-                  <Link
-                    to="/staff"
-                    className={`${
-                      isActive('/staff')
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    Staff
-                  </Link>
+                    <Link
+                      to="/staff"
+                      className={linkClass}
+                      style={isActive('/staff') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
+                    >
+                      Staff
+                    </Link>
                 );
               })()}
               {(() => {
@@ -160,21 +155,15 @@ function Navbar() {
                   <>
                     <Link
                       to="/admin/settings"
-                      className={`${
-                        isActive('/admin/settings')
-                          ? 'border-primary-500 text-gray-900'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                      className={linkClass}
+                      style={isActive('/admin/settings') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
                     >
                       Admin Settings
                     </Link>
                     <Link
                       to="/admin/system-reset"
-                      className={`${
-                        isActive('/admin/system-reset')
-                          ? 'border-primary-500 text-gray-900'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                      className={linkClass}
+                      style={isActive('/admin/system-reset') ? { borderBottomColor: 'var(--primary)', color: 'var(--primary)' } : {}}
                     >
                       Admin Reset
                     </Link>
@@ -184,10 +173,9 @@ function Navbar() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-
             <button
               onClick={logout}
-              className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+              className="btn-primary"
             >
               Logout
             </button>

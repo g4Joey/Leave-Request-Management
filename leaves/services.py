@@ -258,7 +258,8 @@ class SDSLApprovalHandler(ApprovalHandler):
         role = getattr(emp, 'role', None)
         if role == 'ceo':
             return {
-                'pending': 'hr'
+                'pending': 'hr',
+                'ceo_approved': 'hr'
             }
         # Default flow: CEO first, then HR
         return {
@@ -312,7 +313,8 @@ class SBLApprovalHandler(ApprovalHandler):
         role = getattr(emp, 'role', None)
         if role == 'ceo':
             return {
-                'pending': 'hr'
+                'pending': 'hr',
+                'ceo_approved': 'hr'
             }
         # Default flow: CEO first, then HR
         return {
