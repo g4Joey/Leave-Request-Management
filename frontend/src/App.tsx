@@ -59,9 +59,9 @@ function App() {
                   path="/*"
                   element={
                     <ProtectedRoute>
-                      <div className="flex flex-col min-h-screen">
+                      <div className="flex min-h-screen bg-app-bg">
                         <Navbar />
-                        <main className="flex-1 container mx-auto px-4 py-8">
+                        <main className="flex-1 overflow-x-hidden overflow-y-auto p-8">
                           <Routes>
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/dashboard" element={<Dashboard />} />

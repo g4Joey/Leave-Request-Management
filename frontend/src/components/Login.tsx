@@ -42,10 +42,8 @@ function Login() {
       {/* Left Side - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary relative overflow-hidden flex-col justify-between p-12 text-white">
         <div className="relative z-10">
-          <div className="flex items-center gap-3 text-2xl font-bold font-heading">
-            <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
-              <Leaf className="w-8 h-8 text-accent" />
-            </div>
+          <div className="flex items-center text-2xl font-bold font-heading">
+              <img src="/public/leavemateLogo.png" alt="leavemateLogo" className='h-20 w-20' />
             LeaveMates
           </div>
           <div className="mt-20">
