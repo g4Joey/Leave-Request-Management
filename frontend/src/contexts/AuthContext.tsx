@@ -1,11 +1,48 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import api from '../services/api';
 
-const normalizeProfile = (profile = {}, token = null) => {
+export interface User {
+  id: number;
+  token?: string | null;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  role_display?: string;
+  is_superuser: boolean;
+  employee_id?: string;
+  department?: {
+    id: number;
+    name: string;
+  } | null;
+  affiliate?: {
+    id: number;
+    name: string;
+  } | null;
+  affiliate_name?: string | null;
+  annual_leave_entitlement?: number;
+  phone?: string;
+  profile_image?: string;
+  grade?: any;
+  grade_id?: number | null;
+  grade_slug?: string | null;
+}
+
+interface AuthContextType {
+  user: User | null;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
+  refreshUser: () => Promise<User | null | undefined>;
+}
+
+const normalizeProfile = (profile: any = {}, token: string | null = null): User => {
   const grade = profile.grade ?? null;
   const gradeId = grade?.id ?? profile.grade_id ?? null;
   const gradeSlug = grade?.slug ?? profile.grade_slug ?? null;
   return {
+    id: profile.id, // Ensure ID is captured
     token,
     email: profile.email,
     first_name: profile.first_name,
@@ -29,14 +66,22 @@ const normalizeProfile = (profile = {}, token = null) => {
   };
 };
 
-const AuthContext = createContext();
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -66,7 +111,7 @@ export function AuthProvider({ children }) {
     init();
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email: string, password: string) => {
     try {
       const response = await api.post('/auth/token/', {
         username: email,
@@ -91,8 +136,11 @@ export function AuthProvider({ children }) {
         setUser(normalized);
       } catch (e) {
         setUser({
+          id: 0, // Fallback ID
           token: access,
           email,
+          first_name: '',
+          last_name: '',
           role: '',
           is_superuser: false,
           grade: null,
@@ -101,7 +149,7 @@ export function AuthProvider({ children }) {
         });
       }
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
       return { success: false, error: error.response?.data?.detail || 'Login failed' };
     }
   };

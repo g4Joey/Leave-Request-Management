@@ -2,7 +2,7 @@ import axios from 'axios';
 
 function resolveApiBaseUrl() {
   // Prefer explicit env var when provided (build-time)
-  const fromEnv = process.env.REACT_APP_API_URL;
+  const fromEnv = import.meta.env.VITE_API_URL;
   if (fromEnv) return fromEnv;
 
   // Fallback: use current host (so it works over LAN/IP) but port 8000 for Django
