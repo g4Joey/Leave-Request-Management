@@ -14,8 +14,9 @@ import HRApprovals from './components/HRApprovals';
 import ManagerDashboard from './components/ManagerDashboard';
 import CEOApprovals from './components/CEOApprovals';
 import StaffManagement from './components/StaffManagement';
-import AdminSettings from './components/AdminSettings';
 import AdminSystemReset from './components/AdminSystemReset';
+import AdminSettings from './components/AdminSettings';
+import Skeleton from './components/common/Skeleton';
 // import Unauthorized from './components/Unauthorized'; // Assuming this might not exist yet, defaulting to Navigate
 
 // Protected Route Component
@@ -23,7 +24,15 @@ const ProtectedRoute = ({ children, roles }: { children: React.ReactElement, rol
   const { user, loading } = useAuth();
   
   if (loading) {
-    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+    return (
+      <div className="p-8 space-y-6">
+         <Skeleton className="h-10 w-1/3 mb-8" />
+         <div className="space-y-4">
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-64 w-full rounded-xl" />
+         </div>
+      </div>
+    );
   }
   
   if (!user) {
@@ -130,7 +139,7 @@ const AppContent = () => {
                 path="/profile"
                 element={
                   <ProtectedRoute>
-                     <MyProfile />
+                    <MyProfile />
                   </ProtectedRoute>
                 }
               />

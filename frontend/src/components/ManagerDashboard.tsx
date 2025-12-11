@@ -1,424 +1,302 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import api from '../services/api';
-import { Dialog } from '@headlessui/react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import api from '../services/api';
 import OverlapAdvisory from './OverlapAdvisory';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, X, Clock, User, Briefcase, Calendar, FileText, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import Skeleton from './common/Skeleton';
 
 function ManagerDashboard() {
+  const { user } = useAuth();
   const { showToast } = useToast();
-  const [pendingRequests, setPendingRequests] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [leaveRecords, setLeaveRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
-  // Track which action is loading per request id: 'approve' | 'reject' | undefined
-  const [loadingActionById, setLoadingActionById] = useState({});
-  const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, reason: '' });
-  const PAGE_SIZE = 15;
-  // Pagination & filters for Leave Records (approved + rejected)
-  const [recordsPage, setRecordsPage] = useState(0);
-  const [recordsHasMore, setRecordsHasMore] = useState(false);
-  const [recordsSearch, setRecordsSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState(''); // 'approved', 'rejected', or '' for all
-  const [hasSearched, setHasSearched] = useState(false); // Track if user has performed a search
-  
-
-  const fetchLeaveRecords = useCallback(async (page = recordsPage, search = recordsSearch, status = statusFilter) => {
-    try {
-      let allItems = [];
-      
-      if (status) {
-        // Fetch specific status
-        const params = { 
-          ordering: '-created_at', 
-          limit: PAGE_SIZE, 
-          offset: page * PAGE_SIZE,
-          search: search || undefined,
-          status: status
-        };
-        
-        const res = await api.get('/leaves/manager/approval_records/', { params });
-        const data = res.data;
-        allItems = data.results || data.results || data;
-        
-        setRecordsHasMore(Boolean(data?.has_more));
-      } else {
-        // Fetch both approved and rejected in parallel, then combine and sort
-        const [approvedRes, rejectedRes] = await Promise.all([
-          api.get('/leaves/manager/approval_records/', { 
-            params: { 
-              ordering: '-created_at', 
-              limit: Math.ceil(PAGE_SIZE / 2), 
-              offset: Math.floor(page * PAGE_SIZE / 2),
-              search: search || undefined,
-              status: 'approved'
-            }
-          }),
-          api.get('/leaves/manager/approval_records/', { 
-            params: { 
-              ordering: '-created_at', 
-              limit: Math.ceil(PAGE_SIZE / 2), 
-              offset: Math.floor(page * PAGE_SIZE / 2),
-              search: search || undefined,
-              status: 'rejected'
-            }
-          })
-        ]);
-        
-        const approvedItems = approvedRes.data.results || approvedRes.data?.results || approvedRes.data || [];
-        const rejectedItems = rejectedRes.data.results || rejectedRes.data?.results || rejectedRes.data || [];
-        
-        // Combine and sort by created_at descending
-        allItems = [...approvedItems, ...rejectedItems].sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        ).slice(0, PAGE_SIZE);
-        
-        // Check if there are more records
-        const hasMoreApproved = Boolean(approvedRes?.data?.has_more);
-        const hasMoreRejected = Boolean(rejectedRes?.data?.has_more);
-        setRecordsHasMore(hasMoreApproved || hasMoreRejected);
-      }
-      
-      setLeaveRecords(allItems);
-      setRecordsPage(page);
-      setHasSearched(true);
-    } catch (e) {
-      console.error('Error fetching leave records:', e);
-      // non-blocking - set empty array on error
-      setLeaveRecords([]);
-      setRecordsHasMore(false);
-      setHasSearched(true);
-    }
-  }, [PAGE_SIZE, recordsPage, recordsSearch, statusFilter]);
+  const [loadingPending, setLoadingPending] = useState(true);
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [actionModal, setActionModal] = useState({ open: false, request: null, action: '', comments: '' });
+  const [actingId, setActingId] = useState(null);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [pendingRes] = await Promise.all([
-          api.get('/leaves/manager/pending_approvals/'),
-        ]);
-        // API returns an object { requests: [...], count, user_role, approval_stage }
-        const pendingArray = Array.isArray(pendingRes.data)
-          ? pendingRes.data
-          : (pendingRes.data && Array.isArray(pendingRes.data.requests)
-              ? pendingRes.data.requests
-              : (pendingRes.data && Array.isArray(pendingRes.data.results)
-                  ? pendingRes.data.results
-                  : []));
-        setPendingRequests(pendingArray);
-        // Don't load leave records initially - only when user searches
-      } catch (error) {
-        console.error('Error fetching pending requests:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAll();
+    fetchPendingApprovals();
+    fetchLeaveRecords(1);
   }, []);
 
-  const handleAction = async (requestId, action, comments = '') => {
-    setLoadingActionById((prev) => ({ ...prev, [requestId]: action }));
-
+  const fetchPendingApprovals = async () => {
     try {
-      await api.put(`/leaves/manager/${requestId}/${action}/`, {
-        approval_comments: comments || ''
-      });
-      
-      // Remove the request from the pending list
-      setPendingRequests(prev => prev.filter(req => req.id !== requestId));
-      // Refresh leave records only if user has already searched
-      if (hasSearched) {
-        await fetchLeaveRecords(recordsPage, recordsSearch, statusFilter);
-      }
-      // Global toast and optional haptics
-      showToast({ type: 'success', message: `Request ${action}ed successfully.` });
-      if (navigator && 'vibrate' in navigator) {
-        try { navigator.vibrate(40); } catch (_) { /* noop */ }
-      }
+      setLoadingPending(true);
+      const response = await api.get('/leaves/manager/pending_approvals/');
+      setPendingApprovals(response.data.requests || response.data);
     } catch (error) {
-      console.error(`Error ${action}ing request:`, error);
-      const detail = error?.response?.data?.error || error?.response?.data?.detail || '';
-      showToast({ type: 'error', message: `Failed to ${action} request${detail ? `: ${detail}` : ''}` });
-      if (navigator && 'vibrate' in navigator) {
-        try { navigator.vibrate([20, 40, 20]); } catch (_) { /* noop */ }
-      }
+      console.error('Error fetching pending approvals:', error);
     } finally {
-      setLoadingActionById((prev) => ({ ...prev, [requestId]: undefined }));
+      setLoadingPending(false);
     }
   };
 
-  const getEmployeeName = (request) => {
-    return request?.employee_name || request?.employee_email || 'Unknown Employee';
+  const fetchLeaveRecords = async (page) => {
+    try {
+      setLoadingRecords(true);
+      const response = await api.get(`/leaves/manager/approval_records/?page=${page}`);
+      const data = response.data;
+      setLeaveRecords(data.results || data);
+      setTotalPages(Math.ceil((data.count || 0) / 10)); // Assuming 10 items per page
+      setCurrentPage(page);
+    } catch (error) {
+      console.error('Error fetching leave records:', error);
+    } finally {
+      setLoadingRecords(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-500"></div>
-      </div>
-    );
-  }
+  const handleAction = async () => {
+    const { request, action, comments } = actionModal;
+    if (!request) return;
+
+    try {
+      setActingId(request.id);
+      if (action === 'approve') {
+        await api.put(`/leaves/manager/${request.id}/approve/`, { approval_comments: comments });
+        showToast({ type: 'success', message: 'Leave request approved successfully.' });
+      } else if (action === 'reject') {
+        await api.put(`/leaves/manager/${request.id}/reject/`, { rejection_comments: comments });
+        showToast({ type: 'success', message: 'Leave request rejected successfully.' });
+      }
+      
+      await fetchPendingApprovals();
+      fetchLeaveRecords(currentPage); // Refresh records to show new status
+      setActionModal({ open: false, request: null, action: '', comments: '' });
+    } catch (error) {
+      console.error(`Error ${action}ing request:`, error);
+      showToast({ type: 'error', message: `Failed to ${action} request` });
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const openActionModal = (request, action) => {
+    setActionModal({ open: true, request, action, comments: '' });
+  };
 
   return (
-    <div className="bg-white shadow overflow-hidden sm:rounded-md">
-      <div className="px-4 py-5 sm:px-6">
-        <h3 className="text-lg leading-6 font-medium text-gray-900">
-          HOD Dashboard
-        </h3>
-        <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          Review and approve pending leave requests.
-        </p>
+    <div className="max-w-5xl mx-auto space-y-8">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 font-heading">Manager Dashboard</h1>
+        <p className="text-gray-500 mt-1">Manage team leave requests and view history</p>
       </div>
 
-      <ul className="divide-y divide-gray-200">
-        {pendingRequests.length > 0 ? (
-          pendingRequests.map((request) => (
-            <li key={request.id}>
-              <div className="px-4 py-4 sm:px-6">
-                {/* Overlap Advisory Banner */}
-                <OverlapAdvisory 
-                  leaveRequest={{
-                    ...request,
-                    employee_department_id: request.employee_department_id || request.department_id,
-                    employee_id: request.employee_id || request.employee
-                  }}
-                  className="mb-3"
-                />
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-primary-600">
-                          {getEmployeeName(request)}
-                        </p>
-                        <p className="text-sm text-gray-900">
-                          {request.leave_type_name || 'Leave Request'}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
-                          <span className="ml-2">({request.total_days} working days)</span>
-                        </p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleAction(request.id, 'approve')}
-                          disabled={Boolean(loadingActionById[request.id])}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                        >
-                          {loadingActionById[request.id] === 'approve' ? 'Processing...' : 'Approve'}
-                        </button>
-                        <button
-                          onClick={() => setRejectModal({ open: true, requestId: request.id, reason: '' })}
-                          disabled={Boolean(loadingActionById[request.id])}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                        >
-                          {loadingActionById[request.id] === 'reject' ? 'Processing...' : 'Reject'}
-                        </button>
-                      </div>
-                    </div>
-                    {request.reason && (
-                      <div className="mt-2">
-                        <p className="text-sm text-gray-600">
-                          <strong>Reason:</strong> {request.reason}
-                        </p>
-                      </div>
-                    )}
-                    <div className="mt-2 text-xs text-gray-400">
-                      Submitted: {new Date(request.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </li>
-          ))
+      {/* Pending Approvals */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+           <div className="w-2 h-6 bg-primary rounded-full"></div>
+           Pending Approvals
+           {pendingApprovals.length > 0 && (
+              <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">{pendingApprovals.length}</span>
+           )}
+        </h2>
+        
+        {loadingPending ? (
+           <div className="space-y-4">
+              {[1, 2].map(i => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+           </div>
+        ) : pendingApprovals.length === 0 ? (
+           <div className="text-center py-12 bg-white/60 backdrop-blur-sm rounded-2xl border border-dashed border-gray-300">
+              <Check className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h3 className="text-gray-900 font-medium">All caught up!</h3>
+              <p className="text-gray-500 text-sm">No pending requests for your review.</p>
+           </div>
         ) : (
-          <li>
-            <div className="px-4 py-8 text-center text-gray-500">
-              No pending leave requests to review.
-            </div>
-          </li>
-        )}
-      </ul>
-
-      {/* Approval Records Section (Approved & Rejected consolidated) */}
-      <div className="px-4 py-5 sm:px-6">
-        <h4 className="text-md leading-6 font-semibold text-gray-900">Approval Records</h4>
-        <div className="mt-2 flex items-center gap-2 flex-wrap">
-          <input
-            type="text"
-            placeholder="Search by employee name, leave type, or date"
-            value={recordsSearch}
-            onChange={(e) => setRecordsSearch(e.target.value)}
-            className="flex-1 min-w-64 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
-          >
-            <option value="">All Status</option>
-            <option value="approved">Approved Only</option>
-            <option value="rejected">Rejected Only</option>
-          </select>
-          <button
-            onClick={() => {
-              setRecordsPage(0);
-              fetchLeaveRecords(0, recordsSearch, statusFilter);
-            }}
-            className="px-3 py-2 rounded-md bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"
-          >
-            Search
-          </button>
-          {hasSearched && (
-            <button
-              onClick={() => {
-                setRecordsSearch('');
-                setStatusFilter('');
-                setLeaveRecords([]);
-                setHasSearched(false);
-                setRecordsPage(0);
-                setRecordsHasMore(false);
-              }}
-              className="px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-      <ul className="divide-y divide-gray-200">
-        {leaveRecords.length > 0 ? (
-          leaveRecords.map((request) => {
-            const isApproved = request.status === 'approved';
-            const statusColor = isApproved 
-              ? 'bg-green-100 text-green-800 ring-green-200' 
-              : 'bg-red-100 text-red-800 ring-red-200';
-            
-            return (
-              <li key={`record-${request.id}`}>
-                <div className="px-4 py-3 sm:px-6">
-                  <div className="flex items-center justify-between">
+           <AnimatePresence>
+              {pendingApprovals.map((request) => (
+                <motion.div
+                  key={request.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-white/80 backdrop-blur-md rounded-xl p-6 shadow-sm border border-white/20"
+                >
+                  <OverlapAdvisory 
+                     leaveRequest={{
+                        ...request,
+                        employee_department_id: request.employee_department_id || request.department_id,
+                        employee_id: request.employee_id || request.employee
+                     }}
+                     className="mb-4"
+                  />
+                  
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
                     <div className="flex-1">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-sm">
+                           {request.employee_name?.[0]}
+                        </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {getEmployeeName(request)} — {request.leave_type_name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()} 
-                            <span className="ml-1">({request.total_days} working days)</span>
-                          </p>
-                          {request.reason && (
-                            <p className="text-xs text-gray-600 mt-1">
-                              <strong>Reason:</strong> {request.reason}
-                            </p>
-                          )}
-                          {request.approval_comments && (
-                            <p className="text-xs text-gray-600 mt-1">
-                              <strong>Comments:</strong> {request.approval_comments}
-                            </p>
-                          )}
-                          {/* Show current status as of now for records */}
-                          <div className="mt-1 text-xs text-gray-700">
-                            Status: {request.status_display || request.stage_label || request.status}
-                          </div>
-                          <div className="text-xs text-gray-400 mt-1">
-                            Submitted: {new Date(request.created_at).toLocaleDateString()} | 
-                            {request.approved_by_name && (
-                              <span> Processed by: {request.approved_by_name}</span>
-                            )}
+                          <h3 className="font-semibold text-gray-900">{request.employee_name}</h3>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                             <Briefcase className="w-3 h-3" /> {request.employee_department || 'Department'}
                           </div>
                         </div>
-                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColor}`}>
-                          {isApproved ? 'Approved' : 'Rejected'}
-                        </span>
                       </div>
+
+                      <div className="grid grid-cols-2 gap-4 mt-4 bg-gray-50/50 p-4 rounded-lg border border-gray-100/50">
+                         <div>
+                            <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><FileText className="w-3 h-3"/> Leave Type</div>
+                            <div className="font-medium text-gray-900">{request.leave_type_name}</div>
+                         </div>
+                         <div>
+                            <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3"/> Duration</div>
+                            <div className="font-medium text-gray-900">{request.total_days} Days</div>
+                            <div className="text-xs text-gray-500">
+                               {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
+                            </div>
+                         </div>
+                      </div>
+
+                      {request.reason && (
+                         <div className="mt-4 text-sm bg-white p-3 rounded border border-gray-100">
+                            <span className="font-medium text-gray-700 block mb-1">Reason:</span>
+                            <span className="text-gray-600">{request.reason}</span>
+                         </div>
+                      )}
+                    </div>
+
+                    <div className="flex md:flex-col gap-3 justify-end md:justify-start">
+                       <button
+                         onClick={() => openActionModal(request, 'approve')}
+                         disabled={actingId === request.id}
+                         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-hover shadow-lg shadow-primary/20 transition-all font-medium min-w-[120px]"
+                       >
+                         {actingId === request.id ? 'Processing...' : <><Check className="w-4 h-4"/> Approve</>}
+                       </button>
+                       <button
+                         onClick={() => openActionModal(request, 'reject')}
+                         disabled={actingId === request.id}
+                         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-all font-medium min-w-[120px]"
+                       >
+                         <X className="w-4 h-4"/> Reject
+                       </button>
                     </div>
                   </div>
-                </div>
-              </li>
-            );
-          })
-        ) : (
-          <li><div className="px-4 py-12 text-center">
-            {!hasSearched ? (
-              <div className="space-y-2">
-                <p className="text-sm text-gray-500">Use the search above to find approval records</p>
-                <p className="text-xs text-gray-400">Search by employee name, leave type, or filter by status</p>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500">No records found matching your search criteria.</p>
-            )}
-          </div></li>
+                </motion.div>
+              ))}
+           </AnimatePresence>
         )}
-      </ul>
-      {hasSearched && (
-        <div className="px-4 py-3 flex items-center justify-between">
-          <button
-            onClick={() => fetchLeaveRecords(Math.max(recordsPage - 1, 0), recordsSearch, statusFilter)}
-            disabled={recordsPage === 0}
-            className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
-          >
-            Previous
-          </button>
-          <div className="text-xs text-gray-500">
-            Page {recordsPage + 1} 
-            {statusFilter && <span className="ml-1">({statusFilter})</span>}
-          </div>
-          <button
-            onClick={() => fetchLeaveRecords(recordsPage + 1, recordsSearch, statusFilter)}
-            disabled={!recordsHasMore}
-            className="px-3 py-1 rounded border text-sm disabled:opacity-50 hover:bg-gray-50"
-          >
-            Next
-          </button>
-        </div>
-      )}
-      {/* Reject Reason Modal */}
-      <Dialog open={rejectModal.open} onClose={() => setRejectModal({ open: false, requestId: null, reason: '' })} className="relative z-50">
-        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Dialog.Panel className="mx-auto w-full max-w-md rounded bg-white p-6 shadow-lg">
-            <Dialog.Title className="text-lg font-semibold text-gray-900">Reject Request</Dialog.Title>
-            <Dialog.Description className="mt-1 text-sm text-gray-600">
-              Please provide a reason for rejection. This reason will be visible to the employee.
-            </Dialog.Description>
-            <div className="mt-4">
-              <label htmlFor="reject-reason" className="block text-sm font-medium text-gray-700">Reason</label>
-              <textarea
-                id="reject-reason"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                rows={4}
-                value={rejectModal.reason}
-                onChange={(e) => setRejectModal((prev) => ({ ...prev, reason: e.target.value }))}
-                required
-                aria-required="true"
-              />
+      </div>
+
+      {/* History Records */}
+      <div className="pt-8 border-t border-gray-200">
+         <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+               <Clock className="w-5 h-5 text-gray-400" /> Approval History
+            </h2>
+         </div>
+         
+         {loadingRecords ? (
+            <div className="space-y-3">
+               {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full" />)}
             </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                onClick={() => setRejectModal({ open: false, requestId: null, reason: '' })}
-                className="px-4 py-2 rounded-md border text-sm text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (!rejectModal.reason.trim()) {
-                    showToast({ type: 'error', message: 'Rejection reason is required.' });
-                    return;
-                  }
-                  handleAction(rejectModal.requestId, 'reject', rejectModal.reason.trim());
-                  setRejectModal({ open: false, requestId: null, reason: '' });
-                }}
-                className="px-4 py-2 rounded-md text-sm text-white bg-red-600 hover:bg-red-700"
-              >
-                Reject Request
-              </button>
+         ) : leaveRecords.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">No approval history found.</div>
+         ) : (
+            <div className="space-y-2">
+               {leaveRecords.map(record => (
+                 <div key={record.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-100 text-sm hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                       <div className={`w-2 h-2 rounded-full ${['approved','manager_approved','hr_approved'].includes(record.status) ? 'bg-green-500' : record.status === 'rejected' ? 'bg-red-500' : 'bg-gray-400'}`} />
+                       <div>
+                          <div className="font-medium text-gray-900">{record.employee_name}</div>
+                          <div className="text-gray-500 text-xs">{record.leave_type_name} • {record.total_days} days</div>
+                       </div>
+                    </div>
+                    <div className="text-right text-xs text-gray-400">
+                       {new Date(record.created_at).toLocaleDateString()}
+                       <div className={`mt-1 font-medium ${['approved','manager_approved','hr_approved'].includes(record.status) ? 'text-green-600' : record.status === 'rejected' ? 'text-red-600' : 'text-gray-500'}`}>
+                          {record.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                       </div>
+                    </div>
+                 </div>
+               ))}
+               
+               {/* Pagination */}
+               <div className="flex justify-center gap-2 mt-6">
+                  <button 
+                     disabled={currentPage === 1}
+                     onClick={() => fetchLeaveRecords(currentPage - 1)}
+                     className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"
+                  >
+                     <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="flex items-center px-4 text-sm font-medium text-gray-600">
+                     Page {currentPage} of {totalPages}
+                  </span>
+                  <button 
+                     disabled={currentPage === totalPages}
+                     onClick={() => fetchLeaveRecords(currentPage + 1)}
+                     className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"
+                  >
+                     <ChevronRight className="w-4 h-4" />
+                  </button>
+               </div>
             </div>
-          </Dialog.Panel>
-        </div>
-      </Dialog>
+         )}
+      </div>
+
+      {/* Action Modal */}
+      <AnimatePresence>
+         {actionModal.open && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+             <motion.div
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+               onClick={() => setActionModal({ open: false, request: null, action: '', comments: '' })}
+             />
+             <motion.div 
+               initial={{ scale: 0.95, opacity: 0 }}
+               animate={{ scale: 1, opacity: 1 }}
+               exit={{ scale: 0.95, opacity: 0 }}
+               className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-md"
+             >
+                <h3 className="text-lg font-bold text-gray-900 mb-2">
+                   {actionModal.action === 'approve' ? 'Approve Request' : 'Reject Request'}
+                </h3>
+                <p className="text-gray-500 text-sm mb-4">
+                   Are you sure you want to {actionModal.action} this request for {actionModal.request?.employee_name}?
+                </p>
+                <div className="mb-4">
+                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Comments (Optional)
+                   </label>
+                   <textarea
+                      value={actionModal.comments}
+                      onChange={(e) => setActionModal(prev => ({ ...prev, comments: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none min-h-[100px]"
+                      rows="3"
+                      placeholder="Add comments..."
+                   />
+                </div>
+                <div className="flex justify-end gap-3">
+                   <button 
+                      onClick={() => setActionModal({ open: false, request: null, action: '', comments: '' })}
+                      className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg"
+                   >
+                      Cancel
+                   </button>
+                   <button 
+                      onClick={handleAction}
+                      className={`px-4 py-2 text-sm text-white rounded-lg ${actionModal.action === 'approve' ? 'bg-primary hover:bg-primary-hover' : 'bg-red-600 hover:bg-red-700'}`}
+                   >
+                      Confirm
+                   </button>
+                </div>
+             </motion.div>
+           </div>
+         )}
+      </AnimatePresence>
     </div>
   );
 }
