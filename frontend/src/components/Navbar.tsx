@@ -71,12 +71,12 @@ function Navbar() {
         />
       )}
 
-      {/* Sidebar Container */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-primary transform transition-transform duration-300 ease-in-out lg:transform-none flex flex-col h-screen ${
+      {/* Sidebar Container - Fills parent (which is animated) */}
+      <div className={`fixed lg:static inset-y-0 left-0 z-40 w-72 lg:w-full bg-primary transform transition-transform duration-300 ease-in-out lg:transform-none flex flex-col h-screen lg:h-full ${
         isMobileOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         {/* Logo Section */}
-        <div className="flex flex-col items-center justify-center h-32 border-b border-white/10 p-6">
+        <div className="flex items-center justify-center h-32 border-b border-white/10 p-6">
           <img 
             src="/leavemateLogo.png" 
             alt="LeaveMates Logo" 
@@ -160,7 +160,7 @@ function Navbar() {
             <span>Sign Out</span>
           </button>
         </div>
-      </aside>
+      </div>
     </>
   );
 }

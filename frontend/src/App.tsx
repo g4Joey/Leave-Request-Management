@@ -1,139 +1,201 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Route, Routes, useLocation, Navigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
+import Navbar from './components/Navbar';
 import Login from './components/Login';
+import LoginBranding from './components/LoginBranding';
 import Dashboard from './components/Dashboard';
 import LeaveRequest from './components/LeaveRequest';
 import LeaveHistory from './components/LeaveHistory';
+import MyProfile from './components/MyProfile';
+import HRApprovals from './components/HRApprovals';
 import ManagerDashboard from './components/ManagerDashboard';
 import CEOApprovals from './components/CEOApprovals';
-import HRApprovals from './components/HRApprovals';
 import StaffManagement from './components/StaffManagement';
-import AffiliatePage from './components/AffiliatePage';
-import MyProfile from './components/MyProfile';
-import AdminSystemReset from './components/AdminSystemReset';
 import AdminSettings from './components/AdminSettings';
-import Navbar from './components/Navbar';
-import { ToastProvider } from './contexts/ToastContext';
-import ErrorBoundary from './components/ErrorBoundary';
+import AdminSystemReset from './components/AdminSystemReset';
+// import Unauthorized from './components/Unauthorized'; // Assuming this might not exist yet, defaulting to Navigate
 
-function ProtectedRoute({ children }) {
-  const { user } = useAuth();
-  return user ? children : <Navigate to="/login" />;
-}
+// Protected Route Component
+const ProtectedRoute = ({ children, roles }: { children: React.ReactElement, roles?: string[] }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
-function ManagerRoute({ children }) {
-  const { user } = useAuth();
-  const allowed = user && (user.role === 'manager' || user.is_superuser);
-  return allowed ? children : <Navigate to="/dashboard" />;
-}
+  if (roles && !roles.includes(user.role) && !user.is_superuser) {
+    return <Navigate to="/dashboard" replace />; // Redirect to dashboard instead of unauthorized for now
+  }
 
-function HRRoute({ children }) {
-  const { user } = useAuth();
-  const allowed = user && (user.role === 'hr' || user.is_superuser);
-  return allowed ? children : <Navigate to="/dashboard" />;
-}
+  return children;
+};
 
-function CEORoute({ children }) {
-  const { user } = useAuth();
-  const allowed = user && (user.role === 'ceo' || user.is_superuser);
-  return allowed ? children : <Navigate to="/dashboard" />;
-}
+// Main Content Wrapper that uses hooks
+const AppContent = () => {
+  const location = useLocation();
+  const isLoginPage = location.pathname === '/' || location.pathname === '/login';
 
-function AdminRoute({ children }) {
-  const { user } = useAuth();
-  const allowed = user && (user.role === 'admin' || user.is_superuser);
-  return allowed ? children : <Navigate to="/dashboard" />;
-}
+  return (
+    <div className="flex h-screen bg-app-bg overflow-hidden font-body">
+      {/* Animated Sidebar - Desktop */}
+      <motion.aside
+        initial={false}
+        animate={{ 
+          width: isLoginPage ? "50%" : "18rem" // 288px = 18rem
+        }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="hidden lg:flex bg-primary shadow-2xl z-20 flex-col overflow-hidden relative"
+      >
+        <AnimatePresence mode="wait">
+          {isLoginPage ? (
+            <motion.div
+              key="login-brand"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="w-full h-full"
+            >
+              <LoginBranding />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="navbar"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="w-full h-full"
+            >
+              <Navbar />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.aside>
+
+      {/* Mobile Navbar Placeholder */}
+      {!isLoginPage && (
+        <div className="lg:hidden absolute top-0 left-0 z-50">
+           <Navbar />
+        </div>
+      )}
+      
+      {/* Main Content Area */}
+      <main className={`flex-1 relative z-10 h-full overflow-y-auto overflow-x-hidden ${isLoginPage ? '' : 'p-8'}`}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            className="h-full"
+          >
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={<Login />} />
+              <Route path="/login" element={<Login />} />
+              
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/request"
+                element={
+                  <ProtectedRoute>
+                    <LeaveRequest />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/history"
+                element={
+                  <ProtectedRoute>
+                    <LeaveHistory />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                     <MyProfile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/hr-approvals"
+                element={
+                  <ProtectedRoute roles={['hr']}>
+                    <HRApprovals />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manager"
+                element={
+                  <ProtectedRoute roles={['manager']}>
+                    <ManagerDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/ceo"
+                element={
+                  <ProtectedRoute roles={['ceo']}>
+                    <CEOApprovals />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/staff"
+                element={
+                  <ProtectedRoute roles={['hr']}>
+                    <StaffManagement />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/settings"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <AdminSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/system-reset"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <AdminSystemReset />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+};
 
 function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <ErrorBoundary>
-          <Router>
-            <div className="min-h-screen bg-app-bg">
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route
-                  path="/*"
-                  element={
-                    <ProtectedRoute>
-                      <div className="flex min-h-screen bg-app-bg">
-                        <Navbar />
-                        <main className="flex-1 overflow-x-hidden overflow-y-auto p-8">
-                          <Routes>
-                            <Route path="/" element={<Dashboard />} />
-                            <Route path="/dashboard" element={<Dashboard />} />
-                            <Route path="/request" element={<LeaveRequest />} />
-                            <Route path="/history" element={<LeaveHistory />} />
-                            <Route path="/profile" element={<MyProfile />} />
-                            <Route
-                              path="/manager"
-                              element={
-                                <ManagerRoute>
-                                  <ManagerDashboard />
-                                </ManagerRoute>
-                              }
-                            />
-                            <Route
-                              path="/ceo"
-                              element={
-                                <CEORoute>
-                                  <CEOApprovals />
-                                </CEORoute>
-                              }
-                            />
-                            <Route
-                              path="/staff"
-                              element={
-                                <HRRoute>
-                                  <StaffManagement />
-                                </HRRoute>
-                              }
-                            />
-                            <Route
-                              path="/hr-approvals"
-                              element={
-                                <HRRoute>
-                                  <HRApprovals />
-                                </HRRoute>
-                              }
-                            />
-                            <Route
-                              path="/staff/affiliates/:id"
-                              element={
-                                <HRRoute>
-                                  <AffiliatePage />
-                                </HRRoute>
-                              }
-                            />
-                            <Route
-                              path="/admin/settings"
-                              element={
-                                <AdminRoute>
-                                  <AdminSettings />
-                                </AdminRoute>
-                              }
-                            />
-                            <Route
-                              path="/admin/system-reset"
-                              element={
-                                <AdminRoute>
-                                  <AdminSystemReset />
-                                </AdminRoute>
-                              }
-                            />
-                          </Routes>
-                        </main>
-                      </div>
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </div>
-          </Router>
-        </ErrorBoundary>
+        <AppContent />
       </ToastProvider>
     </AuthProvider>
   );
