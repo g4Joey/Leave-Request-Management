@@ -83,12 +83,25 @@ class LeaveRequest(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Interruption / recall tracking (does not alter original dates)
+    interruption_credited_days = models.PositiveIntegerField(default=0, help_text="Working days credited back due to recall/early return")
+    interruption_note = models.TextField(blank=True, default="")
+    interrupted_at = models.DateTimeField(null=True, blank=True)
+    interrupted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='interruptions_initiated')
+
+    # Actual resume tracking (user marks when they returned after leave end)
+    actual_resume_date = models.DateField(null=True, blank=True)
     
     def clean(self):
         """Validate leave request data"""
         if self.start_date and self.end_date:
             if self.start_date > self.end_date:
                 raise ValidationError("Start date cannot be after end date")
+
+            # Disallow weekend start dates (Saturday=5, Sunday=6) for standard Mon–Fri schedule
+            if self.start_date.weekday() >= 5:
+                raise ValidationError("Start date cannot be a weekend.")
             
             # Only enforce future-dated constraint while request is pending
             if self.status == 'pending' and self.start_date < timezone.now().date():
@@ -231,10 +244,24 @@ class LeaveRequest(models.Model):
         self.save()
     
     def can_be_cancelled(self, user):
-        """Check if this request can be cancelled by the given user (only self)"""
-        if self.status != 'pending':
+        """Return True when the requester can cancel before the first real approval.
+
+        Allow cancellation while the request is still awaiting its first approver:
+        - 'pending' (staff flow)
+        - 'manager_approved' (manager/HOD/HR self-request escalated straight to HR)
+        - 'ceo_approved' only when the requester is a CEO in a CEO-first flow (SDSL/SBL),
+          representing a request that was routed directly to HR without CEO action.
+        """
+        if user != self.employee:
             return False
-        return user == self.employee
+
+        if self.status in ['pending', 'manager_approved']:
+            return True
+
+        if self.status == 'ceo_approved' and getattr(self.employee, 'role', None) == 'ceo':
+            return True
+
+        return False
 
     def approve(self, approved_by, comments=""):
         """Legacy approve method - redirects to appropriate approval stage"""
@@ -280,40 +307,6 @@ class LeaveRequest(models.Model):
     def is_rejected(self):
         return self.status == 'rejected'
     
-    def get_dynamic_status_display(self):
-        """Get status display that reflects the actual workflow based on employee role"""
-        from leaves.services import ApprovalWorkflowService
-        
-        # For completed/rejected statuses, use standard display
-        if self.status in ['approved', 'rejected', 'cancelled']:
-            return self.get_status_display()
-        
-        # Get the handler to determine the workflow
-        try:
-            handler = ApprovalWorkflowService.get_handler(self)
-            flow = handler.get_approval_flow()
-            
-            # Map status to next required role
-            if self.status == 'pending':
-                next_role = flow.get('pending', '')
-                if next_role == 'hr':
-                    return 'Pending HR Approval'
-                elif next_role == 'ceo':
-                    return 'Pending CEO Approval'
-                else:
-                    return 'Pending Manager Approval'
-            elif self.status == 'manager_approved':
-                return 'Manager Approved - Pending HR'
-            elif self.status == 'hr_approved':
-                return 'HR Approved - Pending CEO'
-            elif self.status == 'ceo_approved':
-                return 'CEO Approved - Pending HR'
-        except Exception:
-            pass
-        
-        # Fallback to standard display
-        return self.get_status_display()
-    
     @property
     def current_approval_stage(self):
         """Return which stage of approval this request is at"""
@@ -331,6 +324,61 @@ class LeaveRequest(models.Model):
             return 'rejected'
         else:
             return 'unknown'
+    
+    def get_dynamic_status_display(self):
+        """Return context-aware status display based on affiliate's approval workflow"""
+        # Get affiliate name for workflow determination
+        affiliate_name = None
+        try:
+            if hasattr(self, 'employee') and self.employee:
+                if hasattr(self.employee, 'department') and self.employee.department:
+                    if hasattr(self.employee.department, 'affiliate') and self.employee.department.affiliate:
+                        affiliate_name = self.employee.department.affiliate.name
+                elif hasattr(self.employee, 'affiliate') and self.employee.affiliate:
+                    affiliate_name = self.employee.affiliate.name
+        except Exception:
+            pass
+        
+        # Terminal states (same for all workflows)
+        if self.status == 'approved':
+            return 'Approved'
+        elif self.status == 'rejected':
+            return 'Rejected'
+        elif self.status == 'cancelled':
+            return 'Cancelled'
+        
+        # Determine workflow type
+        is_ceo_first_flow = affiliate_name in ['SDSL', 'SBL']
+        
+        # Contextual status labels based on workflow
+        if is_ceo_first_flow:
+            # SDSL/SBL: CEO → HR (HR is final approver)
+            emp_role = getattr(getattr(self, 'employee', None), 'role', '').lower()
+            if self.status == 'pending':
+                # CEO self-requests should go straight to HR
+                if emp_role == 'ceo':
+                    return 'Pending HR approval'
+                return 'Pending CEO approval'
+            elif self.status == 'ceo_approved':
+                # For CEO self-requests, treat as first-stage pending HR
+                if emp_role == 'ceo':
+                    return 'Pending HR approval'
+                return 'CEO Approved - Pending HR Approval'
+        else:
+            # Merban Capital: Manager → HR → CEO (CEO is final approver)
+            if self.status == 'pending':
+                return 'Pending Manager Approval'
+            elif self.status == 'manager_approved':
+                emp_role = getattr(getattr(self, 'employee', None), 'role', '').lower()
+                # Manager/HOD/HR self-requests skip manager; present as pending HR
+                if emp_role in ['manager', 'hod', 'hr']:
+                    return 'Pending HR approval'
+                return 'Manager Approved - Pending HR Approval'
+            elif self.status == 'hr_approved':
+                return 'HR Approved - Pending CEO Approval'
+        
+        # Fallback to status display
+        return self.get_status_display()
     
     @property
     def next_approver_role(self):
@@ -387,7 +435,8 @@ class LeaveBalance(models.Model):
         
         # Calculate used days (approved leaves)
         self.used_days = sum(
-            req.total_days or 0 for req in current_year_requests.filter(status='approved')
+            max(0, (req.total_days or 0) - (req.interruption_credited_days or 0))
+            for req in current_year_requests.filter(status='approved')
         )
         
         # Calculate pending days (all requests in approval workflow)
@@ -460,3 +509,92 @@ class LeaveGradeEntitlement(models.Model):
 
     def __str__(self):  # pragma: no cover
         return f"{self.grade.name} - {self.leave_type.name}: {self.entitled_days}"
+
+
+class LeaveInterruptRequest(models.Model):
+    """Represents a recall/early-return request without altering original leave dates."""
+
+    TYPE_CHOICES = [
+        ('manager_recall', 'Manager Recall'),
+        ('staff_return', 'Staff Early Return'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending_staff', 'Pending Staff Response'),
+        ('pending_manager', 'Pending Manager Approval'),
+        ('pending_hr', 'Pending HR Approval'),
+        ('pending_ceo', 'Pending CEO Approval'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    leave_request = models.ForeignKey(LeaveRequest, on_delete=models.CASCADE, related_name='interrupt_requests')
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending_staff')
+
+    requested_resume_date = models.DateField()
+    reason = models.TextField(blank=True, default="")
+
+    initiated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='interrupts_initiated')
+    initiated_role = models.CharField(max_length=20, blank=True, default="")
+
+    manager_decision_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='interrupts_manager_decisions')
+    manager_decision_at = models.DateTimeField(null=True, blank=True)
+    manager_decision_comment = models.TextField(blank=True, default="")
+
+    hr_decision_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='interrupts_hr_decisions')
+    hr_decision_at = models.DateTimeField(null=True, blank=True)
+    hr_decision_comment = models.TextField(blank=True, default="")
+
+    staff_decision_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='interrupts_staff_decisions')
+    staff_decision_at = models.DateTimeField(null=True, blank=True)
+    staff_decision_comment = models.TextField(blank=True, default="")
+
+    credited_working_days = models.PositiveIntegerField(default=0)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class LeaveInterruptLog(models.Model):
+    """Immutable audit trail for interruption events."""
+
+    EVENT_CHOICES = [
+        ('requested', 'Requested'),
+        ('staff_accepted', 'Staff Accepted'),
+        ('staff_rejected', 'Staff Rejected'),
+        ('manager_approved', 'Manager Approved'),
+        ('manager_rejected', 'Manager Rejected'),
+        ('hr_approved', 'HR Approved'),
+        ('hr_rejected', 'HR Rejected'),
+        ('ceo_approved', 'CEO Approved'),
+        ('ceo_rejected', 'CEO Rejected'),
+        ('applied', 'Applied'),
+    ]
+
+    leave_request = models.ForeignKey(LeaveRequest, on_delete=models.CASCADE, related_name='interrupt_logs')
+    interrupt_request = models.ForeignKey(LeaveInterruptRequest, on_delete=models.CASCADE, related_name='logs')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    event = models.CharField(max_length=30, choices=EVENT_CHOICES)
+    comment = models.TextField(blank=True, default="")
+    credited_days = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class LeaveResumeEvent(models.Model):
+    """Record when a staff actually resumed after leave end."""
+
+    leave_request = models.ForeignKey(LeaveRequest, on_delete=models.CASCADE, related_name='resume_events')
+    resume_date = models.DateField()
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

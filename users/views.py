@@ -428,11 +428,11 @@ class StaffManagementView(APIView):
                     ).exclude(role='admin')  # Exclude admin only
                     
                     if exclude_demo:
-                        individual_qs = individual_qs.exclude(is_demo=True)
+                        individuals_qs = individuals_qs.exclude(is_demo=True)
                     
                     # Convert to list format similar to departments
                     individual_staff = []
-                    for staff in individual_qs:
+                    for staff in individuals_qs:
                         manager_info = None
                         if staff.manager:
                             manager_info = {

@@ -105,8 +105,9 @@ def env_bool(name: str, default: bool = False) -> bool:
         return default
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
-DB_ENGINE = os.getenv('DB_ENGINE', 'mysql').strip().lower()
-USE_SQLITE = env_bool('USE_SQLITE', default=DEBUG)
+DB_ENGINE = config('DB_ENGINE', default='mysql').strip().lower()
+# Use python-decouple so values in .env are respected (os.getenv ignores .env)
+USE_SQLITE = config('USE_SQLITE', default=str(DEBUG), cast=bool)
 
 if USE_SQLITE or DB_ENGINE == 'sqlite':
     DATABASES = {

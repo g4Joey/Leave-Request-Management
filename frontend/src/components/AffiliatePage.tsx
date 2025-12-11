@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const parseNumericId = (value) => {
   if (value === null || value === undefined) {
@@ -10,6 +11,7 @@ const parseNumericId = (value) => {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;
   }
+  
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (trimmed === '') {
@@ -85,6 +87,7 @@ export default function AffiliatePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { user } = useAuth();
   const [affiliate, setAffiliate] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -95,6 +98,17 @@ export default function AffiliatePage() {
   const [deleteModal, setDeleteModal] = useState({ open: false, selected: {}, processing: false });
   const [hodModal, setHodModal] = useState({ open: false, loading: false, department: null, selectedManagerId: '' });
   const [newEmployeeModal, setNewEmployeeModal] = useState({ open: false, loading: false });
+
+  // Local modals for SDSL/SBL staff actions (Profile, Benefits, Leave History)
+  const [profileModal, setProfileModal] = useState({ open: false, loading: false, employee: null, data: null, error: null });
+  const [benefitsModal, setBenefitsModal] = useState({ open: false, loading: false, employee: null, rows: [] });
+  const [leaveHistoryModal, setLeaveHistoryModal] = useState({ open: false, loading: false, employee: null, requests: [], searchQuery: '' });
+  const [profileEditFields, setProfileEditFields] = useState({ employee_id: '', hire_date: '', new_email: '', new_password: '', department_id: '' });
+  const [profileFieldsSaving, setProfileFieldsSaving] = useState(false);
+  const [profileRoleSaving, setProfileRoleSaving] = useState(false);
+  const [resetPasswordSaving, setResetPasswordSaving] = useState(false);
+  const [updateEmailSaving, setUpdateEmailSaving] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('');
 
   // Desired display order for departments (case-insensitive match)
   const desiredOrder = [
@@ -200,9 +214,388 @@ export default function AffiliatePage() {
     }
   };
 
+  // --- Modal handlers for affiliate staff (copied/adapted from DepartmentPage) ---
+  const openProfile = async (emp) => {
+    if (!emp || !emp.id) return;
+    console.log('[AffiliatePage] openProfile called for', emp);
+    showToast({ type: 'info', message: `Opening profile for ${emp.name || emp.id}...` });
+    setProfileModal({ open: true, loading: true, employee: emp, data: null, error: null });
+    try {
+      const res = await api.get(`/users/${emp.id}/`);
+      const d = res.data || {};
+      const normalized = {
+        id: d.id,
+        employee_id: d.employee_id,
+        email: d.email,
+        role: (d.role === 'employee' || d.role === 'staff') ? 'junior_staff' : d.role,
+        department_name: d.department?.name || d.department_name || (typeof d.department === 'string' ? d.department : null),
+        department_id: d.department?.id || d.department_id || null,
+        hire_date: d.hire_date,
+        first_name: d.first_name,
+        last_name: d.last_name,
+      };
+      setProfileModal({ open: true, loading: false, employee: emp, data: normalized, error: null });
+      setProfileEditFields({ employee_id: normalized.employee_id || '', hire_date: normalized.hire_date || '', new_email: '', new_password: '', department_id: normalized.department_id || '' });
+      setSelectedRole(normalized.role || 'junior_staff');
+    } catch (e) {
+      console.error('Failed to load profile', e);
+      setProfileModal({ open: true, loading: false, employee: emp, data: null, error: 'Failed to load profile' });
+      showToast({ type: 'error', message: 'Failed to load profile' });
+    }
+  };
+
+  const openBenefits = async (emp) => {
+    if (!emp || !emp.id) return;
+    console.log('[AffiliatePage] openBenefits called for', emp);
+    showToast({ type: 'info', message: `Loading benefits for ${emp.name || emp.id}...` });
+    setBenefitsModal({ open: true, loading: true, employee: emp, rows: [] });
+    try {
+      const res = await api.get(`/leaves/balances/employee/${emp.id}/current_year/`);
+      const items = res.data?.items || [];
+      const rows = items.map((it) => ({ leave_type: it.leave_type.id, leave_type_name: it.leave_type.name, entitled_days: String(it.entitled_days ?? 0) }));
+      setBenefitsModal({ open: true, loading: false, employee: emp, rows });
+    } catch (e) {
+      console.error('Failed to load benefits', e);
+      setBenefitsModal({ open: false, loading: false, employee: null, rows: [] });
+      showToast({ type: 'error', message: 'Failed to load benefits' });
+    }
+  };
+
+  const saveBenefits = async () => {
+    const { employee, rows } = benefitsModal;
+    const payload = { items: rows.map((r) => ({ leave_type: r.leave_type, entitled_days: parseInt(r.entitled_days, 10) || 0 })) };
+    try {
+      setBenefitsModal((prev) => ({ ...prev, loading: true }));
+      const res = await api.post(`/leaves/balances/employee/${employee.id}/set_entitlements/`, payload);
+      const errs = res.data?.errors || [];
+      if (errs.length) showToast({ type: 'warning', message: `Saved with ${errs.length} warnings` });
+      else showToast({ type: 'success', message: 'Benefits saved' });
+      setBenefitsModal({ open: false, loading: false, employee: null, rows: [] });
+    } catch (e) {
+      console.error('Failed to save benefits', e);
+      setBenefitsModal((prev) => ({ ...prev, loading: false }));
+      showToast({ type: 'error', message: 'Failed to save benefits' });
+    }
+  };
+
+  const saveProfileFields = async () => {
+    if (!profileModal?.employee?.id) return;
+    const currentData = profileModal.data || {};
+    const updates = {};
+    if (profileEditFields.employee_id !== (currentData.employee_id || '')) {
+      const trimmedEmployeeId = profileEditFields.employee_id.trim();
+      if (!trimmedEmployeeId) { showToast({ type: 'error', message: 'Employee ID is required' }); return; }
+      updates.employee_id = trimmedEmployeeId;
+    }
+    if (profileEditFields.hire_date !== (currentData.hire_date || '')) {
+      updates.hire_date = profileEditFields.hire_date;
+    }
+    if (Object.keys(updates).length === 0) return;
+    try {
+      setProfileFieldsSaving(true);
+      const res = await api.patch(`/users/${profileModal.employee.id}/`, updates);
+      const updatedUser = res.data || {};
+      showToast({ type: 'success', message: 'Profile updated successfully' });
+      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, employee_id: updatedUser.employee_id, hire_date: updatedUser.hire_date } : prev.data }));
+      setProfileEditFields(prev => ({ ...prev, employee_id: updatedUser.employee_id || '', hire_date: updatedUser.hire_date || '' }));
+      await load();
+    } catch (e) {
+      console.error('Profile update error:', e.response?.data || e);
+      const msg = e.response?.data?.detail || e.response?.data?.error || 'Failed to update profile';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setProfileFieldsSaving(false);
+    }
+  };
+
+  const resetEmployeePassword = async () => {
+    if (!profileModal?.employee?.id) return;
+    const newPassword = profileEditFields.new_password?.trim() || '';
+    if (!newPassword) { showToast({ type: 'error', message: 'New password is required' }); return; }
+    if (newPassword.length < 8) { showToast({ type: 'error', message: 'Password must be at least 8 characters' }); return; }
+    try {
+      setResetPasswordSaving(true);
+      await api.post(`/users/${profileModal.employee.id}/reset-password/`, { new_password: newPassword });
+      showToast({ type: 'success', message: 'Password reset successfully' });
+      setProfileEditFields(prev => ({ ...prev, new_password: '' }));
+    } catch (e) {
+      console.error('Password reset error:', e.response?.data || e);
+      const msg = e.response?.data?.error || e.response?.data?.detail || 'Failed to reset password';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setResetPasswordSaving(false);
+    }
+  };
+
+  const updateEmployeeEmail = async () => {
+    if (!profileModal?.employee?.id) return;
+    const newEmail = (profileEditFields.new_email || '').trim();
+    if (!newEmail) { showToast({ type: 'error', message: 'New email is required' }); return; }
+    if (!newEmail.includes('@')) { showToast({ type: 'error', message: 'Invalid email format' }); return; }
+    try {
+      setUpdateEmailSaving(true);
+      const res = await api.patch(`/users/${profileModal.employee.id}/update-email/`, { email: newEmail });
+      showToast({ type: 'success', message: 'Email updated successfully' });
+      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, email: res.data.new_email } : prev.data }));
+      setProfileEditFields(prev => ({ ...prev, new_email: '' }));
+      await load();
+    } catch (e) {
+      console.error('Email update error:', e.response?.data || e);
+      const msg = e.response?.data?.error || e.response?.data?.detail || 'Failed to update email';
+      showToast({ type: 'error', message: msg });
+    } finally {
+      setUpdateEmailSaving(false);
+    }
+  };
+
+  const saveProfileRole = async () => {
+    if (!profileModal?.employee?.id || !selectedRole) return;
+    try {
+      setProfileRoleSaving(true);
+      const res = await api.patch(`/users/${profileModal.employee.id}/`, { role: selectedRole });
+      showToast({ type: 'success', message: 'Role updated' });
+      setProfileModal(prev => ({ ...prev, data: prev.data ? { ...prev.data, role: res.data.role } : prev.data }));
+      await load();
+    } catch (e) {
+      console.error('Failed to update role', e.response?.data || e);
+      showToast({ type: 'error', message: e.response?.data?.detail || 'Failed to update role' });
+    } finally {
+      setProfileRoleSaving(false);
+    }
+  };
+
+  const openLeaveHistory = async (emp) => {
+    if (!emp || !emp.id) return;
+    console.log('[AffiliatePage] openLeaveHistory called for', emp);
+    showToast({ type: 'info', message: `Loading leave history for ${emp.name || emp.id}...` });
+    setLeaveHistoryModal({ open: true, loading: true, employee: emp, requests: [], searchQuery: '' });
+    try {
+      const res = await api.get(`/leaves/manager/?employee=${emp.id}&ordering=-created_at`);
+      const requests = res.data?.results || res.data || [];
+      setLeaveHistoryModal({ open: true, loading: false, employee: emp, requests, searchQuery: '' });
+    } catch (e) {
+      console.error('Failed to load leave history', e);
+      setLeaveHistoryModal({ open: true, loading: false, employee: emp, requests: [], searchQuery: '' });
+      showToast({ type: 'error', message: 'Failed to load leave history' });
+    }
+  };
+
+  const handleExportLeaveHistoryCSV = () => {
+    const requests = leaveHistoryModal.requests;
+    if (!requests || requests.length === 0) {
+      showToast({ type: 'info', message: 'No leave history to export.' });
+      return;
+    }
+    const usFormat = (val) => {
+      if (!val) return '';
+      const s = String(val).split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const [y, m, d] = s.split('-');
+        return `${m}/${d}/${y}`;
+      }
+      const dt = new Date(val);
+      if (!isNaN(dt)) {
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const yy = dt.getFullYear();
+        return `${mm}/${dd}/${yy}`;
+      }
+      return String(val);
+    };
+
+    const csvRows = [
+      ['Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Comments', 'Requested At', 'Final Actor Role', 'Final Actor Timestamp'],
+    ];
+    requests.forEach(request => {
+      // compute final actor role and timestamp
+      const mgr = request.manager_approval_date || null;
+      const hr = request.hr_approval_date || null;
+      const ceo = request.ceo_approval_date || null;
+      const rej = request.rejection_date || null;
+      const candidates = [
+        { role: 'CEO', date: ceo, verb: 'approved' },
+        { role: 'HR', date: hr, verb: 'approved' },
+        { role: 'Manager', date: mgr, verb: 'approved' },
+        { role: 'Rejected', date: rej, verb: 'rejected' },
+      ].filter(c => c.date);
+      let finalRole = '';
+      let finalTs = '';
+      if (candidates.length) {
+        candidates.sort((a, b) => new Date(b.date) - new Date(a.date));
+        finalRole = `${candidates[0].role} ${candidates[0].verb}`;
+        finalTs = new Date(candidates[0].date).toISOString();
+      }
+      csvRows.push([
+        request.leave_type_name || request.leave_type?.name || 'Unknown',
+        usFormat(request.start_date),
+        usFormat(request.end_date),
+        request.total_days,
+        request.status,
+        request.reason || '',
+        request.approval_comments || '',
+        usFormat(request.created_at),
+        finalRole,
+        finalTs,
+      ]);
+    });
+    const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', `leave_history_${leaveHistoryModal.employee?.name?.replace(/\s+/g, '_') || 'employee'}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast({ type: 'success', message: 'Leave history exported.' });
+  };
+
+  const handleExportAffiliateStaffCSV = async () => {
+    try {
+      showToast({ type: 'info', message: 'Exporting affiliate staff...' });
+      const res = await api.get(`/users/staff/?affiliate_id=${id}`);
+      const base = Array.isArray(res.data?.results) ? res.data.results : (Array.isArray(res.data) ? res.data : []);
+      const rows = base.map((s) => ({ name: s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim(), email: s.email, employee_id: s.employee_id, role: s.role }));
+      const headers = ['name', 'email', 'employee_id', 'role'];
+      const csv = [headers.join(','), ...rows.map(r => `${r.name},${r.email},${r.employee_id || ''},${r.role || ''}`)].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(affiliate?.name || 'affiliate').replace(/[^a-z0-9\-]/gi, '_')}_staff.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: 'Affiliate staff exported' });
+    } catch (e) {
+      console.error('Failed to export affiliate staff', e);
+      showToast({ type: 'error', message: 'Failed to export affiliate staff' });
+    }
+  };
+
+  const handleExportAffiliateLeaveRequestsCSV = async () => {
+    try {
+      showToast({ type: 'info', message: 'Fetching leave requests...' });
+      const res = await api.get(`/leaves/requests/?employee_affiliate_id=${id}&limit=1000`);
+      const base = Array.isArray(res.data?.results) ? res.data.results : (Array.isArray(res.data) ? res.data : []);
+      if (!base.length) {
+        showToast({ type: 'info', message: 'No leave requests found for this affiliate' });
+        return;
+      }
+      const headers = ['id', 'employee_name', 'employee_email', 'start_date', 'end_date', 'status', 'status_display', 'final_actor_role', 'final_actor_timestamp'];
+      const rows = base.map((r) => {
+        // compute final actor
+        const mgr = r.manager_approval_date || null;
+        const hr = r.hr_approval_date || null;
+        const ceo = r.ceo_approval_date || null;
+        const rej = r.rejection_date || null;
+        const candidates = [
+          { role: 'CEO', date: ceo, verb: 'approved' },
+          { role: 'HR', date: hr, verb: 'approved' },
+          { role: 'Manager', date: mgr, verb: 'approved' },
+          { role: 'Rejected', date: rej, verb: 'rejected' },
+        ].filter(c => c.date);
+        let finalRole = '';
+        let finalTs = '';
+        if (candidates.length) {
+          candidates.sort((a, b) => new Date(b.date) - new Date(a.date));
+          finalRole = `${candidates[0].role} ${candidates[0].verb}`;
+          finalTs = new Date(candidates[0].date).toISOString();
+        }
+        return {
+          id: r.id,
+          employee_name: r.employee_name || r.name || '',
+          employee_email: r.employee_email || r.email || '',
+          start_date: r.start_date || '',
+          end_date: r.end_date || '',
+          status: r.status || '',
+          status_display: r.status_display || r.get_dynamic_status_display || '',
+          finalRole,
+          finalTs,
+        };
+      });
+      const csv = [headers.join(','), ...rows.map(row => `${row.id},"${row.employee_name}",${row.employee_email},${row.start_date},${row.end_date},${row.status},"${row.status_display}","${row.finalRole}",${row.finalTs}`)].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(affiliate?.name || 'affiliate').replace(/[^a-z0-9\-]/gi, '_')}_leave_requests.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: 'Affiliate leave requests exported' });
+    } catch (e) {
+      console.error('Failed to export affiliate leave requests', e);
+      showToast({ type: 'error', message: 'Failed to export affiliate leave requests' });
+    }
+  };
+
+  // Filtered leave history: date-aware search and show last 5 by default
+  const filteredLeaveHistory = React.useMemo(() => {
+    const qRaw = (leaveHistoryModal.searchQuery || '').trim();
+    const query = qRaw.toLowerCase();
+    const requests = leaveHistoryModal.requests || [];
+
+    const toISODate = (val) => {
+      if (!val) return null;
+      const s = String(val).split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const dt = new Date(val);
+      if (!isNaN(dt)) {
+        const y = dt.getFullYear(); const m = String(dt.getMonth() + 1).padStart(2, '0'); const d = String(dt.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+      return null;
+    };
+
+    const toUSDate = (val) => {
+      const iso = toISODate(val);
+      if (!iso) return null;
+      const [y, m, d] = iso.split('-');
+      return `${m}/${d}/${y}`;
+    };
+
+    if (!query) return requests.slice(0, 5);
+
+    let parsedQueryDate = null;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(qRaw)) {
+      const [mm, dd, yyyy] = qRaw.split('/').map((t) => t.padStart(2, '0'));
+      parsedQueryDate = `${yyyy}-${mm}-${dd}`;
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(qRaw)) {
+      parsedQueryDate = qRaw;
+    }
+
+    return requests.filter((request) => {
+      const type = String(request.leave_type_name || request.leave_type?.name || '').toLowerCase();
+      const reason = String(request.reason || '').toLowerCase();
+      const status = String(request.status || '').toLowerCase();
+      const comments = String(request.approval_comments || '').toLowerCase();
+
+      if (type.includes(query) || reason.includes(query) || status.includes(query) || comments.includes(query)) return true;
+
+      const startISO = toISODate(request.start_date);
+      const endISO = toISODate(request.end_date);
+      const createdISO = toISODate(request.created_at);
+      const startUS = toUSDate(request.start_date);
+      const endUS = toUSDate(request.end_date);
+      const createdUS = toUSDate(request.created_at);
+
+      if (parsedQueryDate) {
+        if (parsedQueryDate === startISO || parsedQueryDate === endISO || parsedQueryDate === createdISO) return true;
+      }
+
+      if (startISO && startISO.includes(query)) return true;
+      if (endISO && endISO.includes(query)) return true;
+      if (createdISO && createdISO.includes(query)) return true;
+      if (startUS && startUS.toLowerCase().includes(query)) return true;
+      if (endUS && endUS.toLowerCase().includes(query)) return true;
+      if (createdUS && createdUS.toLowerCase().includes(query)) return true;
+
+      return false;
+    });
+  }, [leaveHistoryModal.requests, leaveHistoryModal.searchQuery]);
+
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const createDepartment = async () => {
@@ -269,7 +662,7 @@ export default function AffiliatePage() {
       <div className="text-center text-gray-600">
         Affiliate not found.
         <div>
-          <button onClick={() => navigate('/staff')} className="mt-3 text-sky-600 hover:underline">Back to Staff</button>
+          <button onClick={() => navigate('/staff')} className="mt-3 px-3 py-1.5 text-sm btn-cancel">Back to Staff</button>
         </div>
       </div>
     );
@@ -279,7 +672,7 @@ export default function AffiliatePage() {
     <div className="max-w-5xl mx-auto">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <button onClick={() => navigate('/staff')} className="text-sm text-gray-600 hover:underline">← Back</button>
+          <button onClick={() => navigate('/staff')} className="px-3 py-1.5 text-sm btn-cancel">← Back</button>
           <h1 className="text-2xl font-semibold mt-1">{affiliate.name}</h1>
         </div>
         <div className="flex items-center gap-4">
@@ -303,9 +696,15 @@ export default function AffiliatePage() {
             >
               New Employee
             </button>
+              {(affiliate.name || '').toUpperCase() === 'SDSL' || (affiliate.name || '').toUpperCase() === 'SBL' ? (
+                <>
+                  <button onClick={handleExportAffiliateStaffCSV} className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-gray-200">Export Staff</button>
+                  <button onClick={handleExportAffiliateLeaveRequestsCSV} className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border border-blue-200 text-blue-700 hover:bg-blue-50">Export Leave Requests</button>
+                </>
+              ) : null}
             
             {/* Only show department management for MERBAN CAPITAL */}
-            {affiliate.name === 'MERBAN CAPITAL' && (
+            {(affiliate?.name || '').toUpperCase() === 'MERBAN CAPITAL' && (
               <>
                 <button
                   onClick={() => setNewDeptModal({ open: true, name: '', description: '' })}
@@ -328,7 +727,7 @@ export default function AffiliatePage() {
       </div>
 
       {/* MERBAN CAPITAL: Show departments */}
-      {affiliate.name === 'MERBAN CAPITAL' && (
+      {(affiliate.name || '').toUpperCase() === 'MERBAN CAPITAL' && (
         <div className="bg-white shadow rounded-md p-4">
           <h2 className="text-lg font-medium mb-4">Departments</h2>
           {departments.length === 0 ? (
@@ -336,7 +735,13 @@ export default function AffiliatePage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {departments.map((d) => (
-              <div key={d.id} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+              <div
+                key={d.id}
+                onClick={() => navigate(`/staff/departments/${d.id}`)}
+                role="button"
+                title={`Open ${d.name}`}
+                className="card-improved overflow-hidden cursor-pointer hover:shadow-md"
+              >
                 <div className="w-full px-4 py-4 text-left">
                   <div className="flex items-center justify-between">
                     <div>
@@ -348,7 +753,7 @@ export default function AffiliatePage() {
                         {(typeof d.staff_count === 'number' ? d.staff_count : (staffCountByDept[d.name] || 0))} staff member{(typeof d.staff_count === 'number' ? d.staff_count : (staffCountByDept[d.name] || 0)) !== 1 ? 's' : ''}
                       </p>
                       {d.manager ? (
-                        <p className="text-sm text-blue-600 mt-1">
+                        <p className="text-sm text-gray-700 mt-1">
                           <span className="font-medium">HOD:</span> {d.manager.name} ({d.manager.employee_id})
                         </p>
                       ) : (
@@ -359,7 +764,7 @@ export default function AffiliatePage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => openHodModal(d)}
+                        onClick={(e) => { e.stopPropagation(); openHodModal(d); }}
                         className="px-3 py-1 text-xs font-medium rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
                       >
                         Set HOD
@@ -375,22 +780,43 @@ export default function AffiliatePage() {
       )}
 
       {/* SDSL/SBL: Show individual employees */}
-      {(affiliate.name === 'SDSL' || affiliate.name === 'SBL') && (
+      {((affiliate.name || '').toUpperCase() === 'SDSL' || (affiliate.name || '').toUpperCase() === 'SBL') && (
         <div className="bg-white shadow rounded-md p-4">
-          <h2 className="text-lg font-medium mb-4">Team Members</h2>
+          <h2 className="text-lg font-medium mb-3">Team Members ({employees.length})</h2>
           {employees.length === 0 ? (
             <div className="text-sm text-gray-500">No team members under this affiliate yet.</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {employees.map((emp) => (
-                <div key={emp.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="text-lg font-medium text-gray-900">{emp.name}</h4>
-                  <p className="text-sm text-gray-600 mt-1">{emp.email}</p>
-                  <p className="text-sm text-gray-600">ID: {emp.employee_id}</p>
-                  <p className="text-sm text-gray-600">Role: {emp.role}</p>
-                  {emp.hire_date && <p className="text-sm text-gray-600">Hired: {new Date(emp.hire_date).toLocaleDateString()}</p>}
-                </div>
-              ))}
+            <div className="overflow-x-auto bg-white rounded border">
+              <table className="min-w-full text-sm text-left">
+                <thead className="text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2">#</th>
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Employee ID</th>
+                    <th className="px-3 py-2">Role</th>
+                    <th className="px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((s, idx) => (
+                    <tr key={s.id} className="border-t">
+                      <td className="px-3 py-2 align-top">{idx + 1}</td>
+                      <td className="px-3 py-2 align-top">{s.name}</td>
+                      <td className="px-3 py-2 align-top">{s.email}</td>
+                      <td className="px-3 py-2 align-top">{s.employee_id}</td>
+                      <td className="px-3 py-2 align-top">{s.role}</td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex gap-2">
+                          <button onClick={() => openProfile({ id: s.id, name: s.name })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200">Profile</button>
+                          <button onClick={() => openBenefits({ id: s.id, name: s.name })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200">Set benefits</button>
+                          <button onClick={() => openLeaveHistory({ id: s.id, name: s.name })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-200 text-blue-700 hover:bg-blue-50">View Leave History</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -588,6 +1014,187 @@ export default function AffiliatePage() {
       )}
 
       {/* New Employee Modal */}
+      {/* Profile / Benefits / Leave History modals for affiliate staff */}
+      {profileModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg max-h-[90vh] flex flex-col">
+            <h3 className="text-lg font-semibold mb-2">Profile: {profileModal.employee?.name}</h3>
+            {profileModal.loading && (<div className="text-sm text-gray-500">Loading...</div>)}
+            {!profileModal.loading && profileModal.error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3 mb-2">{profileModal.error}</div>
+            )}
+            {!profileModal.loading && !profileModal.error && profileModal.data && (
+              <div className="space-y-4 text-sm flex-1 overflow-y-auto">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
+                  <input type="text" value={profileEditFields.employee_id} onChange={(e) => setProfileEditFields(prev => ({ ...prev, employee_id: e.target.value }))} className="border rounded-md px-2 py-1 text-sm w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                  <div className="text-sm"><span className="font-medium">Current:</span> {profileModal.data.email || '—'}</div>
+                  <div className="mt-2 flex gap-2">
+                    <input type="email" value={profileEditFields.new_email} onChange={(e) => setProfileEditFields(prev => ({ ...prev, new_email: e.target.value }))} className="border rounded-md px-2 py-1 text-sm flex-1" placeholder="Enter new email" />
+                    <button onClick={updateEmployeeEmail} disabled={updateEmailSaving || !profileEditFields.new_email} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-blue-600 text-white bg-blue-600 disabled:opacity-50">{updateEmailSaving ? 'Updating...' : 'Update Email'}</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Hire Date</label>
+                  <input type="date" value={profileEditFields.hire_date} onChange={(e) => setProfileEditFields(prev => ({ ...prev, hire_date: e.target.value }))} className="border rounded-md px-2 py-1 text-sm w-full" />
+                </div>
+
+                <div className="flex justify-end">
+                  <button onClick={saveProfileFields} disabled={profileFieldsSaving} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-green-600 text-white bg-green-600 disabled:opacity-50">{profileFieldsSaving ? 'Saving...' : 'Save Profile Changes'}</button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                  <div className="flex items-center gap-2">
+                    <select value={selectedRole || profileModal.data.role || 'junior_staff'} onChange={(e) => setSelectedRole(e.target.value)} className="border rounded-md px-2 py-1 text-sm">
+                      <option value="junior_staff">Junior Staff</option>
+                      <option value="senior_staff">Senior Staff</option>
+                      <option value="manager">Head of Department</option>
+                      <option value="hr">HR</option>
+                      <option value="ceo">CEO</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button onClick={saveProfileRole} disabled={profileRoleSaving || (profileModal.data.role || 'junior_staff') === selectedRole} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-sky-600 text-white bg-sky-600 disabled:opacity-50">{profileRoleSaving ? 'Saving...' : 'Save Role'}</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Reset Password</label>
+                  <div className="flex gap-2">
+                    <input type="password" value={profileEditFields.new_password} onChange={(e) => setProfileEditFields(prev => ({ ...prev, new_password: e.target.value }))} className="border rounded-md px-2 py-1 text-sm flex-1" placeholder="Enter new password (min 8 chars)" />
+                    <button onClick={resetEmployeePassword} disabled={resetPasswordSaving || !profileEditFields.new_password} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-red-600 text-white bg-red-600 disabled:opacity-50">{resetPasswordSaving ? 'Resetting...' : 'Reset Password'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="flex-shrink-0 flex justify-end gap-2 mt-4 bg-white">
+              <button onClick={() => setProfileModal({ open: false, loading: false, employee: null, data: null, error: null })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-gray-200">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {benefitsModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-lg max-h-[90vh] flex flex-col">
+            <h3 className="text-lg font-semibold mb-2">Set benefits: {benefitsModal.employee?.name}</h3>
+            {benefitsModal.loading ? (
+              <div className="text-sm text-gray-500">Loading...</div>
+            ) : (
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                {benefitsModal.rows.map((r, idx) => (
+                  <div key={r.leave_type} className="flex items-center gap-3">
+                    <div className="w-40 text-sm">{r.leave_type_name}</div>
+                    <input type="number" min="0" className="border rounded-md px-2 py-1 w-28" value={r.entitled_days} onChange={(e) => { const v = e.target.value; setBenefitsModal((prev) => { const next = prev.rows.slice(); next[idx] = { ...next[idx], entitled_days: v }; return { ...prev, rows: next }; }); }} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex-shrink-0 flex justify-end gap-2 mt-4 bg-white">
+              <button onClick={() => setBenefitsModal({ open: false, loading: false, employee: null, rows: [] })} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium btn-cancel" disabled={benefitsModal.loading}>Cancel</button>
+              <button onClick={saveBenefits} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium border border-sky-600 text-white bg-sky-600 hover:bg-sky-700" disabled={benefitsModal.loading}>{benefitsModal.loading ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {leaveHistoryModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-md shadow p-6 w-full max-w-4xl max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Leave History: {leaveHistoryModal.employee?.name}</h3>
+              <button onClick={() => setLeaveHistoryModal({ open: false, loading: false, employee: null, requests: [], searchQuery: '' })} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            {!leaveHistoryModal.loading && leaveHistoryModal.requests.length > 0 && (
+              <div className="mb-4">
+                <input type="text" placeholder="Search by leave type, reason, status, or dates..." value={leaveHistoryModal.searchQuery} onChange={(e) => setLeaveHistoryModal(prev => ({ ...prev, searchQuery: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm" />
+              </div>
+            )}
+            {leaveHistoryModal.loading ? (
+              <div className="flex items-center justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div><span className="ml-2 text-sm text-gray-500">Loading leave history...</span></div>
+            ) : (
+              <div className="flex-1 overflow-y-auto">
+                {leaveHistoryModal.requests.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500"><p>No leave requests found for this employee.</p></div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-gray-50 p-4 rounded-lg border">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div><div className="text-2xl font-bold text-gray-900">{leaveHistoryModal.requests.length}</div><div className="text-sm text-gray-600">Total Requests</div></div>
+                        <div><div className="text-2xl font-bold text-green-600">{leaveHistoryModal.requests.filter(r => r.status === 'approved').length}</div><div className="text-sm text-gray-600">Approved</div></div>
+                        <div><div className="text-2xl font-bold text-yellow-600">{leaveHistoryModal.requests.filter(r => ['pending','manager_approved','hr_approved'].includes(r.status)).length}</div><div className="text-sm text-gray-600">Pending</div></div>
+                        <div><div className="text-2xl font-bold text-red-600">{leaveHistoryModal.requests.filter(r => r.status === 'rejected').length}</div><div className="text-sm text-gray-600">Rejected</div></div>
+                      </div>
+                    </div>
+                    {leaveHistoryModal.requests.map((request) => (
+                      <div key={request.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h4 className="font-medium text-gray-900">{request.leave_type_name || request.leave_type?.name || 'Unknown'}</h4>
+                            <p className="text-sm text-gray-600 mt-1">{request.start_date} to {request.end_date} ({request.total_days} days)</p>
+                            {request.reason && <p className="text-sm text-gray-600 mt-1"><span className="font-medium">Reason:</span> {request.reason}</p>}
+                            {/* final approver/rejector */}
+                                                    {(() => {
+                                                      // use `user` from top-level useAuth() call
+                                                      const mgr = request.manager_approval_date ? new Date(request.manager_approval_date) : null;
+                                                      const hr = request.hr_approval_date ? new Date(request.hr_approval_date) : null;
+                                                      const ceo = request.ceo_approval_date ? new Date(request.ceo_approval_date) : null;
+                                                      const rej = request.rejection_date ? new Date(request.rejection_date) : null;
+
+                                                      // Build events
+                                                      const events = [];
+                                                      if (mgr) events.push({ key: 'manager', roleLabel: 'Manager', date: mgr, verb: 'approved' });
+                                                      if (hr) events.push({ key: 'hr', roleLabel: 'HR', date: hr, verb: 'approved' });
+                                                      if (ceo) events.push({ key: 'ceo', roleLabel: 'CEO', date: ceo, verb: 'approved' });
+                                                      if (rej) events.push({ key: 'rejected', roleLabel: 'Rejected', date: rej, verb: 'rejected' });
+
+                                                      if (events.length === 0) return null;
+                                                      events.sort((a, b) => a.date - b.date); // chronological
+                                                      const latest = events[events.length - 1];
+
+                                                      // Determine label and color
+                                                      const isRejected = latest.key === 'rejected';
+                                                      let label = '';
+                                                      if (isRejected) {
+                                                        // Try to infer rejector role: pick the latest approver event before rejection
+                                                        const beforeRej = events.slice(0, events.length - 1).reverse().find(e => ['manager','hr','ceo'].includes(e.key));
+                                                        const rejector = beforeRej ? beforeRej.roleLabel : 'Rejected';
+                                                        const isYou = (user && ((rejector === 'HR' && user.role === 'hr') || (rejector === 'CEO' && user.role === 'ceo') || (rejector === 'Manager' && user.role === 'manager')));
+                                                        label = isYou ? 'You rejected' : `${rejector} rejected`;
+                                                      } else {
+                                                        const roleLabel = latest.roleLabel || 'Approver';
+                                                        const isYou = (user && ((latest.key === 'hr' && user.role === 'hr') || (latest.key === 'ceo' && user.role === 'ceo') || (latest.key === 'manager' && user.role === 'manager')));
+                                                        label = isYou ? 'You approved' : `${roleLabel} approved`;
+                                                      }
+
+                                                      const colorClass = isRejected ? 'text-red-600' : 'text-green-600';
+                                                      return <p className={`text-sm ${colorClass} mt-2`}><span className="font-medium">Final:</span> {label} {latest.date.toLocaleString()}</p>;
+                                                    })()}
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${request.status === 'approved' ? 'bg-green-100 text-green-800' : request.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>{request.status}</span>
+                            {request.created_at && <span className="text-xs text-gray-500">Requested: {new Date(request.created_at).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
+                        {request.approval_comments && (<div className="mt-3 p-3 bg-gray-50 rounded border-l-4 border-blue-200"><p className="text-sm"><span className="font-medium text-gray-700">Comments:</span><span className="text-gray-600 ml-1">{request.approval_comments}</span></p></div>)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end mt-4 gap-2">
+              <button onClick={handleExportLeaveHistoryCSV} className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-blue-600 text-white bg-blue-600 hover:bg-blue-700">Download CSV</button>
+              <button onClick={() => setLeaveHistoryModal({ open: false, loading: false, employee: null, requests: [], searchQuery: '' })} className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-gray-200 hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {newEmployeeModal.open && (
         <NewEmployeeModal
           affiliate={affiliate}
@@ -629,7 +1236,7 @@ function NewEmployeeModal({ affiliate, departments, onClose, onSuccess }) {
     if (!formData.last_name.trim()) nextErrors.last_name = 'Last name is required';
     if (!formData.email.trim()) nextErrors.email = 'Email is required';
     if (!formData.password || formData.password.length < 8) nextErrors.password = 'Password must be at least 8 characters';
-    if (affiliate.name === 'MERBAN CAPITAL' && !formData.department_id) nextErrors.department_id = 'Department is required for Merban Capital';
+    if ((affiliate?.name || '').toUpperCase() === 'MERBAN CAPITAL' && !formData.department_id) nextErrors.department_id = 'Department is required for Merban Capital';
   // roles replace grades; no grade required
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -645,7 +1252,7 @@ function NewEmployeeModal({ affiliate, departments, onClose, onSuccess }) {
         password: formData.password,
         affiliate_id: Number(affiliate.id),
         // Only include department_id for MERBAN CAPITAL
-        ...(affiliate.name === 'MERBAN CAPITAL' && formData.department_id ? { department_id: Number(formData.department_id) } : {}),
+        ...((affiliate?.name || '').toUpperCase() === 'MERBAN CAPITAL' && formData.department_id ? { department_id: Number(formData.department_id) } : {}),
       };
 
       if (formData.employee_id.trim()) {
@@ -668,10 +1275,10 @@ function NewEmployeeModal({ affiliate, departments, onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg max-h-[90vh] flex flex-col">
         <h3 className="text-lg font-semibold mb-4">Add New Employee - {affiliate.name}</h3>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 flex-1 overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
@@ -724,8 +1331,8 @@ function NewEmployeeModal({ affiliate, departments, onClose, onSuccess }) {
             />
           </div>
 
-          {/* Show department dropdown only for MERBAN CAPITAL */}
-          {affiliate.name === 'MERBAN CAPITAL' && (
+          {/* Show department dropdown only for MERBAN CAPITAL (moved to after Employee ID per request) */}
+          {(affiliate?.name || '').toUpperCase() === 'MERBAN CAPITAL' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
               <select
@@ -796,7 +1403,7 @@ function NewEmployeeModal({ affiliate, departments, onClose, onSuccess }) {
             {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password}</p>}
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
+          <div className="flex-shrink-0 flex justify-end gap-2 pt-4 bg-white">
             <button
               type="button"
               onClick={onClose}

@@ -1,11 +1,99 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.db.models import Q
-from .models import LeaveRequest, LeaveType, LeaveBalance, LeaveGradeEntitlement
+from .models import LeaveRequest, LeaveType, LeaveBalance, LeaveGradeEntitlement, LeaveInterruptRequest, LeaveResumeEvent
 from users.models import EmploymentGrade
 from django.contrib.auth import get_user_model
+from django.utils import timezone as dj_timezone
 
 User = get_user_model()
+
+
+def _build_timeline_events(obj, viewer=None):
+    """Assemble chronological approval/interrupt events for UI timelines."""
+    events = []
+
+    def add_event(action, actor, actor_role, ts, note=""):
+        if not ts:
+            return
+        events.append({
+            'action': action,
+            'actor_name': getattr(actor, 'get_full_name', lambda: None)() or getattr(actor, 'username', None) or 'Unknown',
+            'actor_role': actor_role,
+            'actor_id': getattr(actor, 'id', None),
+            'timestamp': ts,
+            'note': note or ''
+        })
+
+    add_event('submitted', getattr(obj, 'employee', None), getattr(getattr(obj, 'employee', None), 'role', None), getattr(obj, 'created_at', None))
+
+    if getattr(obj, 'manager_approval_date', None):
+        add_event('manager_approved', getattr(obj, 'manager_approved_by', None), 'manager', obj.manager_approval_date, getattr(obj, 'manager_approval_comments', '') or '')
+
+    if getattr(obj, 'hr_approval_date', None):
+        add_event('hr_approved', getattr(obj, 'hr_approved_by', None), 'hr', obj.hr_approval_date, getattr(obj, 'hr_approval_comments', '') or '')
+
+    ceo_ts = getattr(obj, 'ceo_approval_date', None)
+    ceo_actor = getattr(obj, 'ceo_approved_by', None)
+    if ceo_ts:
+        add_event('ceo_approved', ceo_actor, 'ceo', ceo_ts, getattr(obj, 'ceo_approval_comments', '') or '')
+
+    approval_ts = getattr(obj, 'approval_date', None)
+    approval_actor = getattr(obj, 'approved_by', None)
+    # Avoid emitting a duplicate "finalized" event when CEO approval already represents the final sign-off
+    should_emit_final = approval_ts and not (
+        ceo_ts and approval_ts == ceo_ts and approval_actor == ceo_actor
+    )
+    if should_emit_final:
+        add_event('finalized', approval_actor, getattr(approval_actor, 'role', None), approval_ts, getattr(obj, 'approval_comments', '') or '')
+
+    try:
+        logs = list(getattr(obj, 'interrupt_logs', []).all().select_related('actor', 'interrupt_request'))
+    except Exception:
+        logs = []
+
+    for log in sorted(logs, key=lambda l: getattr(l, 'created_at', None) or dj_timezone.now()):
+        ir = getattr(log, 'interrupt_request', None)
+        ir_type = getattr(ir, 'type', '')
+        role = None
+        if log.event.startswith('manager_'):
+            role = 'manager'
+        elif log.event.startswith('hr_'):
+            role = 'hr'
+        elif log.event.startswith('staff_'):
+            role = 'staff'
+        elif log.event.startswith('ceo_'):
+            role = 'ceo'
+
+        action_label = log.event
+        if ir_type == 'manager_recall':
+            mapping = {
+                'requested': 'recall_requested',
+                'staff_accepted': 'recall_staff_accepted',
+                'staff_rejected': 'recall_staff_rejected',
+                'applied': 'recall_applied',
+            }
+            action_label = mapping.get(log.event, log.event)
+        elif ir_type == 'staff_return':
+            mapping = {
+                'requested': 'early_return_requested',
+                'manager_approved': 'early_return_manager_approved',
+                'manager_rejected': 'early_return_manager_rejected',
+                'hr_approved': 'early_return_hr_approved',
+                'hr_rejected': 'early_return_hr_rejected',
+                'ceo_approved': 'early_return_ceo_approved',
+                'ceo_rejected': 'early_return_ceo_rejected',
+                'applied': 'early_return_applied',
+            }
+            action_label = mapping.get(log.event, log.event)
+
+        add_event(action_label, getattr(log, 'actor', None), role, getattr(log, 'created_at', None), getattr(log, 'comment', '') or '')
+
+    events = sorted(events, key=lambda e: e.get('timestamp') or dj_timezone.now())
+    viewer_id = getattr(viewer, 'id', None)
+    for ev in events:
+        ev['is_self'] = viewer_id is not None and ev.get('actor_id') == viewer_id
+    return events
 
 
 class LeaveTypeSerializer(serializers.ModelSerializer):
@@ -39,6 +127,13 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     calendar_days = serializers.IntegerField(read_only=True)
     range_with_days = serializers.CharField(read_only=True)
     status_display = serializers.CharField(source='get_dynamic_status_display', read_only=True)
+    interruption_credited_days = serializers.IntegerField(read_only=True)
+    interruption_note = serializers.CharField(read_only=True)
+    interrupted_at = serializers.DateTimeField(read_only=True)
+    actual_resume_date = serializers.DateField(read_only=True)
+    can_cancel = serializers.SerializerMethodField()
+    has_pending_recall = serializers.SerializerMethodField()
+    timeline_events = serializers.SerializerMethodField()
     
     class Meta:
         model = LeaveRequest
@@ -47,6 +142,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             'leave_type', 'leave_type_name', 'start_date', 'end_date',
             'total_days', 'working_days', 'calendar_days', 'range_with_days', 'reason', 'status', 'status_display',
             'approved_by', 'approved_by_name', 'approval_comments',
+            'interruption_credited_days', 'interruption_note', 'interrupted_at', 'actual_resume_date',
+            'can_cancel', 'has_pending_recall', 'timeline_events',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['employee', 'status', 'approved_by', 'approval_comments', 
@@ -69,6 +166,10 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         if start_date and end_date:
             if start_date > end_date:
                 raise serializers.ValidationError("Start date cannot be after end date.")
+
+            # Reject weekend start dates (Saturday=5, Sunday=6)
+            if start_date.weekday() >= 5:
+                raise serializers.ValidationError("Start date cannot be a weekend.")
             
             # Allow next year requests: Allow current year and next year only
             current_date = timezone.now().date()
@@ -151,6 +252,34 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
                 wd += 1
             current += timedelta(days=1)
         return wd
+
+    def get_can_cancel(self, obj):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        user = getattr(request, 'user', None) if request else None
+        if not user:
+            return False
+        try:
+            return obj.can_be_cancelled(user)
+        except Exception:
+            return False
+
+    def get_has_pending_recall(self, obj):
+        try:
+            return LeaveInterruptRequest.objects.filter(
+                leave_request=obj,
+                type='manager_recall',
+                status='pending_staff'
+            ).exists()
+        except Exception:
+            return False
+
+    def get_timeline_events(self, obj):
+        viewer = None
+        try:
+            viewer = self.context.get('request').user
+        except Exception:
+            pass
+        return _build_timeline_events(obj, viewer)
     
     def _create_next_year_balance(self, user, leave_type, year):
         """Auto-create next year leave balance using current year entitlements as baseline"""
@@ -206,7 +335,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     employee_email = serializers.CharField(source='employee.email', read_only=True)
     employee_id = serializers.CharField(source='employee.employee_id', read_only=True)
     employee_role = serializers.CharField(source='employee.role', read_only=True)
-    employee_department = serializers.CharField(source='employee.department.name', read_only=True)
+    employee_department = serializers.SerializerMethodField()
     employee_department_affiliate = serializers.SerializerMethodField()
     employee_department_id = serializers.SerializerMethodField()
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
@@ -224,7 +353,29 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
     manager_approval_date = serializers.DateTimeField(read_only=True)
     hr_approval_date = serializers.DateTimeField(read_only=True)
     stage_label = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    timeline_events = serializers.SerializerMethodField()
+    approval_date = serializers.DateTimeField(read_only=True)
+
+    def get_timeline_events(self, obj):
+        viewer = None
+        try:
+            viewer = self.context.get('request').user
+        except Exception:
+            pass
+        return _build_timeline_events(obj, viewer)
     
+    def get_employee_department(self, obj):
+        """Get the employee's department name"""
+        try:
+            if getattr(obj, 'employee', None) and getattr(obj.employee, 'department', None):
+                dept_name = getattr(obj.employee.department, 'name', None)
+                if dept_name:
+                    return dept_name
+        except Exception:
+            pass
+        return 'No Department'
+
     def get_employee_department_affiliate(self, obj):
         """Get the affiliate name for the employee's department"""
         try:
@@ -239,7 +390,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
                     return obj.employee.affiliate.name
         except Exception:
             pass
-        return 'Other'
+        return 'Unknown Affiliate'
 
     def get_employee_department_id(self, obj):
         try:
@@ -271,6 +422,7 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
         Examples: 'Pending HR approval', 'Pending CEO approval'."""
         status = getattr(obj, 'status', None)
         aff = (self._get_affiliate_name(obj) or '').upper()
+        emp_role = getattr(getattr(obj, 'employee', None), 'role', '').lower()
         if status == 'manager_approved':
             # SDSL/SBL flow: CEO comes before HR. Standard (Merban): HR next.
             if aff in ['SDSL', 'SBL']:
@@ -286,6 +438,9 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
         if status == 'pending':
             # For SDSL/SBL there is no manager step; CEO is first approver
             if aff in ['SDSL', 'SBL']:
+                # CEO self-requests should show HR as the next approver
+                if emp_role == 'ceo':
+                    return 'Pending HR approval'
                 return 'Pending CEO approval'
             return 'Pending Manager approval'
         if status == 'approved':
@@ -295,6 +450,16 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
         if status == 'cancelled':
             return 'Cancelled'
         return getattr(obj, 'get_status_display', lambda: status)()
+
+    def get_can_cancel(self, obj):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        user = getattr(request, 'user', None) if request else None
+        if not user:
+            return False
+        try:
+            return obj.can_be_cancelled(user)
+        except Exception:
+            return False
     
     class Meta:
         model = LeaveRequest
@@ -303,7 +468,11 @@ class LeaveRequestListSerializer(serializers.ModelSerializer):
             'employee_department', 'employee_department_id', 'employee_department_affiliate', 'leave_type_name', 
             'start_date', 'end_date', 'total_days', 'working_days', 'calendar_days', 'range_with_days',
             'status', 'status_display', 'stage_label', 'reason', 'manager_approval_comments', 'manager_comments', 'hr_comments', 
-            'manager_approval_date', 'hr_approval_date', 'ceo_approval_date', 'created_at'
+            'manager_approval_date', 'hr_approval_date', 'ceo_approval_date',
+            'approval_date',
+            'interruption_credited_days', 'interruption_note', 'interrupted_at', 'actual_resume_date',
+            'can_cancel', 'timeline_events',
+            'created_at'
         ]
     
     # total_days is computed in model.save() (working days). Expose as read-only.
@@ -336,6 +505,42 @@ class LeaveApprovalSerializer(serializers.ModelSerializer):
         # Save the instance
         instance.save()
         return instance
+
+
+class LeaveInterruptRequestSerializer(serializers.ModelSerializer):
+    leave_id = serializers.IntegerField(source='leave_request_id', read_only=True)
+    employee_name = serializers.CharField(source='leave_request.employee.get_full_name', read_only=True)
+    leave_type_name = serializers.CharField(source='leave_request.leave_type.name', read_only=True)
+    start_date = serializers.DateField(source='leave_request.start_date', read_only=True)
+    end_date = serializers.DateField(source='leave_request.end_date', read_only=True)
+    total_days = serializers.IntegerField(source='leave_request.total_days', read_only=True)
+    is_interrupt = serializers.SerializerMethodField()
+    interrupt_kind = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LeaveInterruptRequest
+        fields = [
+            'id', 'type', 'status', 'requested_resume_date', 'reason',
+            'credited_working_days', 'applied_at',
+            'leave_id', 'employee_name', 'leave_type_name',
+            'start_date', 'end_date', 'total_days',
+            'is_interrupt', 'interrupt_kind',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['status', 'credited_working_days', 'applied_at', 'created_at', 'updated_at']
+
+    def get_is_interrupt(self, obj):
+        return True
+
+    def get_interrupt_kind(self, obj):
+        return obj.type
+
+
+class LeaveResumeEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveResumeEvent
+        fields = ['id', 'resume_date', 'created_at']
+        read_only_fields = ['created_at']
 
 
 class EmploymentGradeSerializer(serializers.ModelSerializer):
