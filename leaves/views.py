@@ -3,7 +3,7 @@ from typing import Any
 import logging
 
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
@@ -2708,3 +2708,35 @@ class LeaveGradeEntitlementViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Unable to resolve grade from entitlement'}, status=400)
         applied = apply_grade_entitlements(grade)
         return Response({'message': 'Applied grade entitlements', 'grade': grade.name, 'applied_to_balances': applied})
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def dashboard_stats(request):
+    """
+    Get dashboard statistics for the current user.
+    Matches the schema expected by frontend MOCK_STATS.
+    """
+    user = request.user
+    year = timezone.now().year
+    
+    # Filter by current year
+    qs = LeaveRequest.objects.filter(employee=user, start_date__year=year)
+    
+    total_leaves = qs.count()
+    approved = qs.filter(status='approved').count()
+    pending = qs.filter(status__in=['pending', 'manager_approved', 'hr_approved', 'ceo_approved']).count()
+    rejected = qs.filter(status='rejected').count()
+    
+    # Calculate total remaining allowance across all leave types
+    balances = LeaveBalance.objects.filter(employee=user, year=year)
+    remaining_allowance = sum(b.remaining_days for b in balances)
+    
+    data = {
+        'total_leaves': total_leaves,
+        'approved': approved,
+        'pending': pending,
+        'rejected': rejected,
+        'remaining_allowance': remaining_allowance
+    }
+    return Response(data)
