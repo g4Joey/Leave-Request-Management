@@ -16,7 +16,7 @@ const api = axios.create({
 
 // Mock Adapter Logic
 // Change this to false to connect to real backend
-const USE_MOCK = true;
+const USE_MOCK = false;
 
 if (USE_MOCK) {
   console.log('🔶 MOCK MODE ENABLED: Backend calls are intercepted.');

@@ -11,8 +11,8 @@ function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Demo accounts disabled per user request
-  const showDemoLogins = false;
+  // Demo accounts enabled for easy testing
+  const showDemoLogins = true;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,42 +132,56 @@ function Login() {
 
         {showDemoLogins && (
           <div className="mt-8 border-t border-gray-100 pt-6">
-            <p className="text-xs text-center text-gray-400 uppercase tracking-wider mb-4 font-semibold">
-              Demo Accounts
+            <p className="text-xs text-center text-gray-400 uppercase tracking-wider mb-4 font-bold">
+              Quick Login (Dev Mode)
             </p>
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => quickLogin('john.doe@company.com', 'password123')}
+                onClick={() => quickLogin('hradmin@umbcapital.com', '1HRADMIN')}
                 className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors group"
               >
-                <div className="flex flex-col items-start">
-                  <span className="text-sm font-semibold text-gray-900">Employee</span>
-                  <span className="text-xs text-gray-500">john.doe@company.com</span>
+                <div className="flex flex-col items-start overflow-hidden">
+                  <span className="text-sm font-bold text-gray-900">HR Admin</span>
+                  <span className="text-xs text-gray-500 truncate w-full text-left">hradmin@umbcapital.com</span>
                 </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors" />
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0 ml-2" />
               </button>
+              
               <button
                 type="button"
-                onClick={() => quickLogin('manager@company.com', 'password123')}
+                onClick={() => quickLogin('ceo@umbcapital.com', 'MerbanCEO')}
                 className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors group"
               >
-                <div className="flex flex-col items-start">
-                  <span className="text-sm font-semibold text-gray-900">Manager</span>
-                  <span className="text-xs text-gray-500">manager@company.com</span>
+                <div className="flex flex-col items-start overflow-hidden">
+                  <span className="text-sm font-bold text-gray-900">CEO</span>
+                  <span className="text-xs text-gray-500 truncate w-full text-left">ceo@umbcapital.com</span>
                 </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors" />
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0 ml-2" />
               </button>
+              
               <button
                 type="button"
-                onClick={() => quickLogin('hr@company.com', 'password123')}
+                onClick={() => quickLogin('jmankoe@umbcapital.com', 'Atokwamena')}
                 className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors group"
               >
-                <div className="flex flex-col items-start">
-                  <span className="text-sm font-semibold text-gray-900">HR Admin</span>
-                  <span className="text-xs text-gray-500">hr@company.com</span>
+                <div className="flex flex-col items-start overflow-hidden">
+                  <span className="text-sm font-bold text-gray-900">Manager</span>
+                  <span className="text-xs text-gray-500 truncate w-full text-left">jmankoe@umbcapital.com</span>
                 </div>
-                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors" />
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0 ml-2" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => quickLogin('gsafo@umbcapital.com', 'Georgesafo')}
+                className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors group"
+              >
+                <div className="flex flex-col items-start overflow-hidden">
+                  <span className="text-sm font-bold text-gray-900">Staff</span>
+                  <span className="text-xs text-gray-500 truncate w-full text-left">gsafo@umbcapital.com</span>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors flex-shrink-0 ml-2" />
               </button>
             </div>
           </div>
