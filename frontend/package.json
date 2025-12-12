@@ -1,29 +1,36 @@
 {
-  "name": "leave-frontend",
+  "name": "leave-management-frontend",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "react-scripts start",
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
   "dependencies": {
-    "@google/genai": "^1.30.0",
-    "@headlessui/react": "^2.2.9",
-    "@heroicons/react": "^2.2.0",
-    "axios": "^1.7.7",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
+    "@headlessui/react": "^1.7.17",
+    "@heroicons/react": "^2.0.18",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "autoprefixer": "^10.4.15",
+    "axios": "^1.5.0",
+    "date-fns": "^2.30.0",
+    "framer-motion": "^12.23.26",
+    "lucide-react": "^0.279.0",
+    "postcss": "^8.4.29",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.15.0",
+    "serve": "^14.2.1",
+    "tailwindcss": "^3.3.3"
   },
-  "devDependencies": {
-    "autoprefixer": "^10.4.22",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "postcss": "^8.4.33",
-    "react-scripts": "5.0.1",
-    "tailwindcss": "^3.4.13"
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "react-scripts test"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
   },
   "browserslist": {
     "production": [
@@ -36,5 +43,13 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1"
   }
 }

@@ -23,6 +23,7 @@ from users.auth import EmailOrUsernameTokenObtainPairView
 from . import views
 from django.views.generic import RedirectView  # noqa: F401 (kept for potential future use)
 from debug_production_views import debug_fix_production_data, debug_production_stats, debug_setup_fresh_database, debug_fix_user_mismatches, debug_quick_user_fix, debug_api_functionality, debug_fix_all_user_references
+from leaves.views import dashboard_stats
 
 urlpatterns = [
     path('api/health/', views.health_check, name='health_check'),
@@ -35,6 +36,7 @@ urlpatterns = [
     path('api/leaves/', include('leaves.urls')),
     path('api/users/', include('users.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/dashboard/stats/', dashboard_stats, name='dashboard_stats'),
     # Fallback routes without the '/api' prefix. Some platforms may strip the path prefix
     # when forwarding to the backend service. These mirror the API endpoints so requests
     # will still resolve correctly.
