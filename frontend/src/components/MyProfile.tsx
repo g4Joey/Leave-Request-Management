@@ -274,7 +274,7 @@ function MyProfile() {
             className="bg-primary text-white rounded-2xl shadow-lg p-6 relative overflow-hidden"
           >
             {/* Background Decoration */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none transform translate-x-1/2 -translate-y-1/2"></div>
             
             <div className="flex items-center gap-4 mb-6 relative z-10">
               <div className="w-16 h-16 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-2xl font-bold font-heading">

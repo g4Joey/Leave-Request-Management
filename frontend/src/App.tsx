@@ -61,7 +61,7 @@ const AppContent = () => {
           width: isLoginPage ? "50%" : "18rem" // 288px = 18rem
         }}
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-        className="hidden lg:flex bg-primary shadow-2xl z-20 flex-col overflow-hidden relative"
+        className="hidden lg:flex bg-primary shadow-2xl z-50 flex-col overflow-hidden relative"
       >
         <AnimatePresence mode="wait">
           {isLoginPage ? (

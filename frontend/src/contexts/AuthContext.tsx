@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import api from '../services/api';
 
 export interface User {
@@ -111,7 +111,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     init();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
       const response = await api.post('/auth/token/', {
         username: email,
@@ -152,30 +152,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error: any) {
       return { success: false, error: error.response?.data?.detail || 'Login failed' };
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     setUser(null);
-  };
+  }, []);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     const token = localStorage.getItem('token');
-    if (token && user) {
+    if (token) {
       try {
         const response = await api.get('/users/me/');
         const profile = response.data || {};
         const normalized = normalizeProfile(profile, token);
-        setUser(normalized);
-        console.log('🔄 User profile refreshed:', normalized);
+        // Only update if data actually changed to prevent loops
+        setUser(prev => {
+           if (JSON.stringify(prev) !== JSON.stringify(normalized)) {
+               console.log('🔄 User profile refreshed:', normalized);
+               return normalized;
+           }
+           return prev;
+        });
         return normalized;
       } catch (e) {
         console.error('Failed to refresh user profile:', e);
       }
     }
-    return user;
-  };
+    return null;
+  }, []);
 
   const value = { user, setUser, login, logout, refreshUser, loading };
 

@@ -39,9 +39,9 @@ function Navbar() {
     <Link
       to={to}
       onClick={() => setIsMobileOpen(false)}
-      className={`group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+      className={`group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-colors duration-200 ${
         isActive(to)
-          ? 'bg-white/10 text-white shadow-lg backdrop-blur-sm'
+          ? 'bg-white/10 text-white'
           : 'text-white/70 hover:bg-white/5 hover:text-white'
       }`}
     >
