@@ -138,17 +138,28 @@ function LeaveRequest() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Guard against weekend start dates on input change
+    // Guard against weekend start dates but only after a complete valid date is entered.
     if (name === 'start_date' && value) {
-      const day = new Date(value + 'T00:00:00');
-      const isWeekend = day.getUTCDay() === 6 || day.getUTCDay() === 0; // Sat=6, Sun=0 in UTC
-      if (isWeekend) {
-        setMessage({ type: 'error', text: 'Start date cannot be a weekend.' });
-        setFormData(prev => ({ ...prev, start_date: '', end_date: prev.end_date && prev.end_date < today ? '' : prev.end_date }));
-        setTimeout(() => {
-          setMessage(prev => (prev.text === 'Start date cannot be a weekend.' ? { type: '', text: '' } : prev));
-        }, 6000);
-        return;
+      // HTML date input yields YYYY-MM-DD when fully entered. Check it's a valid complete date.
+      const looksComplete = /^\d{4}-\d{2}-\d{2}$/.test(value);
+      if (looksComplete) {
+        // Additional check: ensure the year is reasonable (at least 2024)
+        const year = parseInt(value.substring(0, 4), 10);
+        if (year >= 2024) {
+          const day = new Date(value + 'T00:00:00');
+          // Verify the date is valid (not NaN) and check weekend
+          if (!isNaN(day.getTime())) {
+            const isWeekend = day.getUTCDay() === 6 || day.getUTCDay() === 0; // Sat=6, Sun=0 in UTC
+            if (isWeekend) {
+              setMessage({ type: 'error', text: 'Start date cannot be a weekend.' });
+              setFormData(prev => ({ ...prev, start_date: '', end_date: prev.end_date && prev.end_date < today ? '' : prev.end_date }));
+              setTimeout(() => {
+                setMessage(prev => (prev.text === 'Start date cannot be a weekend.' ? { type: '', text: '' } : prev));
+              }, 6000);
+              return;
+            }
+          }
+        }
       }
     }
 

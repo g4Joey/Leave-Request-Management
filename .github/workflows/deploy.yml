@@ -1,8 +1,8 @@
-name: Deploy to DigitalOcean Droplet
+name: Deploy to DigitalOcean Droplet (disabled auto-trigger)
 
 on:
-  push:
-    branches: [ "main" ]
+  # Auto triggers disabled; run manually from the Actions UI when desired
+  workflow_dispatch:
 
 jobs:
   deploy:

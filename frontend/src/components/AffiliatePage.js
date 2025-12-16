@@ -404,7 +404,9 @@ export default function AffiliatePage() {
     };
 
     const csvRows = [
-      ['Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Comments', 'Requested At', 'Final Actor Role', 'Final Actor Timestamp'],
+      ['Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Comments', 'Requested At', 'Final Actor Role', 'Final Actor Timestamp',
+       'Has Recall/Early Return', 'Interruption Type', 'Interruption Status', 'Requested Resume Date', 'Interruption Reason',
+       'Days Credited', 'Actual Resume Date', 'Interruption Note'],
     ];
     requests.forEach(request => {
       // compute final actor role and timestamp
@@ -425,6 +427,16 @@ export default function AffiliatePage() {
         finalRole = `${candidates[0].role} ${candidates[0].verb}`;
         finalTs = new Date(candidates[0].date).toISOString();
       }
+      // Interrupt/recall/early return fields
+      const hasInterrupt = request.has_pending_recall || request.interruption_note ? 'Yes' : 'No';
+      const interruptType = request.interruption_type || '';
+      const interruptStatus = request.interruption_status || '';
+      const requestedResumeDate = usFormat(request.requested_resume_date || '');
+      const interruptReason = request.interruption_reason || '';
+      const daysCredited = request.interruption_credited_days || '';
+      const actualResumeDate = usFormat(request.actual_resume_date || '');
+      const interruptNote = request.interruption_note || '';
+
       csvRows.push([
         request.leave_type_name || request.leave_type?.name || 'Unknown',
         usFormat(request.start_date),
@@ -436,6 +448,14 @@ export default function AffiliatePage() {
         usFormat(request.created_at),
         finalRole,
         finalTs,
+        hasInterrupt,
+        interruptType,
+        interruptStatus,
+        requestedResumeDate,
+        interruptReason,
+        daysCredited,
+        actualResumeDate,
+        interruptNote,
       ]);
     });
     const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -482,7 +502,8 @@ export default function AffiliatePage() {
         showToast({ type: 'info', message: 'No leave requests found for this affiliate' });
         return;
       }
-      const headers = ['id', 'employee_name', 'employee_email', 'start_date', 'end_date', 'status', 'status_display', 'final_actor_role', 'final_actor_timestamp'];
+      const headers = ['id', 'employee_name', 'employee_email', 'start_date', 'end_date', 'status', 'status_display', 'final_actor_role', 'final_actor_timestamp',
+        'has_recall', 'interruption_type', 'interruption_status', 'days_credited', 'actual_resume_date', 'interruption_note'];
       const rows = base.map((r) => {
         // compute final actor
         const mgr = r.manager_approval_date || null;
@@ -512,9 +533,15 @@ export default function AffiliatePage() {
           status_display: r.status_display || r.get_dynamic_status_display || '',
           finalRole,
           finalTs,
+          has_recall: r.has_pending_recall || r.interruption_note ? 'Yes' : 'No',
+          interruption_type: r.interruption_type || '',
+          interruption_status: r.interruption_status || '',
+          days_credited: r.interruption_credited_days || '',
+          actual_resume_date: r.actual_resume_date || '',
+          interruption_note: r.interruption_note || '',
         };
       });
-      const csv = [headers.join(','), ...rows.map(row => `${row.id},"${row.employee_name}",${row.employee_email},${row.start_date},${row.end_date},${row.status},"${row.status_display}","${row.finalRole}",${row.finalTs}`)].join('\n');
+      const csv = [headers.join(','), ...rows.map(row => `${row.id},"${row.employee_name}",${row.employee_email},${row.start_date},${row.end_date},${row.status},"${row.status_display}","${row.finalRole}",${row.finalTs},"${row.has_recall}","${row.interruption_type}","${row.interruption_status}","${row.days_credited}","${row.actual_resume_date}","${(row.interruption_note || '').replace(/"/g, '""')}"`)].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

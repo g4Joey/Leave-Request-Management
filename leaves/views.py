@@ -496,14 +496,41 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         except Exception:
             affiliate_name = None
 
+        # Check for pending recall requests
+        has_pending_recall = LeaveInterruptRequest.objects.filter(
+            leave_request=lr,
+            type='manager_recall',
+            status='pending_staff'
+        ).exists()
+
+        # Check if user can cancel this request
+        can_cancel = False
+        try:
+            can_cancel = lr.can_be_cancelled(viewer)
+        except Exception:
+            pass
+
+        # Compute request number for this user (chronological order)
+        request_number = None
+        try:
+            # Count how many requests this user made before this one (inclusive)
+            request_number = LeaveRequest.objects.filter(
+                employee=lr.employee,
+                created_at__lte=lr.created_at
+            ).count()
+        except Exception:
+            pass
+
         return {
             'record_type': 'leave',
             'id': lr.id,
+            'request_number': request_number,
             'leave_type_name': getattr(lr.leave_type, 'name', ''),
             'start_date': lr.start_date,
             'end_date': lr.end_date,
             'total_days': lr.total_days,
             'working_days': lr.working_days,
+            'reason': lr.reason or '',
             'status': lr.status,
             'status_display': lr.get_dynamic_status_display(),
             'stage_label': getattr(lr, 'stage_label', None) or None,
@@ -513,8 +540,13 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             'ceo_approval_date': lr.ceo_approval_date,
             'final_event': final_ev,
             'interruption': interruption,
+            'interruption_credited_days': lr.interruption_credited_days or 0,
+            'actual_resume_date': lr.actual_resume_date,
             'timeline_events': timeline,
             'employee_department_affiliate': affiliate_name,
+            'has_pending_recall': has_pending_recall,
+            'can_cancel': can_cancel,
+            'created_at': lr.created_at,
             'sort_ts': lr.updated_at or lr.created_at,
         }
 
@@ -552,6 +584,17 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         except Exception:
             affiliate_name = None
 
+        # Compute linked leave request number
+        leave_request_number = None
+        if lr:
+            try:
+                leave_request_number = LeaveRequest.objects.filter(
+                    employee=lr.employee,
+                    created_at__lte=lr.created_at
+                ).count()
+            except Exception:
+                pass
+
         return {
             'record_type': 'interrupt',
             'id': ir.id,
@@ -563,6 +606,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             'requested_resume_date': ir.requested_resume_date,
             'reason': ir.reason,
             'leave_request_id': lr.id if lr else None,
+            'leave_request_number': leave_request_number,
             'leave_type_name': getattr(getattr(lr, 'leave_type', None), 'name', None),
             'start_date': getattr(lr, 'start_date', None),
             'end_date': getattr(lr, 'end_date', None),
@@ -2005,6 +2049,9 @@ def export_all_handler(request):
 
     Kept at module level so it can be called from class methods, proxies,
     and tests without depending on ViewSet binding semantics.
+
+    Includes comprehensive audit fields: original request data, approval dates,
+    interrupt/recall/early-return details, resume events, and credited days.
     """
     import csv
     import io
@@ -2014,15 +2061,26 @@ def export_all_handler(request):
     if not (getattr(user, 'is_superuser', False) or role in ['hr', 'admin', 'ceo']):
         return Response({'detail': 'Only HR, Admin or CEO can export all leave requests'}, status=status.HTTP_403_FORBIDDEN)
 
-    qs = LeaveRequest.objects.select_related('employee', 'employee__affiliate', 'employee__department', 'leave_type', 'approved_by')
+    qs = LeaveRequest.objects.select_related(
+        'employee', 'employee__affiliate', 'employee__department', 'leave_type', 'approved_by'
+    ).prefetch_related('interrupt_requests', 'resume_events')
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
 
+    # Enhanced headers with interrupt/recall/resume audit fields
     writer.writerow([
         'Employee', 'Employee Email', 'Affiliate', 'Department', 'Leave Type',
         'Start Date', 'End Date', 'Total Days', 'Status', 'Reason', 'Approval Comments', 'Created At',
-        'Manager Approval Date', 'HR Approval Date', 'CEO Approval Date', 'Final Approval/Rejection Date'
+        'Manager Approval Date', 'HR Approval Date', 'CEO Approval Date', 'Final Approval/Rejection Date',
+        # Interrupt/Recall/Early Return fields
+        'Has Recall', 'Recall Type', 'Recall Status', 'Recall Requested Date', 'Recall Reason',
+        'Recall Initiated By', 'Recall Manager Decision Date', 'Recall HR Decision Date',
+        'Recall Credited Days', 'Recall Applied Date',
+        # Resume fields
+        'Has Resume Record', 'Actual Resume Date', 'Resume Recorded By', 'Resume Recorded At',
+        # Summary fields
+        'Interruption Note', 'Days Credited Back'
     ])
 
     for req in qs.order_by('-created_at'):
@@ -2052,6 +2110,48 @@ def export_all_handler(request):
         except Exception:
             final_date = hr_date or ceo_date or ''
 
+        # Get interrupt/recall data (most recent approved or any pending)
+        interrupt = req.interrupt_requests.order_by('-created_at').first()
+        has_recall = 'Yes' if interrupt else 'No'
+        recall_type = ''
+        recall_status = ''
+        recall_requested_date = ''
+        recall_reason = ''
+        recall_initiated_by = ''
+        recall_mgr_decision = ''
+        recall_hr_decision = ''
+        recall_credited = ''
+        recall_applied = ''
+
+        if interrupt:
+            recall_type = 'Manager Recall' if interrupt.type == 'manager_recall' else 'Early Return'
+            recall_status = interrupt.get_status_display() if hasattr(interrupt, 'get_status_display') else interrupt.status
+            recall_requested_date = interrupt.requested_resume_date or ''
+            recall_reason = interrupt.reason or ''
+            if interrupt.initiated_by:
+                recall_initiated_by = interrupt.initiated_by.get_full_name() if hasattr(interrupt.initiated_by, 'get_full_name') else str(interrupt.initiated_by)
+            recall_mgr_decision = interrupt.manager_decision_at.date() if interrupt.manager_decision_at else ''
+            recall_hr_decision = interrupt.hr_decision_at.date() if interrupt.hr_decision_at else ''
+            recall_credited = interrupt.credited_working_days or ''
+            recall_applied = interrupt.applied_at.date() if interrupt.applied_at else ''
+
+        # Get resume event data
+        resume_event = req.resume_events.order_by('-created_at').first()
+        has_resume = 'Yes' if resume_event else 'No'
+        resume_date = ''
+        resume_recorded_by = ''
+        resume_recorded_at = ''
+
+        if resume_event:
+            resume_date = resume_event.resume_date or ''
+            if resume_event.recorded_by:
+                resume_recorded_by = resume_event.recorded_by.get_full_name() if hasattr(resume_event.recorded_by, 'get_full_name') else str(resume_event.recorded_by)
+            resume_recorded_at = resume_event.created_at.date() if resume_event.created_at else ''
+
+        # Get summary fields from leave request
+        interruption_note = getattr(req, 'interruption_note', '') or ''
+        days_credited = getattr(req, 'interruption_credited_days', '') or ''
+
         writer.writerow([
             emp_name,
             emp_email,
@@ -2069,6 +2169,25 @@ def export_all_handler(request):
             hr_date,
             ceo_date,
             final_date,
+            # Interrupt/Recall fields
+            has_recall,
+            recall_type,
+            recall_status,
+            recall_requested_date,
+            recall_reason,
+            recall_initiated_by,
+            recall_mgr_decision,
+            recall_hr_decision,
+            recall_credited,
+            recall_applied,
+            # Resume fields
+            has_resume,
+            resume_date,
+            resume_recorded_by,
+            resume_recorded_at,
+            # Summary fields
+            interruption_note,
+            days_credited,
         ])
 
     resp = io.BytesIO()

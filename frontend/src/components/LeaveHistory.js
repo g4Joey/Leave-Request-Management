@@ -20,28 +20,54 @@ function LeaveHistory() {
     if (!events || events.length === 0) return null;
 
     const labelFor = (ev) => {
-      const actor = ev.is_self ? 'You' : (ev.actor_name || 'Someone');
+      const isSelf = ev.is_self;
+      const role = ev.actor_role || '';
       const action = ev.action || '';
-      if (action === 'recall_staff_accepted') return `${actor} accepted Manager Recall`;
-      if (action === 'recall_requested') return `${actor} Requested Recall`;
-      if (action === 'recall_staff_rejected') return `${actor} rejected Manager Recall`;
-      if (action === 'early_return_manager_approved') return `${actor} approved Early Return`;
-      if (action === 'early_return_manager_rejected') return `${actor} rejected Early Return`;
-      if (action === 'early_return_hr_approved') return `${actor} approved Early Return`;
-      if (action === 'early_return_hr_rejected') return `${actor} rejected Early Return`;
-      return `${actor} ${action.replace(/_/g, ' ')}`;
+      
+      // Map role to display name
+      const getRoleLabel = (r) => {
+        if (r === 'manager' || r === 'hod') return 'Manager';
+        if (r === 'hr') return 'HR';
+        if (r === 'ceo') return 'CEO';
+        return r ? r.replace(/_/g, ' ') : '';
+      };
+      const roleLabel = getRoleLabel(role);
+      
+      // Submission
+      if (action === 'submitted') return isSelf ? 'You submitted this request' : `${roleLabel || 'Staff'} submitted`;
+      
+      // Standard approvals
+      if (action === 'manager_approved') return isSelf ? 'You approved' : 'Manager approved';
+      if (action === 'hr_approved') return isSelf ? 'You approved' : 'HR approved';
+      if (action === 'ceo_approved') return isSelf ? 'You approved' : 'CEO approved';
+      if (action === 'finalized') return isSelf ? 'You finalized' : `${roleLabel || 'HR'} finalized`;
+      if (action === 'rejected') return isSelf ? 'You rejected' : `${roleLabel || 'Approver'} rejected`;
+      
+      // Early return actions
+      if (action === 'early_return_requested') return isSelf ? 'You requested an Early Return' : `${roleLabel || 'Staff'} requested Early Return`;
+      if (action === 'early_return_manager_approved') return isSelf ? 'You approved the Early Return request' : 'Manager approved your Early Return request';
+      if (action === 'early_return_manager_rejected') return isSelf ? 'You rejected the Early Return request' : 'Manager rejected your Early Return request';
+      if (action === 'early_return_hr_approved') return isSelf ? 'You approved the Early Return request' : 'HR approved your Early Return request';
+      if (action === 'early_return_hr_rejected') return isSelf ? 'You rejected the Early Return request' : 'HR rejected your Early Return request';
+      if (action === 'early_return_applied') return isSelf ? 'You applied the Early Return' : `${roleLabel || 'HR'} applied your Early Return`;
+      
+      // Recall actions
+      if (action === 'recall_requested') return isSelf ? 'You initiated a Recall' : `${roleLabel || 'Manager'} recalled you`;
+      if (action === 'recall_staff_accepted') return isSelf ? 'You accepted the Recall request' : 'Staff accepted the Recall';
+      if (action === 'recall_staff_rejected') return isSelf ? 'You rejected the Recall request' : 'Staff rejected the Recall';
+      if (action === 'recall_confirmed') return isSelf ? 'You confirmed the Recall' : `${roleLabel || 'HR'} confirmed your Recall acceptance`;
+      
+      return isSelf ? `You ${action.replace(/_/g, ' ')}` : `${roleLabel || 'Someone'} ${action.replace(/_/g, ' ')}`;
     };
 
     return (
       <div className="mt-3 space-y-1 text-xs text-gray-700">
         {events.map((ev, idx) => (
-          <div key={idx} className="flex items-start gap-2">
+          <div key={idx} className="flex items-center gap-2">
             <span className="text-gray-500">•</span>
-            <div>
-              <div className="font-semibold">{labelFor(ev)}</div>
-              <div className="text-gray-500">{new Date(ev.timestamp).toLocaleString()}</div>
-              {ev.note ? <div className="text-gray-600">{ev.note}</div> : null}
-            </div>
+            <span className="font-medium">{labelFor(ev)}</span>
+            <span className="text-gray-500">— {new Date(ev.timestamp).toLocaleString()}</span>
+            {ev.note ? <span className="text-gray-600 ml-1">({ev.note})</span> : null}
           </div>
         ))}
       </div>
@@ -208,6 +234,14 @@ function LeaveHistory() {
       return;
     }
 
+    // Check if selected resume date is a weekend
+    const resumeDay = new Date(returnModal.resumeDate + 'T00:00:00');
+    const dayOfWeek = resumeDay.getUTCDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      showToast({ type: 'error', message: 'Resume date cannot be a weekend. Please select a weekday.' });
+      return;
+    }
+
     try {
       setReturnModal((prev) => ({ ...prev, loading: true }));
       await api.post(`/leaves/requests/${returnModal.request.id}/return_early/`, {
@@ -228,6 +262,14 @@ function LeaveHistory() {
   const submitResume = async () => {
     if (!resumeModal.request || !resumeModal.resumeDate) {
       showToast({ type: 'error', message: 'Select your actual resume date.' });
+      return;
+    }
+
+    // Check if selected resume date is a weekend
+    const resumeDay = new Date(resumeModal.resumeDate + 'T00:00:00');
+    const dayOfWeek = resumeDay.getUTCDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      showToast({ type: 'error', message: 'Resume date cannot be a weekend. Please select a weekday.' });
       return;
     }
 
@@ -343,40 +385,136 @@ function LeaveHistory() {
             const interruptionChip = (() => {
               if (!request.interruption) return null;
               return (
-                <div className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 select-text">
-                  Interruption: {request.interruption.note}
+                <div className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 inline-block select-text max-w-fit">
+                  {request.interruption.note}
                   {request.interruption.timestamp ? ` — ${new Date(request.interruption.timestamp).toLocaleString()}` : ''}
                 </div>
               );
             })();
 
+            // Expand/collapse arrow icon
+            const expandArrow = (
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleExpanded(); }}
+                className="p-1 hover:bg-blue-100 rounded transition-colors border border-blue-300"
+                title={expanded ? 'Collapse' : 'Expand details'}
+              >
+                <svg 
+                  className={`w-4 h-4 text-blue-600 transition-transform ${expanded ? 'rotate-180' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            );
+
             return (
-              <li key={key} className="select-text">
+              <li key={key} className="select-text" data-request-key={key}>
                 <div className="w-full px-4 py-4 sm:px-6">
                   <div className="flex items-start justify-between gap-3">
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={toggleExpanded}
-                    >
-                      <div className="flex items-center gap-3">
-                        {statusPill}
-                        <div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-3">
+                        <div className="flex flex-col items-start gap-1">
+                          {statusPill}
+                          {interruptionChip}
+                        </div>
+                        <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-gray-900">
                             {isInterrupt ? (request.type_label || 'Interruption') : (request.leave_type_name || 'Leave Request')}
+                            {!isInterrupt && request.request_number && (
+                              <span className="ml-2 text-xs text-gray-500">#{request.request_number}</span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-500">
                             {request.start_date ? `${new Date(request.start_date).toLocaleDateString()} - ${new Date(request.end_date).toLocaleDateString()}` : 'No date'}
                             {request.working_days ? ` • ${request.working_days} working day${request.working_days === 1 ? '' : 's'}` : ''}
                           </div>
+                          {isInterrupt && request.leave_request_id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // Find and expand the linked leave request
+                                const linkedKey = `leave-${request.leave_request_id}`;
+                                setExpandedIds(prev => {
+                                  const next = new Set(prev);
+                                  next.add(linkedKey);
+                                  return next;
+                                });
+                                // Scroll to the linked request
+                                const el = document.querySelector(`[data-request-key="${linkedKey}"]`);
+                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              View linked leave #{request.leave_request_number || request.leave_request_id}
+                            </button>
+                          )}
                           {isInterrupt && request.requested_resume_date && (
                             <div className="text-xs text-gray-600">Requested resume: {new Date(request.requested_resume_date).toLocaleDateString()}</div>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      {finalBanner}
-                      {interruptionChip}
+                    <div className="flex items-start gap-2">
+                      <div className="flex flex-col items-end gap-2">
+                        {finalBanner}
+                        {/* Action buttons on card - not in dropdown */}
+                        {!isInterrupt && canReturnEarly(request) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const todayIso = new Date().toISOString().split('T')[0];
+                              const maxDate = new Date(request.end_date).toISOString().split('T')[0];
+                              const defaultDate = todayIso > maxDate ? maxDate : todayIso;
+                              setReturnModal({ open: true, request, resumeDate: defaultDate, reason: '', loading: false });
+                            }}
+                            className="text-xs px-2 py-1 border border-blue-300 rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors"
+                          >
+                            Return Early
+                          </button>
+                        )}
+                        {!isInterrupt && canRecordResume(request) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const todayIso = new Date().toISOString().split('T')[0];
+                              const minDate = new Date(request.end_date).toISOString().split('T')[0];
+                              const defaultDate = todayIso < minDate ? minDate : todayIso;
+                              setResumeModal({ open: true, request, resumeDate: defaultDate, loading: false });
+                            }}
+                            className="text-xs px-2 py-1 border border-blue-300 rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors"
+                          >
+                            Record Resume
+                          </button>
+                        )}
+                        {!isInterrupt && request.has_pending_recall && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setRecallModal({ open: true, request, action: 'accept', reason: '', loading: false }); }}
+                              className="text-xs px-2 py-1 border border-green-400 rounded-md text-green-700 bg-white hover:bg-green-50 transition-colors"
+                            >
+                              Accept Recall
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setRecallModal({ open: true, request, action: 'reject', reason: '', loading: false }); }}
+                              className="text-xs px-2 py-1 border border-red-400 rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors"
+                            >
+                              Reject Recall
+                            </button>
+                          </div>
+                        )}
+                        {!isInterrupt && canCancel(request) && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setCancelModal({ open: true, request, comments: '', loading: false }); }}
+                            className="text-xs px-2 py-1 border border-red-300 rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors"
+                          >
+                            Cancel Request
+                          </button>
+                        )}
+                      </div>
+                      {expandArrow}
                     </div>
                   </div>
 
@@ -405,63 +543,6 @@ function LeaveHistory() {
                       )}
                       {isInterrupt && request.leave_request_id && (
                         <div className="text-xs text-gray-600 select-text">Linked leave #{request.leave_request_id}</div>
-                      )}
-
-                      {!isInterrupt && (
-                        <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 mt-2">
-                          {canReturnEarly(request) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const todayIso = new Date().toISOString().split('T')[0];
-                                const maxDate = new Date(request.end_date).toISOString().split('T')[0];
-                                const defaultDate = todayIso > maxDate ? maxDate : todayIso;
-                                setReturnModal({ open: true, request, resumeDate: defaultDate, reason: '', loading: false });
-                              }}
-                              className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                            >
-                              Return Early
-                            </button>
-                          )}
-                          {canRecordResume(request) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const todayIso = new Date().toISOString().split('T')[0];
-                                const minDate = new Date(request.end_date).toISOString().split('T')[0];
-                                const defaultDate = todayIso < minDate ? minDate : todayIso;
-                                setResumeModal({ open: true, request, resumeDate: defaultDate, loading: false });
-                              }}
-                              className="inline-flex items-center px-3 py-1.5 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                            >
-                              Record Resume
-                            </button>
-                          )}
-                          {request.has_pending_recall && (
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setRecallModal({ open: true, request, action: 'accept', reason: '', loading: false }); }}
-                                className="inline-flex items-center px-3 py-1.5 border border-green-300 text-sm font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
-                              >
-                                Accept Recall
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setRecallModal({ open: true, request, action: 'reject', reason: '', loading: false }); }}
-                                className="inline-flex items-center px-3 py-1.5 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
-                              >
-                                Reject Recall
-                              </button>
-                            </div>
-                          )}
-                          {canCancel(request) && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setCancelModal({ open: true, request, comments: '', loading: false }); }}
-                              className="inline-flex items-center px-3 py-1.5 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
-                            >
-                              Cancel Request
-                            </button>
-                          )}
-                        </div>
                       )}
                       <div className="text-xs text-gray-400 select-text">Submitted: {request.created_at ? new Date(request.created_at).toLocaleString() : 'N/A'}</div>
                     </div>

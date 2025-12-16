@@ -1,9 +1,7 @@
-name: Deploy to DigitalOcean
+name: Deploy to DigitalOcean (disabled auto-trigger)
 
 on:
-  push:
-    branches:
-      - main
+  # Auto triggers disabled to stop deployments; run manually via UI if needed
   workflow_dispatch:
 
 jobs:

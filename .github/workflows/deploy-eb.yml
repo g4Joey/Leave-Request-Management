@@ -1,0 +1,5 @@
+name: Deploy to EB (inactive)
+
+on:
+	# Empty workflow kept inactive; enable by adding jobs and triggers as needed
+	workflow_dispatch:

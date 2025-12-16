@@ -210,9 +210,6 @@ function MyProfile() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
                   disabled
                 />
-                {(user?.affiliate?.name || '').toUpperCase() === 'MERBAN CAPITAL' && (
-                  <div className="mt-2 text-sm text-gray-600">Department: {user?.department?.name || 'Not assigned'}</div>
-                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -413,10 +413,22 @@ export default function DepartmentPage() {
       ['Total', 'Approved', 'Rejected', 'Pending'],
       [total, approved, rejected, pending],
       [],
-      ['Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Comments', 'Requested At', 'Manager Approval Date', 'HR Approval Date', 'CEO Approval Date', 'Final Approval/Rejection Date']
+      ['Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Comments', 'Requested At', 'Manager Approval Date', 'HR Approval Date', 'CEO Approval Date', 'Final Approval/Rejection Date',
+       'Has Recall/Early Return', 'Interruption Type', 'Interruption Status', 'Requested Resume Date', 'Interruption Reason',
+       'Days Credited', 'Actual Resume Date', 'Interruption Note']
     ];
 
     requests.forEach(request => {
+      // Interrupt/recall/early return fields
+      const hasInterrupt = request.has_pending_recall || request.interruption_note ? 'Yes' : 'No';
+      const interruptType = request.interruption_type || '';
+      const interruptStatus = request.interruption_status || '';
+      const requestedResumeDate = usFormat(request.requested_resume_date || '');
+      const interruptReason = request.interruption_reason || '';
+      const daysCredited = request.interruption_credited_days || '';
+      const actualResumeDate = usFormat(request.actual_resume_date || '');
+      const interruptNote = request.interruption_note || '';
+
       csvRows.push([
         request.leave_type_name || request.leave_type?.name || 'Unknown Leave Type',
         usFormat(request.start_date),
@@ -429,11 +441,19 @@ export default function DepartmentPage() {
         usFormat(request.manager_approval_date),
         usFormat(request.hr_approval_date),
         usFormat(request.ceo_approval_date),
-        usFormat(request.approval_date)
+        usFormat(request.approval_date),
+        hasInterrupt,
+        interruptType,
+        interruptStatus,
+        requestedResumeDate,
+        interruptReason,
+        daysCredited,
+        actualResumeDate,
+        interruptNote,
       ]);
     });
 
-    const csvContent = csvRows.map(e => e.join(',')).join('\n');
+    const csvContent = csvRows.map(e => e.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -482,7 +502,8 @@ export default function DepartmentPage() {
         showToast({ type: 'info', message: 'No leave requests found for this department' });
         return;
       }
-      const headers = ['id', 'employee_name', 'employee_email', 'start_date', 'end_date', 'status', 'status_display'];
+      const headers = ['id', 'employee_name', 'employee_email', 'start_date', 'end_date', 'status', 'status_display',
+        'has_recall', 'interruption_type', 'interruption_status', 'days_credited', 'actual_resume_date', 'interruption_note'];
       const rows = base.map((r) => ({
         id: r.id,
         employee_name: r.employee_name || r.name || '',
@@ -491,6 +512,12 @@ export default function DepartmentPage() {
         end_date: r.end_date || '',
         status: r.status || '',
         status_display: r.status_display || r.get_dynamic_status_display || '',
+        has_recall: r.has_pending_recall || r.interruption_note ? 'Yes' : 'No',
+        interruption_type: r.interruption_type || '',
+        interruption_status: r.interruption_status || '',
+        days_credited: r.interruption_credited_days || '',
+        actual_resume_date: r.actual_resume_date || '',
+        interruption_note: r.interruption_note || '',
       }));
       const csv = toCSV(rows, headers);
       const blob = new Blob([csv], { type: 'text/csv' });

@@ -171,16 +171,44 @@ function Dashboard() {
   };
 
   const formatActionLabel = (ev) => {
-    const actor = ev.is_self ? 'You' : (ev.actor_name || 'Someone');
+    const isSelf = ev.is_self;
+    const role = ev.actor_role || '';
     const action = ev.action || '';
-    if (action === 'recall_staff_accepted') return `${actor} accepted Manager Recall`;
-    if (action === 'recall_requested') return `${actor} Requested Recall`;
-    if (action === 'recall_staff_rejected') return `${actor} rejected Manager Recall`;
-    if (action === 'early_return_manager_approved') return `${actor} approved Early Return`;
-    if (action === 'early_return_manager_rejected') return `${actor} rejected Early Return`;
-    if (action === 'early_return_hr_approved') return `${actor} approved Early Return`;
-    if (action === 'early_return_hr_rejected') return `${actor} rejected Early Return`;
-    return `${actor} ${action.replace(/_/g, ' ')}`;
+    
+    // Map role to display name
+    const getRoleLabel = (r) => {
+      if (r === 'manager' || r === 'hod') return 'Manager';
+      if (r === 'hr') return 'HR';
+      if (r === 'ceo') return 'CEO';
+      return r ? r.replace(/_/g, ' ') : '';
+    };
+    const roleLabel = getRoleLabel(role);
+    
+    // Submission
+    if (action === 'submitted') return isSelf ? 'You submitted this request' : `${roleLabel || 'Staff'} submitted`;
+    
+    // Standard approvals
+    if (action === 'manager_approved') return isSelf ? 'You approved' : 'Manager approved';
+    if (action === 'hr_approved') return isSelf ? 'You approved' : 'HR approved';
+    if (action === 'ceo_approved') return isSelf ? 'You approved' : 'CEO approved';
+    if (action === 'finalized') return isSelf ? 'You finalized' : `${roleLabel || 'HR'} finalized`;
+    if (action === 'rejected') return isSelf ? 'You rejected' : `${roleLabel || 'Approver'} rejected`;
+    
+    // Early return actions
+    if (action === 'early_return_requested') return isSelf ? 'You requested an Early Return' : `${roleLabel || 'Staff'} requested Early Return`;
+    if (action === 'early_return_manager_approved') return isSelf ? 'You approved the Early Return request' : 'Manager approved your Early Return request';
+    if (action === 'early_return_manager_rejected') return isSelf ? 'You rejected the Early Return request' : 'Manager rejected your Early Return request';
+    if (action === 'early_return_hr_approved') return isSelf ? 'You approved the Early Return request' : 'HR approved your Early Return request';
+    if (action === 'early_return_hr_rejected') return isSelf ? 'You rejected the Early Return request' : 'HR rejected your Early Return request';
+    if (action === 'early_return_applied') return isSelf ? 'You applied the Early Return' : `${roleLabel || 'HR'} applied your Early Return`;
+    
+    // Recall actions
+    if (action === 'recall_requested') return isSelf ? 'You initiated a Recall' : `${roleLabel || 'Manager'} recalled you`;
+    if (action === 'recall_staff_accepted') return isSelf ? 'You accepted the Recall request' : 'Staff accepted the Recall';
+    if (action === 'recall_staff_rejected') return isSelf ? 'You rejected the Recall request' : 'Staff rejected the Recall';
+    if (action === 'recall_confirmed') return isSelf ? 'You confirmed the Recall' : `${roleLabel || 'HR'} confirmed your Recall acceptance`;
+    
+    return isSelf ? `You ${action.replace(/_/g, ' ')}` : `${roleLabel || 'Someone'} ${action.replace(/_/g, ' ')}`;
   };
 
   const renderSummaryLine = (request) => {
@@ -320,91 +348,96 @@ function Dashboard() {
                   const interruptionChip = (() => {
                     if (!request.interruption) return null;
                     return (
-                      <div className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 select-text">
-                        Interruption: {request.interruption.note}
+                      <div className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 inline-block select-text max-w-fit">
+                        {request.interruption.note}
                         {request.interruption.timestamp ? ` — ${formatDateTime(request.interruption.timestamp)}` : ''}
                       </div>
                     );
                   })();
 
+                  // Expand/collapse arrow icon
+                  const expandArrow = (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleExpanded(); }}
+                      className="p-1 hover:bg-blue-100 rounded transition-colors border border-blue-300"
+                      title={expanded ? 'Collapse' : 'Expand details'}
+                    >
+                      <svg 
+                        className={`w-4 h-4 text-blue-600 transition-transform ${expanded ? 'rotate-180' : ''}`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  );
+
                   return (
                     <li key={key} className="py-3 select-text">
                       <div className="w-full text-left">
-                        <div className="flex items-start justify-between" onClick={toggleExpanded}>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">{isInterrupt ? (request.type_label || 'Interruption') : (request.leave_type_name || 'Leave Request')}</p>
-                            <p className="text-xs text-gray-500">
-                              {request.start_date ? `${new Date(request.start_date).toLocaleDateString()} - ${new Date(request.end_date).toLocaleDateString()}` : 'No date'}
-                              {request.total_days ? ` • ${request.total_days} day${request.total_days === 1 ? '' : 's'}` : ''}
-                            </p>
-                            {isInterrupt && request.requested_resume_date && (
-                              <p className="text-xs text-gray-600">Requested resume: {new Date(request.requested_resume_date).toLocaleDateString()}</p>
-                            )}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start gap-2">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
+                                {(request.stage_label && ['pending','manager_approved','hr_approved','ceo_approved'].includes(request.status))
+                                  ? request.stage_label
+                                  : (request.status_display || request.status)
+                                }
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900">{isInterrupt ? (request.type_label || 'Interruption') : (request.leave_type_name || 'Leave Request')}</p>
+                                <p className="text-xs text-gray-500">
+                                  {request.start_date ? `${new Date(request.start_date).toLocaleDateString()} - ${new Date(request.end_date).toLocaleDateString()}` : 'No date'}
+                                  {request.total_days ? ` • ${request.total_days} day${request.total_days === 1 ? '' : 's'}` : ''}
+                                </p>
+                                {interruptionChip && <div className="mt-1">{interruptionChip}</div>}
+                                {isInterrupt && request.requested_resume_date && (
+                                  <p className="text-xs text-gray-600">Requested resume: {new Date(request.requested_resume_date).toLocaleDateString()}</p>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
-                              {(request.stage_label && ['pending','manager_approved','hr_approved','ceo_approved'].includes(request.status))
-                                ? request.stage_label
-                                : (request.status_display || request.status)
-                              }
-                            </span>
-                            {finalBanner}
-                            {interruptionChip}
+                          <div className="flex items-start gap-2">
+                            <div className="flex flex-col items-end gap-2">
+                              {finalBanner}
+                              {/* Action buttons on card */}
+                              {!isInterrupt && request.has_pending_recall && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleRecallAction(request, 'accept'); }}
+                                    disabled={recallLoadingId === `${request.id}-accept`}
+                                    className="text-xs px-2 py-1 border border-green-400 rounded-md text-green-700 bg-white hover:bg-green-50 transition-colors disabled:opacity-50"
+                                  >
+                                    {recallLoadingId === `${request.id}-accept` ? 'Accepting...' : 'Accept Recall'}
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleRecallAction(request, 'reject'); }}
+                                    disabled={recallLoadingId === `${request.id}-reject`}
+                                    className="text-xs px-2 py-1 border border-red-400 rounded-md text-red-700 bg-white hover:bg-red-50 transition-colors disabled:opacity-50"
+                                  >
+                                    {recallLoadingId === `${request.id}-reject` ? 'Rejecting...' : 'Reject Recall'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            {expandArrow}
                           </div>
                         </div>
-                        {!isInterrupt && request.has_pending_recall && (
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRecallAction(request, 'accept'); }}
-                              disabled={recallLoadingId === `${request.id}-accept`}
-                              className="inline-flex items-center px-3 py-1.5 border border-green-300 text-xs font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                            >
-                              {recallLoadingId === `${request.id}-accept` ? 'Accepting...' : 'Accept Recall'}
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRecallAction(request, 'reject'); }}
-                              disabled={recallLoadingId === `${request.id}-reject`}
-                              className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                            >
-                              {recallLoadingId === `${request.id}-reject` ? 'Rejecting...' : 'Reject Recall'}
-                            </button>
-                          </div>
-                        )}
                         {expanded && (
                           <div className="mt-3 space-y-2 text-sm text-gray-700">
                             {!isInterrupt && request.reason && <div className="select-text">Reason: {request.reason}</div>}
                             {isInterrupt && request.reason && <div className="select-text">{request.type_label || 'Interruption'} reason: {request.reason}</div>}
                             {request.timeline_events && request.timeline_events.length > 0 && !isInterrupt && (
-                              <div className="space-y-2">
-                                {(() => {
-                                  const findEvent = (predicate) => (request.timeline_events || []).find(predicate);
-                                  const submitted = findEvent((e) => e.action === 'submitted');
-                                  const mgr = findEvent((e) => e.action === 'manager_approved');
-                                  const hr = findEvent((e) => e.action === 'hr_approved');
-                                  const ceo = findEvent((e) => e.action === 'ceo_approved' || e.action === 'finalized');
-                                  const interruptions = (request.timeline_events || []).filter((e) => (e.action || '').includes('recall') || (e.action || '').includes('early_return'));
-                                  const fmt = (e, label) => e ? <div className="text-xs text-gray-700 select-text" key={label}><span className="font-semibold">{label}:</span> {formatDateTime(e.timestamp)}</div> : null;
-                                  return (
-                                    <>
-                                      {fmt(submitted, 'Requested')}
-                                      {fmt(mgr, 'Manager decision')}
-                                      {fmt(hr, 'HR decision')}
-                                      {fmt(ceo, 'CEO decision')}
-                                      {interruptions.length > 0 && (
-                                        <div className="text-xs text-gray-700 select-text">
-                                          <div className="font-semibold">Interruptions</div>
-                                          <div className="space-y-1 mt-1">
-                                            {interruptions.map((ev, idx) => (
-                                              <div key={idx}>
-                                                {formatActionLabel(ev)} — {formatDateTime(ev.timestamp)}{ev.note ? ` (${ev.note})` : ''}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </>
-                                  );
-                                })()}
+                              <div className="space-y-1">
+                                {request.timeline_events.map((ev, idx) => (
+                                  <div key={idx} className="text-xs text-gray-700 select-text flex items-center gap-1">
+                                    <span className="text-gray-500">•</span>
+                                    <span className="font-medium">{formatActionLabel(ev)}</span>
+                                    <span className="text-gray-500">— {formatDateTime(ev.timestamp)}</span>
+                                    {ev.note ? <span className="text-gray-600 ml-1">({ev.note})</span> : null}
+                                  </div>
+                                ))}
                               </div>
                             )}
                             {isInterrupt && request.pending_with && (
