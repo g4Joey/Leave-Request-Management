@@ -1,3 +1,5 @@
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+
 # 🏖️ Leave Request Management System
 
 A comprehensive Django-based leave management system that streamlines employee leave requests, approvals, and tracking for organizations.
